@@ -77,6 +77,7 @@ public sealed class HubTests
         public int Stops { get; private set; }
         public bool Stopped { get; private set; }
         public DateTime StartedStoppingAt { get; private set; }
+        public DateTime FinishedStoppingAt { get; private set; }
 
         public event EventHandler<DeviceChangedEventArgs>? DeviceChanged { add { } remove { } }
 
@@ -89,6 +90,7 @@ public sealed class HubTests
             Stops++;
             StartedStoppingAt = DateTime.UtcNow;
             await stop();
+            FinishedStoppingAt = DateTime.UtcNow;
             Stopped = true;
         }
     }
@@ -110,7 +112,9 @@ public sealed class HubTests
 
         Assert.True(fast.Stopped && slowA.Stopped && slowB.Stopped, "every provider finished its DisposeAsync before the hub returned");
         Assert.True(clock.ElapsedMilliseconds >= 380, $"returned after {clock.ElapsedMilliseconds} ms, before the slow providers finished");
-        Assert.True(clock.ElapsedMilliseconds < 780, $"took {clock.ElapsedMilliseconds} ms: providers were stopped one after another");
+        // In parallel means the two slow stops overlap in time; a wall-clock bound fails on a loaded CI runner.
+        Assert.True(slowB.StartedStoppingAt < slowA.FinishedStoppingAt && slowA.StartedStoppingAt < slowB.FinishedStoppingAt,
+            "providers were stopped one after another");
         var failure = Assert.Single(failures);
         Assert.Equal("broken", failure.Item1);
         Assert.IsType<InvalidOperationException>(failure.Item2);

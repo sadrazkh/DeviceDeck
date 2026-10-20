@@ -208,16 +208,18 @@ public sealed class DispatcherTests
     public async Task Slow_calls_are_reported_while_running_and_when_they_end()
     {
         var (rpc, reports) = Slow(TimeSpan.FromMilliseconds(150));
-        var reply = await Call(rpc, """{"jsonrpc":"2.0","id":1,"method":"device.storage","params":{"deviceId":"iphone-1","ms":450}}""");
+        // The call runs well past the 150 ms threshold, so a late timer on a loaded CI runner still lands while it runs.
+        var reply = await Call(rpc, """{"jsonrpc":"2.0","id":1,"method":"device.storage","params":{"deviceId":"iphone-1","ms":1200}}""");
         Assert.True((bool)reply["result"]!["ok"]!);
 
         Assert.Equal(2, reports.Count);
         var running = reports[0];
         Assert.Equal(("device.storage", "iphone-1", false, (string?)null), (running.Method, running.DeviceId, running.Finished, running.Outcome));
-        Assert.InRange(running.Elapsed.TotalMilliseconds, 140, 440);
         var ended = reports[1];
         Assert.Equal(("device.storage", "iphone-1", true, "ok"), (ended.Method, ended.DeviceId, ended.Finished, ended.Outcome));
-        Assert.True(ended.Elapsed.TotalMilliseconds >= 440, $"reported {ended.Elapsed.TotalMilliseconds} ms");
+        Assert.True(running.Elapsed.TotalMilliseconds >= 140, $"running reported after {running.Elapsed.TotalMilliseconds} ms, before the threshold");
+        Assert.True(running.Elapsed < ended.Elapsed, "the running report came after the call had ended");
+        Assert.True(ended.Elapsed.TotalMilliseconds >= 1190, $"reported {ended.Elapsed.TotalMilliseconds} ms");
     }
 
     [Fact]

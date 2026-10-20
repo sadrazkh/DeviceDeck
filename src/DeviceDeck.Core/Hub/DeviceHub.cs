@@ -330,8 +330,14 @@ public sealed class DeviceHub : IAsyncDisposable
     {
         try
         {
-            // Off the caller's thread, so a provider that blocks inside DisposeAsync can't hold up the others.
-            await Task.Run(async () => await provider.DisposeAsync().ConfigureAwait(false))
+            // On a thread of its own, not the pool: a provider that blocks inside DisposeAsync can't hold up
+            // the others, even on a 1–2 core machine where the pool has no spare thread (seen on CI runners).
+            await Task.Factory.StartNew(
+                    () => provider.DisposeAsync().AsTask(),
+                    CancellationToken.None,
+                    TaskCreationOptions.LongRunning,
+                    TaskScheduler.Default)
+                .Unwrap()
                 .WaitAsync(ProviderStopTimeout)
                 .ConfigureAwait(false);
         }

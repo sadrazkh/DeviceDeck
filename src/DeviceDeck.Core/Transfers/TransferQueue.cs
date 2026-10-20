@@ -638,7 +638,9 @@ public sealed class TransferQueue : IAsyncDisposable
                 job.TrailingPending = false;
                 if (!_disposed && _jobs.ContainsKey(job.Data.Id))
                 {
-                    Emit(job);
+                    // Under load this can fire late, after a progress report already went out on its own;
+                    // checking the interval again keeps it to one update per interval instead of two in a row.
+                    EmitThrottled(job);
                 }
             }
         }, TaskScheduler.Default);
