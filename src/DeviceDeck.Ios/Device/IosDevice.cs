@@ -450,6 +450,10 @@ public sealed class IosDevice : IDevice, IAsyncDisposable
         return await lockdown.GetAllValuesAsync(domain, ct).ConfigureAwait(false);
     });
 
+    /// <summary>AFC's GetDeviceInfo for the Media volume (FSTotalBytes, FSFreeBytes, FSBlockSize, Model), for diagnostics.</summary>
+    public Task<IReadOnlyDictionary<string, string>> GetAfcDeviceInfoAsync(CancellationToken ct) =>
+        UseMediaAfcAsync(afc => afc.GetDeviceInfoAsync(ct), ct);
+
     /// <summary>One lockdown value by key (some keys only come back when asked for by name), for diagnostics.</summary>
     public Task<object?> GetLockdownValueAsync(string? domain, string key, CancellationToken ct) => UseAsync(async c =>
     {

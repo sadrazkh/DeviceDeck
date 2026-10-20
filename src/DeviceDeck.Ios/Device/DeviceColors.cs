@@ -3,12 +3,23 @@ namespace DeviceDeck.Ios.Device;
 /// <summary>
 /// The phone's finish as a hex colour for the UI. Older phones report DeviceEnclosureColor as "#rrggbb";
 /// newer ones report a numeric code (asked for by name: it is missing from GetValue's full dump), which only
-/// means something per model, so it is looked up in a table of codes confirmed on real phones.
+/// means something per model, so it is looked up in a table; each row says whether a real phone confirmed it.
 /// </summary>
 public static class DeviceColors
 {
-    /// <summary>(ProductType, DeviceEnclosureColor code) → finish. Add rows as real phones confirm them.</summary>
-    private static readonly Dictionary<(string ProductType, string Code), (string Name, string Hex)> Known = new();
+    /// <summary>
+    /// (ProductType, DeviceEnclosureColor code) → finish. Hex values approximate Apple's colour swatches.
+    /// Verified = seen on a real phone; the others are inferred and need a phone to confirm them.
+    /// </summary>
+    private static readonly Dictionary<(string ProductType, string Code), (string Name, string Hex, bool Verified)> Known = new()
+    {
+        [("iPhone17,3", "18")] = ("Teal", "#b0d4d2", true),   // iPhone 16, confirmed by its owner
+        [("iPhone17,4", "18")] = ("Teal", "#b0d4d2", false),  // iPhone 16 Plus: same finishes; unverified
+    };
+
+    /// <summary>Whether the table's entry for this phone was confirmed on a real phone.</summary>
+    public static bool IsVerified(string? productType, string? enclosureColor) =>
+        productType is not null && enclosureColor is not null && Known.TryGetValue((productType, enclosureColor), out var f) && f.Verified;
 
     public static string? Hex(string? productType, string? enclosureColor)
     {

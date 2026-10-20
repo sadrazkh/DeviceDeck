@@ -83,6 +83,11 @@ internal static class Commands
             }
             Out.Plist(await d.GetLockdownValuesAsync(domain, ct));
         }),
+        ["afcinfo"] = new([], async (d, _, ct) =>
+        {
+            foreach (var (k, v) in (await d.GetAfcDeviceInfoAsync(ct)).OrderBy(kv => kv.Key, StringComparer.Ordinal))
+                Console.WriteLine($"  {k}: {v}");
+        }),
         ["carrier"] = new([], async (d, _, ct) =>
         {
             // Bundle ids and network codes only; ICCID and IMSI are left out.

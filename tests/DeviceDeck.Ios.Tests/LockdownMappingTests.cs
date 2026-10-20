@@ -120,8 +120,8 @@ public class LockdownMappingTests
         Assert.Equal(88, b.LevelPercent);
         Assert.Equal(617, b.CycleCount);
         Assert.Equal(3521, b.DesignCapacityMah);
-        Assert.NotNull(b.FullChargeCapacityMah);
-        Assert.NotNull(b.HealthPercent);
+        Assert.Equal(3243, b.FullChargeCapacityMah); // nominal, not the drifting full-charge figure
+        Assert.Equal(92, b.HealthPercent);
         Assert.Null(b.TemperatureCelsius);
     }
 
@@ -191,10 +191,22 @@ public class LockdownMappingTests
     [Theory]
     [InlineData("iPhone10,3", "#E1E4E3", "#e1e4e3")]
     [InlineData("iPhone17,3", "#zzzzzz", null)]
+    [InlineData("iPhone17,3", "18", "#b0d4d2")]
+    [InlineData("iPhone17,3", "1", null)]
     [InlineData("iPhone99,1", "18", null)]
     [InlineData(null, null, null)]
     public void Colour_from_enclosure_colour(string? productType, string? enclosure, string? expected) =>
         Assert.Equal(expected, DeviceColors.Hex(productType, enclosure));
+
+    [Fact]
+    public void Colour_table_marks_what_a_real_phone_confirmed()
+    {
+        Assert.Equal("Teal", DeviceColors.Name("iPhone17,3", "18"));
+        Assert.True(DeviceColors.IsVerified("iPhone17,3", "18"));
+        Assert.False(DeviceColors.IsVerified("iPhone17,4", "18"));
+        var s = LockdownMapping.Summary("X", Load("carrier_unknown_dual_sim.xml"), ConnectionKind.Usb, DeviceState.Ready);
+        Assert.Equal("#b0d4d2", s.ColorHex);
+    }
 
     [Theory]
     [InlineData("iPhone15,2", "iPhone 14 Pro")]

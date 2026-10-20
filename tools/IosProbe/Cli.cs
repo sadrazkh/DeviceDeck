@@ -43,6 +43,7 @@ internal sealed class Cli
           carrier                             the SIMs' carrier bundles (no ICCID / IMSI) and the mapped name
           ioreg <entry-class>                 raw IORegistry properties (e.g. IOPMPowerSource)
           diag <request>                      a diagnostics_relay report (e.g. GasGauge)
+          afcinfo                             AFC's view of the Media volume (FSTotalBytes, FSFreeBytes)
 
         Power
           reboot --yes                        restart the phone

@@ -101,6 +101,35 @@ public sealed class PhotosTests : IDisposable
     }
 
     [Fact]
+    public void Hidden_assets_are_only_in_the_hidden_album_and_in_no_count()
+    {
+        // A hidden favourite video that is also in a user album: the Photos app shows it only under Hidden.
+        var t = new DateTimeOffset(2025, 6, 1, 10, 0, 0, TimeSpan.Zero);
+        PhotoRow Row(long pk, string file, int kind, bool favorite, bool hidden) =>
+            new(pk, "DCIM/100APPLE", file, kind, 0, t.AddMinutes(pk), favorite, hidden, false, 100, 100,
+                kind == 1 ? 5 : null, $"UUID-{pk}", false, 1000, file);
+        PhotoRow[] rows =
+        [
+            Row(1, "IMG_0001.JPG", kind: 0, favorite: true, hidden: false),
+            Row(2, "IMG_0002.MOV", kind: 1, favorite: true, hidden: true),
+        ];
+        AlbumRow[] albums = [new(10, "ALBUM", "Trip", [1, 2])];
+        var index = PhotoIndex.Build(["DCIM/100APPLE/IMG_0001.JPG", "DCIM/100APPLE/IMG_0002.MOV"], rows, albums, "test");
+
+        var counts = index.Albums.ToDictionary(a => a.Id, a => a.Count);
+        Assert.Equal(1, counts["all"]);
+        Assert.Equal(1, counts["favorites"]);
+        Assert.False(counts.ContainsKey("videos"));
+        Assert.Equal(1, counts["album:ALBUM"]);
+        Assert.Equal(1, counts["hidden"]);
+        Assert.Equal(1, index.HiddenCount);
+        Assert.Equal(AlbumKind.User, index.Albums.Single(a => a.Id == "hidden").Kind);
+        Assert.Equal(["DCIM/100APPLE/IMG_0002.MOV"], index.Page("hidden", 0, 10).Items.Select(a => a.Id));
+        Assert.DoesNotContain(index.Page(null, 0, 10).Items, a => a.Id == "DCIM/100APPLE/IMG_0002.MOV");
+        Assert.Equal(1000, index.VideoBytes); // its file still takes space on the phone
+    }
+
+    [Fact]
     public void Paging_and_unknown_albums()
     {
         var index = PhotoIndex.Build(DcimFiles, null, null);

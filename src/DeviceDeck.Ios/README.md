@@ -42,11 +42,18 @@ Backup. Those members return `DeviceException(not_supported)`.
 - `Photos.sqlite` (and its `-wal`) is copied to `%LOCALAPPDATA%\DeviceDeck\ios\cache\<UDID>\` on its own AFC
   connection; the 150 MB main file is copied again only when it changed, usually just the WAL is. A dropped
   connection or a checkpoint during the copy is retried. The copy is deleted when the phone disconnects.
-- Hidden photos (ZHIDDEN) are not in "all" or any other album; they are listed in the `hidden` album.
+- Hidden photos (ZHIDDEN) are not in "all", any other album or any count; they are listed only in the album
+  with id `hidden` (kind User until `AlbumKind.Hidden` exists). **Privacy default for the host and UI:** keep the
+  Hidden album collapsed and its thumbnails blurred until the user reveals it, as iOS asks for Face ID.
 - `StartAsync` returns with the phones already plugged in listed (seeded from ListDevices), not empty.
 - Storage: iOS 27 has no app-usage key, so `apps` is summed from installation_proxy sizes (fetched in the
   background once the phone is Ready; about 7–12 s on a phone with 300+ apps); `videos` is split from `photos`
-  once the photo index exists. Battery temperature is not exposed on iOS 27 and stays null there.
+  once the photo index exists. Free space is `AmountDataAvailable` (writable now); Settings → iPhone Storage
+  shows ~2.5 GB more free because it counts purgeable data, which no lockdown or AFC value reports.
+- Battery: health is NominalChargeCapacity / DesignCapacity (92% on an iPhone 16 whose Settings shows 88%; no
+  percentage key is exposed on iOS 27). Battery temperature is not exposed on iOS 27 and stays null there.
+- Colour: recent iPhones report a numeric DeviceEnclosureColor code; `DeviceColors` maps (model, code) to hex,
+  with a verified flag per row (iPhone 16 code 18 = Teal, verified).
 - Thumbnails, photo listing and icons share one AFC and one SpringBoard connection per phone, so a grid of
   requests does not open a lockdown session each.
 - Pair records DeviceDeck makes are stored through usbmux (where Apple's tools find them); if usbmux will

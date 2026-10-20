@@ -44,6 +44,11 @@ public static class LockdownMapping
     /// <param name="appBytes">Installed apps and their data, summed from installation_proxy (recent iOS has no
     /// MobileApplicationUsage key); null to use the domain's own figure.</param>
     /// <param name="videoBytes">Video files in the camera roll (from Photos.sqlite), split out of the photo usage; null when unknown.</param>
+    /// <remarks>
+    /// Free space is AmountDataAvailable: what can be written right now. AFC's FSFreeBytes is that plus
+    /// AmountDataReserved. Settings → iPhone Storage shows more free (an iPhone 16 on iOS 27: 6.86 GB in Settings
+    /// against 4.2 GB here) because it also counts purgeable data, which no lockdown or AFC value reports.
+    /// </remarks>
     public static StorageInfo Storage(PlistDict diskUsage, long? appBytes = null, long? videoBytes = null)
     {
         var total = diskUsage.GetLong("TotalDiskCapacity") ?? 0;
@@ -105,7 +110,11 @@ public static class LockdownMapping
 
         var charging = batteryDomain.GetBool("BatteryIsCharging") ?? io.GetBool("IsCharging") ?? false;
         var design = (int?)(io.GetLong("DesignCapacity") ?? data.GetLong("DesignCapacity"));
-        var full = (int?)(io.GetLong("AppleRawMaxCapacity") ?? io.GetLong("NominalChargeCapacity") ?? data.GetLong("FullChargeCapacity"));
+        // NominalChargeCapacity is steady between readings; FullChargeCapacity drifts by tens of mAh. Neither
+        // reproduces Settings' "Maximum Capacity" on iOS 27 (an iPhone 16 showing 88% reports nominal 92%,
+        // full-charge 94%), and no percentage key is exposed, so health is nominal / design.
+        var full = (int?)(io.GetLong("AppleRawMaxCapacity") ?? io.GetLong("NominalChargeCapacity")
+                          ?? data.GetLong("NominalChargeCapacity") ?? data.GetLong("FullChargeCapacity"));
         if (full is null && io.GetLong("MaxCapacity") is > 100 and var mc)
             full = (int)mc;
 
