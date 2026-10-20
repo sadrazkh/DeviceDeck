@@ -13,6 +13,7 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Media;
 using Microsoft.Web.WebView2.Core;
 using Windows.Graphics;
+using Windows.UI.ViewManagement;
 
 namespace DeviceDeck.Shell;
 
@@ -42,6 +43,10 @@ public sealed partial class MainWindow : Window
     private TrayIcon? _tray;
     private bool _quitting;
 
+    // Windows' app theme, for settings.theme "system" (and its changes while DeviceDeck runs).
+    private readonly UISettings _windowsColors = new();
+    private bool? _appliedDark;
+
     internal MainWindow(HostServices host)
     {
         _host = host;
@@ -55,8 +60,10 @@ public sealed partial class MainWindow : Window
         SystemBackdrop = Environment.GetEnvironmentVariable("DEVICEDECK_BACKDROP") switch
         {
             "acrylic" => new DesktopAcrylicBackdrop(),
-            "micaalt" => new MicaBackdrop { Kind = Microsoft.UI.Composition.SystemBackdrops.MicaKind.BaseAlt },
-            _ => new MicaBackdrop(),
+            // Where Mica isn't supported, WinUI's own MicaBackdrop falls back to a solid colour.
+            _ when !Microsoft.UI.Composition.SystemBackdrops.MicaController.IsSupported() => new MicaBackdrop(),
+            "micaalt" => new ThemedMicaBackdrop(Microsoft.UI.Composition.SystemBackdrops.MicaKind.BaseAlt),
+            _ => new ThemedMicaBackdrop(Microsoft.UI.Composition.SystemBackdrops.MicaKind.Base),
         };
         ExtendsContentIntoTitleBar = true;
         var titleBar = AppWindow.TitleBar;
@@ -82,6 +89,7 @@ public sealed partial class MainWindow : Window
 
         ApplyTheme(host.Settings.Current.Theme);
         host.Settings.Changed += OnSettingsChanged;
+        _windowsColors.ColorValuesChanged += OnWindowsColorsChanged;
 
         if (File.Exists(_iconPath))
         {
@@ -99,8 +107,13 @@ public sealed partial class MainWindow : Window
             action => DispatcherQueue.TryEnqueue(() => action()), _hwnd, () => Scale);
         _desktop = new DesktopShell(dragOut, _updates);
 
-        Activated += (_, _) =>
+        Activated += (_, e) =>
         {
+            if (SystemBackdrop is ThemedMicaBackdrop mica)
+            {
+                mica.InputActive = e.WindowActivationState != WindowActivationState.Deactivated;
+            }
+
             if (!_loggedBackdrop)
             {
                 _loggedBackdrop = true;
@@ -249,29 +262,41 @@ public sealed partial class MainWindow : Window
         }
     }
 
-    /// <summary>settings.theme drives the window (and so Mica's tint), the caption buttons and the page's prefers-color-scheme.</summary>
+    private void OnWindowsColorsChanged(UISettings sender, object args) =>
+        DispatcherQueue.TryEnqueue(() => ApplyTheme(_host.Settings.Current.Theme));
+
+    /// <summary>Windows' "default app mode" is dark: its app background colour is dark.</summary>
+    private bool WindowsAppsDark()
+    {
+        var background = _windowsColors.GetColorValue(UIColorType.Background);
+        return background.R + background.G + background.B < 3 * 128;
+    }
+
+    /// <summary>
+    /// settings.theme drives the window, Mica's tint, the caption buttons and the page's prefers-color-scheme, always as
+    /// one explicit Light or Dark resolved here ("system" from Windows' app mode, followed live). The page's title bar,
+    /// rail and see-through surfaces sit on Mica, so a page in one theme over Mica tinted for the other is unreadable
+    /// (dark-theme near-white text on a light backdrop): nothing is left for WinUI or WebView2 to work out on their own.
+    /// </summary>
     private void ApplyTheme(AppTheme theme)
     {
-        Root.RequestedTheme = theme switch
+        var dark = theme == AppTheme.Dark || (theme == AppTheme.System && WindowsAppsDark());
+        if (SystemBackdrop is ThemedMicaBackdrop mica)
         {
-            AppTheme.Light => ElementTheme.Light,
-            AppTheme.Dark => ElementTheme.Dark,
-            _ => ElementTheme.Default,
-        };
-        AppWindow.TitleBar.PreferredTheme = theme switch
-        {
-            AppTheme.Light => TitleBarTheme.Light,
-            AppTheme.Dark => TitleBarTheme.Dark,
-            _ => TitleBarTheme.UseDefaultAppMode,
-        };
+            mica.Dark = dark;
+        }
+
+        Root.RequestedTheme = dark ? ElementTheme.Dark : ElementTheme.Light;
+        AppWindow.TitleBar.PreferredTheme = dark ? TitleBarTheme.Dark : TitleBarTheme.Light;
         if (WebView.CoreWebView2 is { } core)
         {
-            core.Profile.PreferredColorScheme = theme switch
-            {
-                AppTheme.Light => CoreWebView2PreferredColorScheme.Light,
-                AppTheme.Dark => CoreWebView2PreferredColorScheme.Dark,
-                _ => CoreWebView2PreferredColorScheme.Auto,
-            };
+            core.Profile.PreferredColorScheme = dark ? CoreWebView2PreferredColorScheme.Dark : CoreWebView2PreferredColorScheme.Light;
+        }
+
+        if (_appliedDark != dark)
+        {
+            _appliedDark = dark;
+            ShellLog.Info($"Theme {theme}: {(dark ? "dark" : "light")} for the window, Mica and the page.");
         }
     }
 
@@ -372,6 +397,7 @@ public sealed partial class MainWindow : Window
     private void OnClosed(object sender, WindowEventArgs args)
     {
         _host.Settings.Changed -= OnSettingsChanged;
+        _windowsColors.ColorValuesChanged -= OnWindowsColorsChanged;
         _deviceNotifier.Dispose();
         _updates.Dispose();
         _tray?.Dispose();
