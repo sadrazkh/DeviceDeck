@@ -6,22 +6,39 @@
     <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
     <RootNamespace>DeviceDeck.Shell</RootNamespace>
     <AssemblyName>DeviceDeck</AssemblyName>
+    <Version>0.1.0</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
 
-    <!-- WinUI 3, unpackaged, with the Windows App SDK runtime copied next to the exe. -->
+    <!-- WinUI 3, unpackaged, with the Windows App SDK runtime copied next to the exe: no Visual Studio, no MSIX. -->
     <UseWinUI>true</UseWinUI>
     <WindowsPackageType>None</WindowsPackageType>
     <WindowsAppSDKSelfContained>true</WindowsAppSDKSelfContained>
     <Platforms>x64;ARM64</Platforms>
     <RuntimeIdentifiers>win-x64;win-arm64</RuntimeIdentifiers>
     <RuntimeIdentifier Condition="'$(RuntimeIdentifier)' == ''">win-x64</RuntimeIdentifier>
+
+    <!-- Program.cs owns Main for single-instance redirection. -->
+    <DefineConstants>$(DefineConstants);DISABLE_XAML_GENERATED_MAIN</DefineConstants>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\DeviceDeck.Core\DeviceDeck.Core.csproj" />
+    <ProjectReference Include="..\DeviceDeck.Bridge\DeviceDeck.Bridge.csproj" />
+    <!-- Real providers: loaded by reflection, only when DEVICEDECK_PROVIDERS asks for them. -->
+    <ProjectReference Include="..\DeviceDeck.Ios\DeviceDeck.Ios.csproj" />
+    <ProjectReference Include="..\DeviceDeck.Android\DeviceDeck.Android.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="Placeholder\**\*" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
