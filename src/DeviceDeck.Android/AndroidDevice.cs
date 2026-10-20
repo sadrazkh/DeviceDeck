@@ -20,6 +20,7 @@ internal sealed partial class AndroidDevice : IDevice, IDisposable
     {
         Channel = channel;
         Entry = entry;
+        Options = options;
         _summary = SummaryBuilder.FromEntry(entry);
         Photos = new AndroidPhotoLibrary(channel, () => RequireProfile().Sdk);
         Apps = new AndroidAppManager(channel, RequireProfile, cache, options, _lifetime.Token);
