@@ -1,0 +1,239 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>DeviceDeck host check</title>
+<!--
+  The Shell's own test page, used until web/dist exists (the real UI is built in web/).
+  It checks the host end to end: transparent body over Mica, app-region drag in the title bar,
+  JSON-RPC calls, pushed events, device.local images and dropped files.
+-->
+<style>
+  :root {
+    color-scheme: light dark;
+    --text: #1b1b1f; --muted: #5d5d66; --card: rgba(255,255,255,.62); --stroke: rgba(0,0,0,.08);
+    --accent: #5b5bf6; --chip: rgba(91,91,246,.10); --ok: #16a34a; --warn: #d97706; --bad: #dc2626;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --text: #f1f1f4; --muted: #a6a6b2; --card: rgba(255,255,255,.05); --stroke: rgba(255,255,255,.09);
+            --accent: #8c8cff; --chip: rgba(140,140,255,.14); }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; height: 100%; background: transparent; color: var(--text);
+               font: 14px/20px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+  .titlebar { height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 calc(var(--dd-caption-right, 140px) + 12px) 0 16px;
+              app-region: drag; -webkit-app-region: drag; user-select: none; }
+  .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; }
+  .logo { width: 22px; height: 22px; border-radius: 6px; background: linear-gradient(135deg, var(--accent), #b05bf6); }
+  .nodrag { app-region: no-drag; -webkit-app-region: no-drag; }
+  .switcher, .pill, .search { height: 32px; border-radius: 8px; border: 1px solid var(--stroke); background: var(--card);
+                              color: inherit; font: inherit; padding: 0 12px; display: flex; align-items: center; gap: 8px; }
+  .switcher { cursor: pointer; }
+  .search { width: 280px; margin-left: auto; color: var(--muted); }
+  .pill { border-radius: 999px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--ok); }
+  main { height: calc(100% - 48px); overflow: auto; padding: 8px 24px 24px; display: grid;
+         grid-template-columns: minmax(320px, 1fr) minmax(320px, 1fr); gap: 16px; align-content: start; }
+  .card { background: var(--card); border: 1px solid var(--stroke); border-radius: 12px; padding: 18px 20px; }
+  .card h2 { font-size: 16px; line-height: 22px; margin: 0 0 10px; font-weight: 600; }
+  .wide { grid-column: 1 / -1; }
+  h1 { font: 600 28px/36px "Segoe UI Variable Display", "Segoe UI", sans-serif; margin: 8px 0 4px; }
+  .muted { color: var(--muted); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+  .chip { background: var(--chip); color: var(--accent); border-radius: 999px; padding: 1px 9px; font-size: 12px; }
+  .device { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 10px 0; border-top: 1px solid var(--stroke); }
+  .device:first-of-type { border-top: 0; }
+  .state { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: .04em; }
+  .thumbs { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 6px; }
+  .thumbs img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 6px; background: var(--stroke); }
+  .icons img { width: 40px; height: 40px; }
+  .log { font: 12px/18px "Cascadia Mono", Consolas, monospace; max-height: 180px; overflow: auto; white-space: pre-wrap; color: var(--muted); }
+  .checks div::before { content: "•"; margin-right: 8px; color: var(--muted); }
+  .checks .pass::before { content: "✓"; color: var(--ok); }
+  .checks .fail::before { content: "✗"; color: var(--bad); }
+  .drop { border: 1.5px dashed var(--stroke); border-radius: 10px; padding: 14px; text-align: center; color: var(--muted); }
+  .drop.over { border-color: var(--accent); color: var(--accent); }
+  button.action { height: 32px; border-radius: 8px; border: 0; background: var(--accent); color: white; font: inherit; padding: 0 14px; cursor: pointer; }
+  .tabular { font-variant-numeric: tabular-nums; }
+</style>
+</head>
+<body>
+  <header class="titlebar">
+    <div class="brand"><div class="logo"></div>DeviceDeck</div>
+    <button class="switcher nodrag" id="switcher"><span class="dot"></span><span id="current">No phone</span> ⌄</button>
+    <div class="search nodrag">Search ⌃K</div>
+    <div class="pill nodrag tabular" id="transfers">Transfers: 0</div>
+  </header>
+  <main>
+    <section class="card wide">
+      <h1>Host check</h1>
+      <div class="muted" id="hello">Waiting for the host…</div>
+    </section>
+    <section class="card">
+      <h2>Phones <span class="muted" id="count"></span></h2>
+      <div id="devices" class="muted">…</div>
+    </section>
+    <section class="card">
+      <h2>Checks</h2>
+      <div class="checks" id="checks"></div>
+    </section>
+    <section class="card wide">
+      <h2>Photos from device.local <span class="muted" id="photoCount"></span></h2>
+      <div class="thumbs" id="thumbs"></div>
+    </section>
+    <section class="card">
+      <h2>Apps</h2>
+      <div class="row icons" id="icons"></div>
+    </section>
+    <section class="card">
+      <h2>Drop files here</h2>
+      <div class="drop nodrag" id="drop">Files dropped here are sent to the host with postMessageWithAdditionalObjects.</div>
+    </section>
+    <section class="card wide">
+      <h2>Events</h2>
+      <div class="log" id="log"></div>
+    </section>
+  </main>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const webview = window.chrome && window.chrome.webview;
+  const pending = new Map();
+  let nextId = 1;
+  const log = (line) => { const el = $('log'); el.textContent = `${new Date().toLocaleTimeString()}  ${line}\n` + el.textContent.slice(0, 6000); };
+  const check = (name, ok, detail) => {
+    const div = document.createElement('div');
+    div.className = ok ? 'pass' : 'fail';
+    div.textContent = detail ? `${name}: ${detail}` : name;
+    $('checks').appendChild(div);
+  };
+
+  if (!webview) {
+    $('hello').textContent = 'Not running inside DeviceDeck (window.chrome.webview is missing).';
+    return;
+  }
+
+  const call = (method, params = {}, files) => new Promise((resolve, reject) => {
+    const id = nextId++;
+    pending.set(id, { resolve, reject });
+    const text = JSON.stringify({ jsonrpc: '2.0', id, method, params });
+    if (files) webview.postMessageWithAdditionalObjects(text, files); else webview.postMessage(text);
+  });
+
+  webview.addEventListener('message', (e) => {
+    const msg = e.data;
+    if (msg && msg.id !== undefined && pending.has(msg.id)) {
+      const p = pending.get(msg.id); pending.delete(msg.id);
+      if (msg.error) p.reject(msg.error); else p.resolve(msg.result);
+      return;
+    }
+    if (msg && msg.method) {
+      if (msg.method === 'transfer.updated') {
+        const j = msg.params; log(`transfer.updated ${j.state} ${j.doneItems}/${j.totalItems} ${j.title}`);
+        $('transfers').textContent = `Transfers: ${j.state} ${j.totalBytes ? Math.round(100 * j.doneBytes / j.totalBytes) : 0}%`;
+      } else {
+        log(`${msg.method} ${JSON.stringify(msg.params).slice(0, 160)}`);
+      }
+      if (msg.method.startsWith('device.')) refreshDevices();
+    }
+  });
+
+  const stateColour = { ready: 'var(--ok)', locked: 'var(--warn)', awaitingTrust: 'var(--warn)', unauthorized: 'var(--warn)', connecting: 'var(--muted)', disconnected: 'var(--bad)' };
+  let firstDevice = null;
+
+  async function refreshDevices() {
+    const devices = await call('device.list');
+    $('count').textContent = `(${devices.length})`;
+    $('devices').innerHTML = '';
+    for (const d of devices) {
+      const row = document.createElement('div');
+      row.className = 'device';
+      row.innerHTML = `<div><strong></strong> <span class="muted"></span></div><div class="state" style="color:${stateColour[d.state] || 'inherit'}">${d.state}</div>
+        <div class="row" style="grid-column:1/-1"></div>`;
+      row.querySelector('strong').textContent = d.name;
+      row.querySelector('.muted').textContent = `${d.marketingName || d.model} · ${d.platform === 'ios' ? 'iOS' : 'Android'} ${d.osVersion} · ${d.connection.toUpperCase()}`;
+      const chips = row.querySelector('.row');
+      for (const c of d.capabilities.slice(0, 9)) { const s = document.createElement('span'); s.className = 'chip'; s.textContent = c; chips.appendChild(s); }
+      if (d.capabilities.length > 9) { const s = document.createElement('span'); s.className = 'muted'; s.textContent = `+${d.capabilities.length - 9}`; chips.appendChild(s); }
+      $('devices').appendChild(row);
+    }
+    const ready = devices.find(d => d.state === 'ready');
+    $('current').textContent = ready ? ready.name : 'No phone';
+    if (ready && (!firstDevice || firstDevice.id !== ready.id)) { firstDevice = ready; showPhotos(ready); showApps(ready); }
+  }
+
+  async function showPhotos(device) {
+    const page = await call('photos.list', { deviceId: device.id, offset: 0, limit: 24 });
+    $('photoCount').textContent = `(${page.total.toLocaleString()} on ${device.name})`;
+    $('thumbs').innerHTML = '';
+    for (const a of page.items) {
+      const img = new Image();
+      img.alt = a.fileName;
+      img.title = `${a.fileName} · ${(a.size / 1e6).toFixed(1)} MB`;
+      img.src = `https://device.local/thumb/${encodeURIComponent(device.id)}/${encodeURIComponent(a.id)}?s=256`;
+      $('thumbs').appendChild(img);
+    }
+  }
+
+  async function showApps(device) {
+    const apps = await call('apps.list', { deviceId: device.id, includeSystem: true });
+    $('icons').innerHTML = '';
+    for (const a of apps) {
+      const img = new Image(); img.title = a.name;
+      img.src = `https://device.local/icon/${encodeURIComponent(device.id)}/${encodeURIComponent(a.id)}`;
+      $('icons').appendChild(img);
+    }
+  }
+
+  let clicks = 0;
+  $('switcher').addEventListener('click', () => { clicks++; log('switcher clicked'); $('current').textContent = `${firstDevice ? firstDevice.name : 'No phone'} · clicked ${clicks}`; });
+  document.querySelector('.search').addEventListener('mousedown', () => log('search pressed'));
+
+  const drop = $('drop');
+  drop.addEventListener('dragover', (e) => { e.preventDefault(); drop.classList.add('over'); });
+  drop.addEventListener('dragleave', () => drop.classList.remove('over'));
+  drop.addEventListener('drop', async (e) => {
+    e.preventDefault(); drop.classList.remove('over');
+    const files = [...e.dataTransfer.files];
+    log(`dropped ${files.length} file(s): ${files.map(f => f.name).join(', ')}`);
+    if (!firstDevice || files.length === 0) return;
+    try {
+      // As the contract says: params.files is [] and the host fills it from the File objects.
+      const roots = await call('files.roots', { deviceId: firstDevice.id });
+      const { jobId } = await call('files.copyToDevice', { deviceId: firstDevice.id, root: roots[0].key, files: [], path: '/' }, files);
+      log(`copyToDevice job ${jobId} into ${roots[0].label}`);
+    } catch (err) { log('drop failed: ' + JSON.stringify(err)); }
+  });
+
+  (async () => {
+    try {
+      const hello = await call('app.hello');
+      $('hello').textContent = `Connected to the host, version ${hello.version}. The page background is transparent; what you see behind the cards is Mica.`;
+      check('app.hello', hello.isWebView === true, `version ${hello.version}`);
+      const drivers = await call('drivers.status');
+      check('drivers.status', drivers.length > 0, drivers.map(d => `${d.providerId} ${d.state}`).join(', '));
+      await refreshDevices();
+      const settings = await call('settings.get');
+      check('settings.get', !!settings.language, `${settings.language}, ${settings.theme}, rule ${settings.conflictRule}`);
+      try { await call('device.storage', { deviceId: 'nobody' }); check('error mapping', false); }
+      catch (err) { check('error mapping', err.code === -32000 && err.data && err.data.code === 'device_not_found', `${err.code} ${err.data && err.data.code}`); }
+      try { await call('no.such.method'); check('unknown method', false); }
+      catch (err) { check('unknown method', err.code === -32601, `${err.code}`); }
+      const transfers = await call('transfers.list');
+      check('transfers.list', Array.isArray(transfers), `${transfers.length} job(s)`);
+      const region = getComputedStyle(document.querySelector('.titlebar'));
+      const value = (region.getPropertyValue('app-region') || region.getPropertyValue('-webkit-app-region')).trim();
+      check('app-region', value === 'drag', `title bar computes to "${value}"`);
+      setTimeout(() => {
+        const right = getComputedStyle(document.documentElement).getPropertyValue('--dd-caption-right').trim();
+        check('caption insets', right.endsWith('px'), `--dd-caption-right = ${right || 'unset'}`);
+      }, 300);
+    } catch (err) {
+      $('hello').textContent = 'The host did not answer: ' + JSON.stringify(err);
+    }
+  })();
+})();
+</script>
+</body>
+</html>

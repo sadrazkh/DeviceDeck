@@ -4,6 +4,7 @@
     <Project Path="src/DeviceDeck.Bridge/DeviceDeck.Bridge.csproj" />
     <Project Path="src/DeviceDeck.Core/DeviceDeck.Core.csproj" />
     <Project Path="src/DeviceDeck.Ios/DeviceDeck.Ios.csproj" />
+    <Project Path="src/DeviceDeck.Shell/DeviceDeck.Shell.csproj" />
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/DeviceDeck.Android.Tests/DeviceDeck.Android.Tests.csproj" />

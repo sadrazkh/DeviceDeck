@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Window
+    x:Class="DeviceDeck.Shell.MainWindow"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    Title="DeviceDeck">
+    <!-- The page draws everything, title bar included; its transparent body shows the Mica backdrop. -->
+    <Grid x:Name="Root" Background="Transparent">
+        <WebView2 x:Name="WebView" DefaultBackgroundColor="Transparent">
+            <WebView2.Resources>
+                <!--
+                  WinUI paints the visual that hosts the browser with the theme background
+                  (SolidBackgroundFillColorBase), so a transparent page shows #202020 / #F3F3F3 instead of Mica
+                  (microsoft/microsoft-ui-xaml#6527). WebView2.cpp reads that colour from this resource key and only
+                  adds its own when the key is missing; supplying a transparent brush lets Mica through.
+                  High contrast keeps its own key (BrushForThemeBackgroundColor_HC): Mica is off there anyway.
+                -->
+                <SolidColorBrush x:Key="BrushForThemeBackgroundColor" Color="Transparent" />
+            </WebView2.Resources>
+        </WebView2>
+    </Grid>
+</Window>
