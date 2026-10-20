@@ -38,6 +38,13 @@ public sealed class PhotosToAppHandler : TransferHandler<PhotosToAppRequest>
             }
         }
 
+        // iPhones only: an Android phone takes photos straight into its gallery (photos.import). Since app files came to
+        // Android too, AppDocuments alone no longer tells the two apart.
+        if (device.Summary.Platform != DevicePlatform.Ios)
+        {
+            throw new DeviceException(DeviceErrorCodes.NotSupported, $"{device.Summary.Name} adds photos straight to its gallery; this is for iPhones.");
+        }
+
         if ((device.Summary.Capabilities & DeviceCapability.AppDocuments) == 0)
         {
             throw new DeviceException(DeviceErrorCodes.NotSupported, $"{device.Summary.Name} doesn't share app folders.");

@@ -251,6 +251,8 @@ export class MockPhotoBackup {
     },
     'photos.importToApp': ({ deviceId, appId, files }) => {
       const device = this.host.requireReady(deviceId, 'appDocuments');
+      // iPhones only, as in the host: Android adds photos straight to its gallery (photos.import).
+      if (device.platform !== 'ios') throw this.host.fault('not_supported', `${device.name} adds photos straight to its gallery; this is for iPhones.`);
       const app = this.host.apps(deviceId).find((a) => a.id === appId && a.fileSharing);
       if (!app) throw this.host.fault('path_not_found', "That app doesn't share files with a PC, or isn't on the phone.");
       if (files.length === 0) throw this.host.badParams('Choose at least one photo.');

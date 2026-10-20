@@ -468,6 +468,22 @@ public sealed class PhotosBackupTests
     }
 
     [Fact]
+    public async Task Adding_photos_to_an_app_is_for_iPhones_only_since_Android_has_its_gallery()
+    {
+        // Android phones share app folders too now, so the capability alone must not let this through.
+        var phone = new PhotosTestPhone("photos-android", DevicePlatform.Android, "Test Android");
+        await using var host = await PhotosBackupHost.StartAsync(phone);
+        var picture = Path.Combine(host.Root, "pc", "beach.jpg");
+        Directory.CreateDirectory(Path.GetDirectoryName(picture)!);
+        await File.WriteAllBytesAsync(picture, [1, 2, 3]);
+
+        var response = await new BridgeCalls(host.Transport).CallAsync("photos.importToApp",
+            new { deviceId = phone.Summary.Id, appId = PhotosTestPhone.AppId, files = new[] { picture } });
+
+        Assert.Equal("not_supported", (string?)response["error"]!["data"]!["code"]);
+    }
+
+    [Fact]
     public async Task A_library_without_backup_support_is_read_through_its_pages()
     {
         var fake = new FakeDeviceProvider(new FakeOptions { ArrivalDelay = TimeSpan.Zero, IndexDuration = TimeSpan.Zero, Devices = [TestPhones.Android(photos: 3)] });
