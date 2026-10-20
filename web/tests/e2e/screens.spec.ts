@@ -74,6 +74,28 @@ test('top-tabs layout (direction C switch)', async ({ page }) => {
   consoleWatch.assertClean();
 });
 
+for (const variant of ['light', 'rtl'] as const) {
+  test(`title bar keeps clear of the host's caption buttons (${variant})`, async ({ page }) => {
+    await page.goto(query(variant, { screen: 'overview' }));
+    await expect(page.getByTestId('screen-overview')).toBeVisible();
+    // What the WinUI host publishes; the buttons stay on the right in Persian too.
+    await page.evaluate(() => {
+      const s = document.documentElement.style;
+      s.setProperty('--dd-caption-left', '0px');
+      s.setProperty('--dd-caption-right', '188px');
+      s.setProperty('--dd-titlebar-height', '48px');
+    });
+    const width = page.viewportSize()!.width;
+    const controls = page.locator('header button');
+    const count = await controls.count();
+    expect(count).toBeGreaterThan(2);
+    for (let i = 0; i < count; i++) {
+      const box = await controls.nth(i).boundingBox();
+      if (box) expect(box.x + box.width, `button ${i}`).toBeLessThanOrEqual(width - 188);
+    }
+  });
+}
+
 test('Persian mirrors the layout and uses Persian digits', async ({ page }) => {
   await page.goto(query('rtl', { screen: 'overview' }));
   await expect(page.getByTestId('screen-overview')).toBeVisible();

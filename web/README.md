@@ -52,7 +52,7 @@ driver. The same controls are on `window.deviceDeckMock` (`unplug(id)`, `plugBac
 ## Host notes
 
 - `html` and `body` stay transparent when `window.chrome.webview` exists (`data-host="webview"`); a plain browser gets a neutral backdrop.
-- The title bar marks drag regions with `app-region: drag` and leaves `--caption-reserve` (140 px) free at its inline end for the native caption buttons; it is logical, so it moves left in Persian.
+- The title bar marks drag regions with `app-region: drag` and keeps clear of the native caption buttons using the host's `--dd-caption-left` / `--dd-caption-right` / `--dd-titlebar-height` (physical sides, so the gap stays on the right in Persian too); a plain browser falls back to 140 px on the right.
 - Images come from `https://device.local/…` exactly as in the contract; dropped files go through `postMessageWithAdditionalObjects` with `params.files = []`.
 - The production build carries a CSP with `connect-src 'none'`: the page makes no network requests.
 
