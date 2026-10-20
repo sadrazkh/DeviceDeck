@@ -83,8 +83,11 @@ public static class BatteryReport
         }
 
         Chart(html, t.HealthChart, snapshots, s => s.HealthPercent, v => f.Percent((int)Math.Round(v)), f, reference: null, referenceLabel: null, floorAtZero: false, maxCap: 100);
-        Chart(html, t.CapacityChart, snapshots, s => s.FullChargeCapacityMah, v => f.Mah((int)Math.Round(v)), f,
-            reference: latest.DesignCapacityMah, referenceLabel: t.DesignCapacity, floorAtZero: false, maxCap: null);
+        // Capacity ticks are bare numbers (the title names the unit), so long Persian units never crowd the axis.
+        Chart(html, t.CapacityChart, snapshots, s => s.FullChargeCapacityMah, v => f.Number((int)Math.Round(v)), f,
+            reference: latest.DesignCapacityMah,
+            referenceLabel: latest.DesignCapacityMah is { } designMah ? $"{t.DesignCapacity} {f.Number(designMah)}" : null,
+            floorAtZero: false, maxCap: null);
         Chart(html, t.CyclesChart, snapshots, s => s.CycleCount, v => f.Number((int)Math.Round(v)), f, reference: null, referenceLabel: null, floorAtZero: true, maxCap: null);
 
         html.Append($"""
@@ -183,16 +186,19 @@ public static class BatteryReport
         var (min, max, step) = NiceRange(floorAtZero ? 0 : values.Min(), values.Max(), maxCap);
         var t0 = points[0].At.ToUnixTimeMilliseconds();
         var t1 = points[^1].At.ToUnixTimeMilliseconds();
-        double X(DateTimeOffset at) => t1 == t0 ? left + (width - left - right) / 2 : left + (at.ToUnixTimeMilliseconds() - t0) / (double)(t1 - t0) * (width - left - right);
+        // Time runs with the reading direction: right to left in Persian, as in the app. text-anchor is logical,
+        // so mirroring the x positions is all a right-to-left page needs.
+        var rtl = f.Persian;
+        double M(double x) => rtl ? width - x : x;
+        double X(DateTimeOffset at) => M(t1 == t0 ? left + (width - left - right) / 2 : left + (at.ToUnixTimeMilliseconds() - t0) / (double)(t1 - t0) * (width - left - right));
         double Y(double v) => top + (1 - (v - min) / (max - min)) * (height - top - bottom);
         string N(double v) => v.ToString("0.#", CultureInfo.InvariantCulture);
 
-        // In a right-to-left page the time axis still runs left to right, as charts do in Persian print.
-        html.Append($"<svg viewBox=\"0 0 {N(width)} {N(height)}\" role=\"img\" aria-label=\"{E(title)}\" dir=\"ltr\">\n");
+        html.Append($"<svg viewBox=\"0 0 {N(width)} {N(height)}\" role=\"img\" aria-label=\"{E(title)}\">\n");
         for (var v = min; v <= max + step / 2; v += step)
         {
-            html.Append($"<line class=\"grid\" x1=\"{N(left)}\" x2=\"{N(width - right)}\" y1=\"{N(Y(v))}\" y2=\"{N(Y(v))}\"/>")
-                .Append($"<text class=\"tick\" x=\"{N(left - 8)}\" y=\"{N(Y(v) + 4)}\" text-anchor=\"end\">{E(label(v))}</text>\n");
+            html.Append($"<line class=\"grid\" x1=\"{N(M(left))}\" x2=\"{N(M(width - right))}\" y1=\"{N(Y(v))}\" y2=\"{N(Y(v))}\"/>")
+                .Append($"<text class=\"tick\" x=\"{N(M(left - 8))}\" y=\"{N(Y(v) + 4)}\" text-anchor=\"end\">{E(label(v))}</text>\n");
         }
 
         foreach (var (at, anchor) in new[] { (points[0].At, "start"), (points[^1].At, "end") }.DistinctBy(p => p.At))
@@ -202,8 +208,8 @@ public static class BatteryReport
 
         if (reference is { } design)
         {
-            html.Append($"<line class=\"reference\" x1=\"{N(left)}\" x2=\"{N(width - right)}\" y1=\"{N(Y(design))}\" y2=\"{N(Y(design))}\"/>")
-                .Append($"<text class=\"tick\" x=\"{N(width - right + 8)}\" y=\"{N(Y(design) + 4)}\">{E(referenceLabel ?? "")}</text>\n");
+            html.Append($"<line class=\"reference\" x1=\"{N(M(left))}\" x2=\"{N(M(width - right))}\" y1=\"{N(Y(design))}\" y2=\"{N(Y(design))}\"/>")
+                .Append($"<text class=\"tick\" x=\"{N(M(width - right + 8))}\" y=\"{N(Y(design) + 4)}\">{E(referenceLabel ?? "")}</text>\n");
         }
 
         if (points.Count > 1)
@@ -219,7 +225,7 @@ public static class BatteryReport
 
         var last = points[^1];
         var lastLabelY = reference is { } d2 && Math.Abs(Y(d2) - Y(last.Value)) < 14 ? Y(last.Value) - 10 : Y(last.Value) + 4;
-        html.Append($"<text class=\"end\" x=\"{N(X(last.At) + 10)}\" y=\"{N(lastLabelY)}\">{E(label(last.Value))}</text>\n</svg>\n</section>\n");
+        html.Append($"<text class=\"end\" x=\"{N(X(last.At) + (rtl ? -10 : 10))}\" y=\"{N(lastLabelY)}\">{E(label(last.Value))}</text>\n</svg>\n</section>\n");
     }
 
     /// <summary>Clean tick values around the data: steps of 1, 2, 5 × 10ⁿ (at least 1), about four lines.</summary>
@@ -270,9 +276,9 @@ public static class BatteryReport
 
         public string Percent(int value) => Persian ? Digits(value.ToString(CultureInfo.InvariantCulture)) + "٪" : value.ToString(CultureInfo.InvariantCulture) + "%";
 
-        public string Mah(int value) => Number(value) + (Persian ? " میلی‌آمپرساعت" : " mAh");
+        public string Mah(int value) => Number(value) + " mAh";
 
-        public string Celsius(double value) => Digits(value.ToString("0.#", CultureInfo.InvariantCulture).Replace('.', Persian ? '٫' : '.')) + " °C";
+        public string Celsius(double value) => Digits(value.ToString("0.#", CultureInfo.InvariantCulture)) + " °C";
 
         public string Date(DateTimeOffset at, bool withTime) =>
             Digits(at.ToLocalTime().ToString(withTime ? (Persian ? "d MMMM yyyy، HH:mm" : "d MMM yyyy, HH:mm") : (Persian ? "d MMMM yyyy" : "d MMM yyyy"), _culture));
@@ -284,12 +290,17 @@ public static class BatteryReport
                 return text;
             }
 
+            // Persian digits and separators (.NET's fa-IR gives ASCII ones): 3,699 → ۳٬۶۹۹, 26.1 → ۲۶٫۱.
             var chars = text.ToCharArray();
             for (var i = 0; i < chars.Length; i++)
             {
                 if (chars[i] is >= '0' and <= '9')
                 {
                     chars[i] = (char)('۰' + (chars[i] - '0'));
+                }
+                else if (chars[i] is ',' or '.' && i > 0 && i + 1 < chars.Length && char.IsDigit(chars[i - 1]) && char.IsDigit(chars[i + 1]))
+                {
+                    chars[i] = chars[i] == ',' ? '٬' : '٫';
                 }
             }
 
@@ -343,7 +354,7 @@ public static class BatteryReport
             "iPhone health here is estimated from the battery's full-charge and design capacity, so it can differ from \"Maximum Capacity\" in iOS Settings, which Apple corrects with data the phone doesn't share over USB.",
             "Estimated from full-charge and design capacity.",
             "Health over time",
-            "Full-charge capacity over time",
+            "Full-charge capacity over time (mAh)",
             "Charge cycles over time",
             "Design",
             "All readings",
@@ -375,7 +386,7 @@ public static class BatteryReport
             "سلامت باتری آیفون در اینجا از ظرفیت شارژ کامل و ظرفیت طراحی تخمین زده می‌شود، پس ممکن است با «حداکثر ظرفیت» در تنظیمات iOS فرق داشته باشد؛ اپل آن عدد را با داده‌هایی اصلاح می‌کند که گوشی از راه USB نمی‌دهد.",
             "تخمین از ظرفیت شارژ کامل و ظرفیت طراحی.",
             "سلامت در طول زمان",
-            "ظرفیت شارژ کامل در طول زمان",
+            "ظرفیت شارژ کامل در طول زمان (mAh)",
             "چرخهٔ شارژ در طول زمان",
             "طراحی",
             "همهٔ اندازه‌گیری‌ها",

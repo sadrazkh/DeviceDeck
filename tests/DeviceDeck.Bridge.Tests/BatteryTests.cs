@@ -1,3 +1,5 @@
+using System.Globalization;
+using System.Text.RegularExpressions;
 using DeviceDeck.Bridge.Tests.Support;
 using DeviceDeck.Core.Abstractions;
 using DeviceDeck.Core.Battery;
@@ -137,8 +139,12 @@ public sealed class BatteryTests
         Assert.Contains("گزارش باتری", html);
         Assert.Contains("۸۸٪", html);
         Assert.Contains("سلامت (تخمینی)", html);
-        Assert.Contains("dir=\"ltr\"", html); // the charts' time axis still runs left to right
         Assert.DoesNotContain(">88%<", html);
+
+        // Time runs right to left, as in the app: the older reading sits further right.
+        var two = BatteryReport.Render([Snap("a", T, 90, 500), Snap("a", T.AddMonths(3), 88, 530)], "fa", T, "0.2.0");
+        var xs = Regex.Matches(two, "<circle class=\"dot\" cx=\"([0-9.]+)\"").Select(m => double.Parse(m.Groups[1].Value, CultureInfo.InvariantCulture)).ToList();
+        Assert.True(xs[0] > xs[1], $"oldest at {xs[0]}, newest at {xs[1]}");
     }
 
     [Theory]
@@ -176,7 +182,7 @@ public sealed class BatteryTests
         var second = (string)(await host.ResultAsync("battery.export", new { deviceId = id, destination = folder }))!["path"]!;
         Assert.NotEqual(first, second); // never replaces a report already there
         Assert.Contains("dir=\"rtl\"", await File.ReadAllTextAsync(first));
-        Assert.Contains("dir=\"ltr\"", await File.ReadAllTextAsync(second)); // the app's language (English) when none is given
+        Assert.Contains("lang=\"en\" dir=\"ltr\"", await File.ReadAllTextAsync(second)); // the app's language (English) when none is given
         Assert.StartsWith("Battery report - Clean iPhone - ", Path.GetFileName(first));
 
         var none = await host.CallAsync("battery.export", new { deviceId = "unknown", destination = folder });
