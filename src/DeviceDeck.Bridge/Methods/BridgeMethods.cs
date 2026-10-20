@@ -5,6 +5,7 @@ using DeviceDeck.Bridge.JsonRpc;
 using DeviceDeck.Core.Abstractions;
 using DeviceDeck.Core.Fake;
 using DeviceDeck.Core.Hub;
+using DeviceDeck.Core.Notifications;
 using DeviceDeck.Core.Settings;
 using DeviceDeck.Core.Transfers;
 
@@ -22,6 +23,14 @@ public sealed class BridgeServices
 
     /// <summary>When set, dev.* methods simulate a pulled cable on the fake phones.</summary>
     public FakeDeviceProvider? DevFake { get; init; }
+
+    // Desktop (round 2)
+
+    /// <summary>Windows notifications; any feature may show one (see INotificationService).</summary>
+    public INotificationService Notifications { get; init; } = NullNotificationService.Instance;
+
+    /// <summary>Drag out, opening PC files and updates; null outside the window (those methods then fail with not_supported).</summary>
+    public IDesktopShell? Desktop { get; init; }
 }
 
 /// <summary>Registers every method of docs/bridge-contract.md on a dispatcher.</summary>
@@ -205,6 +214,8 @@ public static class BridgeMethods
                 ?? throw new ArgumentException("params must be an object of settings.");
             return Task.FromResult(s.Settings.Update(patch));
         });
+
+        DesktopMethods.Register(rpc, s);
 
         if (s.DevFake is { } fake)
         {

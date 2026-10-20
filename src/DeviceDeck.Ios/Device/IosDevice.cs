@@ -14,7 +14,7 @@ namespace DeviceDeck.Ios.Device;
 /// (public values → pair record → session → service probe) and keeps <see cref="Summary"/> current:
 /// Connecting → AwaitingTrust / Locked / Ready. Every operation opens its own service connection.
 /// </summary>
-public sealed class IosDevice : IDevice, IAsyncDisposable
+public sealed partial class IosDevice : IDevice, IAsyncDisposable
 {
     public const string MediaRoot = "media";
     public const string AppRootPrefix = "app:";
@@ -291,7 +291,7 @@ public sealed class IosDevice : IDevice, IAsyncDisposable
         ConnectionKind connection;
         lock (_gate)
             connection = _links.Count == 0 || _links.ContainsValue(UsbmuxConnectionType.Usb) ? ConnectionKind.Usb : ConnectionKind.Wifi;
-        var next = LockdownMapping.Summary(Udid, _values, connection, state);
+        var next = LockdownMapping.Summary(Udid, _values, connection, state) with { StateDetail = StateDetailFor(state) };
         if (next == Summary || _gone)
             return;
         Summary = next;

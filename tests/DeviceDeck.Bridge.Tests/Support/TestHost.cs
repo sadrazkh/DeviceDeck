@@ -6,6 +6,7 @@ using DeviceDeck.Bridge.Methods;
 using DeviceDeck.Core;
 using DeviceDeck.Core.Fake;
 using DeviceDeck.Core.Hub;
+using DeviceDeck.Core.Notifications;
 using DeviceDeck.Core.Settings;
 using DeviceDeck.Core.Transfers;
 using DeviceDeck.Core.Transfers.Handlers;
@@ -17,7 +18,8 @@ internal sealed class TestHost : IAsyncDisposable
 {
     private int _nextId;
 
-    private TestHost(string root, FakeDeviceProvider fake, DeviceHub hub, SqliteTransferStore store, TransferQueue queue, CountingKeepAwake awake)
+    private TestHost(string root, FakeDeviceProvider fake, DeviceHub hub, SqliteTransferStore store, TransferQueue queue, CountingKeepAwake awake,
+        INotificationService? notifications = null)
     {
         Root = root;
         Paths = new AppPaths(Path.Combine(root, "app"));
@@ -38,6 +40,7 @@ internal sealed class TestHost : IAsyncDisposable
             Screenshots = new ScreenshotStore(),
             Version = "9.9.9-test",
             DevFake = fake,
+            Notifications = notifications ?? NullNotificationService.Instance,
         };
         Bridge = new BridgeHost(Transport, Services);
     }
@@ -65,7 +68,13 @@ internal sealed class TestHost : IAsyncDisposable
     public static Task<TestHost> StartAsync(params FakeDeviceSpec[] phones) =>
         StartAsync(null, null, phones);
 
-    public static async Task<TestHost> StartAsync(long? bytesPerSecond, TransferQueueOptions? options, params FakeDeviceSpec[] phones)
+    public static Task<TestHost> StartAsync(INotificationService notifications, params FakeDeviceSpec[] phones) =>
+        StartAsync(null, null, notifications, phones);
+
+    public static Task<TestHost> StartAsync(long? bytesPerSecond, TransferQueueOptions? options, params FakeDeviceSpec[] phones) =>
+        StartAsync(bytesPerSecond, options, null, phones);
+
+    private static async Task<TestHost> StartAsync(long? bytesPerSecond, TransferQueueOptions? options, INotificationService? notifications, FakeDeviceSpec[] phones)
     {
         var root = Path.Combine(Path.GetTempPath(), "DeviceDeckTests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -84,7 +93,7 @@ internal sealed class TestHost : IAsyncDisposable
         var awake = new CountingKeepAwake();
         var queue = new TransferQueue(hub, store, TransferHandlers.All(), awake, options ?? FastQueue());
         queue.Start();
-        return new TestHost(root, fake, hub, store, queue, awake);
+        return new TestHost(root, fake, hub, store, queue, awake, notifications);
     }
 
     public static TransferQueueOptions FastQueue() => new()

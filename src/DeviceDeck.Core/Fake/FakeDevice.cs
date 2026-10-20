@@ -3,7 +3,7 @@ using DeviceDeck.Core.Abstractions;
 namespace DeviceDeck.Core.Fake;
 
 /// <summary>One simulated phone. It survives a simulated unplug, so deletions and installs are still there when it returns.</summary>
-public sealed class FakeDevice : IDevice
+public sealed partial class FakeDevice : IDevice
 {
     private readonly FakeDeviceProvider _provider;
     private DeviceSummary _summary;
@@ -14,7 +14,7 @@ public sealed class FakeDevice : IDevice
         _provider = provider;
         Spec = spec;
         Options = options;
-        _summary = spec.Summary;
+        _summary = WithRename(spec.Summary);
         Photos = new FakePhotoLibrary(this);
         Apps = new FakeAppManager(this);
         Actions = new FakeDeviceActions(this);

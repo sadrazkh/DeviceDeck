@@ -118,6 +118,7 @@ public sealed class AndroidDeviceProvider : IDeviceProvider
                 if (!_devices.TryGetValue(entry.Serial, out var device))
                 {
                     device = new AndroidDevice(CreateChannel(entry), entry, _cache, _options);
+                    device.Renamed += summary => Raise(new DeviceChangedEventArgs(DeviceChange.Changed, summary));
                     _devices[entry.Serial] = device;
                     events.Add(new DeviceChangedEventArgs(DeviceChange.Added, device.Summary));
                     if (entry.State == SummaryBuilder.OnlineState)

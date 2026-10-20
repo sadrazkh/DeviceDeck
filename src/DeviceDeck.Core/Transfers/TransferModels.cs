@@ -2,7 +2,13 @@ namespace DeviceDeck.Core.Transfers;
 
 // The bridge-only shapes of docs/bridge-contract.md ("TransferJob") plus what the queue keeps per item.
 
-public enum TransferKind { PhotosExport, PhotosImport, CopyToPc, CopyToDevice, AppInstall, AppExport }
+public enum TransferKind
+{
+    PhotosExport, PhotosImport, CopyToPc, CopyToDevice, AppInstall, AppExport,
+
+    /// <summary>Photos or files dragged into File Explorer: the queue copies them while Explorer reads them (virtual files).</summary>
+    DragOut,
+}
 
 public enum TransferState { Queued, Running, Paused, WaitingForDevice, NeedsDecision, Done, Failed, Cancelled }
 

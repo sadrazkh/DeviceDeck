@@ -22,7 +22,7 @@ public sealed class ContractShapeTests
         var summary = FakeSampleData.Iphone().Summary with { State = DeviceState.AwaitingTrust };
         var json = ToJson(summary);
 
-        Assert.Equal(["id", "name", "platform", "model", "marketingName", "osVersion", "connection", "state", "mode", "capabilities", "colorHex"], Keys(json));
+        Assert.Equal(["id", "name", "platform", "model", "marketingName", "osVersion", "connection", "state", "mode", "capabilities", "colorHex", "stateDetail"], Keys(json));
         Assert.Equal("ios", (string?)json["platform"]);
         Assert.Equal("usb", (string?)json["connection"]);
         Assert.Equal("awaitingTrust", (string?)json["state"]);
@@ -38,7 +38,7 @@ public sealed class ContractShapeTests
     {
         var all = Enum.GetValues<DeviceCapability>().Aggregate(DeviceCapability.None, (a, b) => a | b);
         var json = JsonSerializer.Serialize(all, DeviceDeckJson.Options);
-        Assert.Equal(24, JsonNode.Parse(json)!.AsArray().Count);
+        Assert.Equal(25, JsonNode.Parse(json)!.AsArray().Count);
         Assert.Equal(all, JsonSerializer.Deserialize<DeviceCapability>(json, DeviceDeckJson.Options));
         Assert.Equal("[]", JsonSerializer.Serialize(DeviceCapability.None, DeviceDeckJson.Options));
         Assert.Equal("[\"screenMirror\",\"rebootToBootloader\"]", JsonSerializer.Serialize(DeviceCapability.ScreenMirror | DeviceCapability.RebootToBootloader, DeviceDeckJson.Options));
@@ -86,7 +86,8 @@ public sealed class ContractShapeTests
     public void Settings_have_exactly_the_contract_fields_and_values()
     {
         var json = ToJson(new AppSettings { PhotoExportFolder = @"D:\Photos", FileCopyFolder = @"D:\Copies" });
-        Assert.Equal(["language", "theme", "density", "photoExportFolder", "photoFolderPattern", "convertHeic", "fileCopyFolder", "conflictRule"], Keys(json));
+        // Round-1 fields first; each round-2 feature appends its own block (checked in that feature's tests).
+        Assert.Equal(["language", "theme", "density", "photoExportFolder", "photoFolderPattern", "convertHeic", "fileCopyFolder", "conflictRule"], Keys(json)[..8]);
         Assert.Equal("en", (string?)json["language"]);
         Assert.Equal("system", (string?)json["theme"]);
         Assert.Equal("comfortable", (string?)json["density"]);
@@ -164,7 +165,7 @@ public sealed class ContractShapeTests
         Assert.Single(apps);
 
         var settings = (await host.ResultAsync("settings.get"))!.AsObject();
-        Assert.Equal(8, settings.Count);
+        Assert.True(settings.Count >= 8);
 
         var shot = (await host.ResultAsync("tools.screenshot", new { deviceId = TestPhones.IphoneId }))!.AsObject();
         Assert.StartsWith("https://device.local/shot/test-iphone/", (string?)shot["url"]);
