@@ -25,7 +25,33 @@ public static partial class Program
             SynchronizationContext.SetSynchronizationContext(new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread()));
             _ = new App();
         });
+
+        Shutdown();
         return 0;
+    }
+
+    /// <summary>
+    /// The last window has closed and the message loop is over. Let a new launch start fresh instead of being
+    /// redirected here, then stop the host and wait for it: the process must not exit before every provider's
+    /// DisposeAsync has finished (the Android provider stops its adb server there).
+    /// </summary>
+    private static void Shutdown()
+    {
+        SynchronizationContext.SetSynchronizationContext(null);
+        try
+        {
+            AppInstance.GetCurrent().UnregisterKey();
+        }
+        catch (Exception ex)
+        {
+            Hosting.ShellLog.Error("Could not release the single-instance key.", ex);
+        }
+
+        if (App.Host is { } host)
+        {
+            // Off this thread: its dispatcher is gone, so nothing may try to resume on it.
+            Task.Run(async () => await host.DisposeAsync()).GetAwaiter().GetResult();
+        }
     }
 
     /// <summary>Raised in the first instance when a later launch was redirected to it.</summary>

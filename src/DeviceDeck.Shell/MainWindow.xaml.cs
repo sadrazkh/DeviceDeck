@@ -218,8 +218,7 @@ public sealed partial class MainWindow : Window
         {
         }
 
-        // The queue stops its workers (jobs stay "running" on disk and resume next start).
-        Task.Run(async () => await _host.DisposeAsync()).Wait(TimeSpan.FromSeconds(6));
+        // The host itself (queue, providers) is stopped by Program.Main once the message loop has ended.
     }
 
     private async Task InitializeWebViewAsync()
