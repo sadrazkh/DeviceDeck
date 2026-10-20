@@ -313,6 +313,21 @@ public sealed class PhotosBackupTests
     }
 
     [Fact]
+    public async Task Exporting_heic_as_jpg_also_keeps_the_exif()
+    {
+        var phone = new PhotosTestPhone();
+        var heic = phone.Library.Add("IMG_0042.HEIC", Oct, content: TestHeif.Make(TestTiff.Make(orientation: 6), imageBytes: 303));
+        await using var host = await PhotosBackupHost.StartAsync(phone, new FakeJpegTranscoder());
+        var folder = Path.Combine(host.Root, "pc", "Export");
+        var job = await host.Queue.EnqueueAsync(phone.Summary.Id, TransferKind.PhotosExport, new PhotosExportRequest([heic.AssetId], folder, true, ""), ConflictRule.Ask, CancellationToken.None);
+        await Wait.ForStateAsync(host.Queue, job.Id, TransferState.Done);
+
+        var exif = PhotosHeicMetadata.ReadJpegExif(await File.ReadAllBytesAsync(Path.Combine(folder, "IMG_0042.jpg")))!;
+        Assert.Equal(1u, PhotosHeicMetadata.ReadTag(exif, 0x0112));
+        Assert.True(exif.AsSpan().IndexOf("2026:10:15 13:00:00"u8) >= 0);
+    }
+
+    [Fact]
     public async Task Options_are_per_phone_fall_back_to_settings_and_the_destination_is_pinned_on_first_backup()
     {
         var phone = new PhotosTestPhone();
