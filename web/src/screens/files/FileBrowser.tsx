@@ -416,7 +416,8 @@ export function FileBrowser({
       const result = await dragOutFiles(client, device.id, root, paths);
       if (result?.effect === 'copy') toast({ tone: 'info', title: t('files.copyStarted'), duration: 3000 });
     } catch (error) {
-      actions.fail(error);
+      // A host without the desktop feature's drag out: the drag just doesn't start.
+      if (!isBridgeError(error, 'method_not_found')) actions.fail(error);
     }
   };
 
