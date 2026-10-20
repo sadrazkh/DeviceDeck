@@ -22,6 +22,9 @@ public sealed class BridgeServices
 
     /// <summary>When set, dev.* methods simulate a pulled cable on the fake phones.</summary>
     public FakeDeviceProvider? DevFake { get; init; }
+
+    /// <summary>Converters, the mirror window and folders for the toolbox methods (Toolbox/ToolboxMethods.cs).</summary>
+    public Toolbox.ToolboxServices Toolbox { get; init; } = new();
 }
 
 /// <summary>Registers every method of docs/bridge-contract.md on a dispatcher.</summary>
