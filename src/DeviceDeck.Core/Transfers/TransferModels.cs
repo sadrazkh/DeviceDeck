@@ -33,10 +33,7 @@ public sealed record TransferJob(
     TransferConflict? Conflict,
     TransferError? Error,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? FinishedAt)
-{
-    public bool IsFinished => State is TransferState.Done or TransferState.Failed or TransferState.Cancelled;
-}
+    DateTimeOffset? FinishedAt);
 
 public enum TransferItemState { Queued, Running, Done, Failed, Skipped }
 
