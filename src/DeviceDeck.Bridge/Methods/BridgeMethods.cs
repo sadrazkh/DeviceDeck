@@ -5,6 +5,7 @@ using DeviceDeck.Bridge.JsonRpc;
 using DeviceDeck.Core.Abstractions;
 using DeviceDeck.Core.Fake;
 using DeviceDeck.Core.Hub;
+using DeviceDeck.Core.Photos;
 using DeviceDeck.Core.Settings;
 using DeviceDeck.Core.Transfers;
 
@@ -22,6 +23,9 @@ public sealed class BridgeServices
 
     /// <summary>When set, dev.* methods simulate a pulled cable on the fake phones.</summary>
     public FakeDeviceProvider? DevFake { get; init; }
+
+    /// <summary>Photos backup (photos.newCount, photos.backup*); without it those methods answer not_supported.</summary>
+    public PhotoBackupService? PhotoBackup { get; init; }
 }
 
 /// <summary>Registers every method of docs/bridge-contract.md on a dispatcher.</summary>
@@ -205,6 +209,9 @@ public static class BridgeMethods
                 ?? throw new ArgumentException("params must be an object of settings.");
             return Task.FromResult(s.Settings.Update(patch));
         });
+
+        // Photos backup and adding photos to an iPhone app (round 2).
+        PhotosBackupMethods.Register(rpc, s);
 
         if (s.DevFake is { } fake)
         {
