@@ -8,6 +8,7 @@
     <AssemblyName>DeviceDeck</AssemblyName>
     <Version>0.1.0</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <ApplicationIcon>Assets\DeviceDeck.ico</ApplicationIcon>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
@@ -30,6 +31,8 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.5.1" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2705" />
+    <!-- Installer and updates from GitHub Releases (MIT). -->
+    <PackageReference Include="Velopack" Version="1.2.161" />
   </ItemGroup>
 
   <ItemGroup>
@@ -42,6 +45,10 @@
 
   <ItemGroup>
     <Content Include="Placeholder\**\*" CopyToOutputDirectory="PreserveNewest" />
+    <!-- Window, tray and notification icon (the WinUI SDK already lists Assets\** as content); drawn by Assets/make-icon.py. -->
+    <Content Update="Assets\DeviceDeck.ico;Assets\DeviceDeck.png" CopyToOutputDirectory="PreserveNewest" />
+    <Content Remove="Assets\make-icon.py" />
+    <None Include="Assets\make-icon.py" />
   </ItemGroup>
 
 </Project>

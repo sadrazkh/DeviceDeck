@@ -172,7 +172,7 @@ public sealed class DesktopMethodTests
     public async Task Desktop_only_methods_fail_plainly_without_the_window()
     {
         await using var host = await TestHost.StartAsync();
-        var drag = await host.CallAsync("shell.dragOut", new { source = "photos", deviceId = TestPhones.IphoneId, assetIds = new[] { $"{TestPhones.IphoneId}-a0" } });
+        var drag = await host.CallAsync("shell.dragOut", new { source = "photos", deviceId = TestPhones.IphoneId, items = new[] { new { id = $"{TestPhones.IphoneId}-a0", name = "IMG_0100.HEIC", size = 200_000 } } });
         Assert.Equal("not_supported", (string?)drag["error"]!["data"]!["code"]);
         var bad = await host.CallAsync("shell.dragOut", new { source = "photos" });
         Assert.Equal(-32602, (int?)bad["error"]!["code"]);

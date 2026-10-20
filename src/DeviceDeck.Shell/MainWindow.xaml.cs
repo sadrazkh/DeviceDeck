@@ -1,7 +1,11 @@
 using System.Runtime.InteropServices;
 using DeviceDeck.Bridge;
 using DeviceDeck.Bridge.Images;
+using DeviceDeck.Core.Notifications;
 using DeviceDeck.Core.Settings;
+using DeviceDeck.Shell.Desktop;
+using DeviceDeck.Shell.Desktop.DragOut;
+using DeviceDeck.Shell.Desktop.Interop;
 using DeviceDeck.Shell.Hosting;
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
@@ -27,6 +31,16 @@ public sealed partial class MainWindow : Window
     private BridgeHost? _bridge;
     private WebViewTransport? _transport;
     private bool _loggedBackdrop;
+    private double _loggedScale;
+
+    // Desktop (round 2): tray, notifications, updates, drag out.
+    private readonly string _iconPath = Path.Combine(AppContext.BaseDirectory, "Assets", "DeviceDeck.ico");
+    private readonly ShellNotifications _notifications;
+    private readonly DeviceNotifier _deviceNotifier;
+    private readonly UpdateService _updates;
+    private readonly DesktopShell _desktop;
+    private TrayIcon? _tray;
+    private bool _quitting;
 
     internal MainWindow(HostServices host)
     {
@@ -55,14 +69,35 @@ public sealed partial class MainWindow : Window
         AppWindow.Changed += OnAppWindowChanged;
         AppWindow.Closing += OnClosing;
         Closed += OnClosed;
-        Root.Loaded += (_, _) => Root.XamlRoot.Changed += (_, _) =>
+        Root.Loaded += (_, _) =>
         {
-            ApplyMinimumSize();
-            PublishCaptionInsets();
+            LogScale();
+            Root.XamlRoot.Changed += (_, _) =>
+            {
+                ApplyMinimumSize();
+                PublishCaptionInsets();
+                LogScale();
+            };
         };
 
         ApplyTheme(host.Settings.Current.Theme);
         host.Settings.Changed += OnSettingsChanged;
+
+        if (File.Exists(_iconPath))
+        {
+            AppWindow.SetIcon(_iconPath);
+        }
+
+        UpdateTray(host.Settings.Current);
+        _notifications = new ShellNotifications("DeviceDeck", Path.Combine(AppContext.BaseDirectory, "Assets", "DeviceDeck.png"),
+            () => DispatcherQueue.TryEnqueue(BringToFront), () => _tray);
+        _notifications.Activated += OnNotificationActivated;
+        _deviceNotifier = new DeviceNotifier(host.Hub, host.Settings, _notifications, () => Tray.IsInFront(_hwnd));
+        _updates = new UpdateService(HostServices.Version, host.Settings, _notifications, Quit);
+        _updates.Start();
+        var dragOut = new DragOutService(host.Hub, host.Transfers, host.DragOuts, host.DragOutStaging,
+            action => DispatcherQueue.TryEnqueue(() => action()), _hwnd, () => Scale);
+        _desktop = new DesktopShell(dragOut, _updates);
 
         Activated += (_, _) =>
         {
@@ -92,7 +127,124 @@ public sealed partial class MainWindow : Window
     private double Scale => GetDpiForWindow(_hwnd) / 96.0;
 
     private void OnSettingsChanged(object? sender, AppSettings settings) =>
-        DispatcherQueue.TryEnqueue(() => ApplyTheme(settings.Theme));
+        DispatcherQueue.TryEnqueue(() =>
+        {
+            ApplyTheme(settings.Theme);
+            UpdateTray(settings);
+        });
+
+    /// <summary>Quit from the tray menu or an update: really closes the window, so the host stops and the process ends.</summary>
+    public void Quit() => DispatcherQueue.TryEnqueue(() =>
+    {
+        _quitting = true;
+        Close();
+    });
+
+    /// <summary>The tray icon is there while closing keeps DeviceDeck running (settings.closeToTray).</summary>
+    private void UpdateTray(AppSettings settings)
+    {
+        var text = ShellText.For(settings.Language);
+        if (settings.CloseToTray && _tray is null)
+        {
+            try
+            {
+                _tray = new TrayIcon("DeviceDeck", _iconPath, text);
+                _tray.OpenRequested += BringToFront;
+                _tray.QuitRequested += Quit;
+                _tray.BalloonClicked += () => _notifications.OnBalloonClicked();
+            }
+            catch (Exception ex)
+            {
+                ShellLog.Error("The tray icon could not be created.", ex);
+            }
+        }
+        else if (!settings.CloseToTray && _tray is not null)
+        {
+            _tray.Dispose();
+            _tray = null;
+        }
+
+        if (_tray is not null)
+        {
+            _tray.Text = text;
+        }
+    }
+
+    private void OnNotificationActivated(object? sender, NotificationActivation activation)
+    {
+        if (activation.Command == NotificationCommands.ApplyUpdate)
+        {
+            try
+            {
+                _updates.ApplyAndRestart();
+            }
+            catch (Exception ex)
+            {
+                ShellLog.Error("The update could not be applied.", ex);
+            }
+        }
+    }
+
+    /// <summary>The first time the window goes to the tray, say so once.</summary>
+    private void ShowTrayHintOnce()
+    {
+        var marker = Path.Combine(_host.Paths.Root, "tray-hint-shown");
+        if (File.Exists(marker))
+        {
+            return;
+        }
+
+        try
+        {
+            File.WriteAllText(marker, DateTimeOffset.Now.ToString("O"));
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return;
+        }
+
+        var text = ShellText.For(_host.Settings.Current.Language);
+        _notifications.Show(new AppNotification(text.StillRunning, text.StillRunningBody) { Tag = "app:tray" });
+    }
+
+    /// <summary>Logs the window's DPI scale and XAML's rasterization scale (WebView2 renders at the latter) when either changes.</summary>
+    private void LogScale()
+    {
+        var xaml = Root.XamlRoot?.RasterizationScale ?? 0;
+        if (xaml <= 0 || Math.Abs(xaml - _loggedScale) < 0.001)
+        {
+            return;
+        }
+
+        _loggedScale = xaml;
+        var window = Scale;
+        ShellLog.Info($"Scale: window {window:0.##} ({GetDpiForWindow(_hwnd)} dpi), XAML rasterization {xaml:0.##}.");
+        if (Math.Abs(window - xaml) > 0.01)
+        {
+            ShellLog.Warn("The XAML rasterization scale differs from the window's DPI scale; text may be resampled.");
+        }
+
+        if (WebView.CoreWebView2 is { } core)
+        {
+            _ = LogPageScaleAsync(core, xaml);
+        }
+    }
+
+    private static async Task LogPageScaleAsync(CoreWebView2 core, double xaml)
+    {
+        try
+        {
+            var ratio = double.Parse(await core.ExecuteScriptAsync("window.devicePixelRatio"), System.Globalization.CultureInfo.InvariantCulture);
+            ShellLog.Info($"Scale: page devicePixelRatio {ratio:0.##}.");
+            if (Math.Abs(ratio - xaml) > 0.01)
+            {
+                ShellLog.Warn("The page's devicePixelRatio differs from the XAML rasterization scale.");
+            }
+        }
+        catch (Exception ex) when (ex is FormatException or COMException or InvalidOperationException)
+        {
+        }
+    }
 
     /// <summary>settings.theme drives the window (and so Mica's tint), the caption buttons and the page's prefers-color-scheme.</summary>
     private void ApplyTheme(AppTheme theme)
@@ -204,11 +356,24 @@ public sealed partial class MainWindow : Window
         var maximized = sender.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Maximized };
         new WindowPlacement(_restoredBounds.X, _restoredBounds.Y, _restoredBounds.Width, _restoredBounds.Height, maximized)
             .Save(_host.Paths.WindowFile);
+
+        if (!_quitting && _host.Settings.Current.CloseToTray && _tray is { IsShown: true })
+        {
+            // Keep running in the notification area: phones keep being watched, copies keep going.
+            args.Cancel = true;
+            sender.Hide();
+            ShowTrayHintOnce();
+        }
     }
 
     private void OnClosed(object sender, WindowEventArgs args)
     {
         _host.Settings.Changed -= OnSettingsChanged;
+        _deviceNotifier.Dispose();
+        _updates.Dispose();
+        _tray?.Dispose();
+        _tray = null;
+        _notifications.Dispose();
         _bridge?.Dispose();
         try
         {
@@ -246,7 +411,12 @@ public sealed partial class MainWindow : Window
             core.AddWebResourceRequestedFilter(DeviceImageHandler.Filter, CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
             core.WebResourceRequested += (sender, e) => _ = ServeImageAsync(environment, e);
             core.NavigationStarting += OnNavigationStarting;
-            core.DOMContentLoaded += (_, _) => PublishCaptionInsets();
+            core.DOMContentLoaded += (_, _) =>
+            {
+                PublishCaptionInsets();
+                _loggedScale = 0;
+                LogScale();
+            };
             core.NewWindowRequested += OnNewWindowRequested;
             core.ProcessFailed += (_, e) => ShellLog.Error($"WebView2 process failed: {e.ProcessFailedKind} ({e.Reason}, exit {e.ExitCode}).");
 
@@ -262,7 +432,7 @@ public sealed partial class MainWindow : Window
                     }
                 }
             };
-            _bridge = new BridgeHost(_transport, _host.BridgeServices(new ShellServices(DispatcherQueue, AppWindow.Id)));
+            _bridge = new BridgeHost(_transport, _host.BridgeServices(new ShellServices(DispatcherQueue, AppWindow.Id), _notifications, _desktop));
             _bridge.Dispatcher.UnexpectedError += (_, e) => ShellLog.Error($"{e.Method} failed.", e.Error);
             _bridge.Dispatcher.SlowCall += (_, call) => ShellLog.Warn(call.Finished
                 ? $"Slow call: {call.Method}{(call.DeviceId is null ? "" : $" on {call.DeviceId}")} took {call.Elapsed.TotalSeconds:0.0} s ({call.Outcome})."
@@ -333,7 +503,16 @@ public sealed partial class MainWindow : Window
         var deferral = e.GetDeferral();
         try
         {
-            var response = await _host.Images.HandleAsync(new Uri(e.Request.Uri), CancellationToken.None);
+            var uri = new Uri(e.Request.Uri);
+            if (VideoHandler.Handles(uri))
+            {
+                var range = e.Request.Headers.Contains("Range") ? e.Request.Headers.GetHeader("Range") : null;
+                var media = await _host.Videos.HandleAsync(uri, range, CancellationToken.None);
+                e.Response = environment.CreateWebResourceResponse(media.Body?.AsRandomAccessStream(), media.StatusCode, media.ReasonPhrase, media.Headers);
+                return;
+            }
+
+            var response = await _host.Images.HandleAsync(uri, CancellationToken.None);
             e.Response = environment.CreateWebResourceResponse(
                 response.Body?.AsRandomAccessStream(),
                 response.StatusCode,

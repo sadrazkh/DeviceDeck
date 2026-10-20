@@ -6,9 +6,11 @@ using DeviceDeck.Bridge.Methods;
 using DeviceDeck.Core;
 using DeviceDeck.Core.Fake;
 using DeviceDeck.Core.Hub;
+using DeviceDeck.Core.Notifications;
 using DeviceDeck.Core.Settings;
 using DeviceDeck.Core.Transfers;
 using DeviceDeck.Core.Transfers.Handlers;
+using DeviceDeck.Shell.Desktop.DragOut;
 
 namespace DeviceDeck.Shell.Hosting;
 
@@ -16,7 +18,7 @@ namespace DeviceDeck.Shell.Hosting;
 internal sealed class HostServices : IAsyncDisposable
 {
     private HostServices(AppPaths paths, bool devMode, FakeDeviceProvider? fake, DeviceHub hub, SqliteTransferStore store,
-        TransferQueue transfers, SettingsStore settings, WicImageTranscoder transcoder)
+        TransferQueue transfers, SettingsStore settings, WicImageTranscoder transcoder, DragOutRegistry dragOuts)
     {
         Paths = paths;
         DevMode = devMode;
@@ -29,6 +31,8 @@ internal sealed class HostServices : IAsyncDisposable
         Screenshots = new ScreenshotStore();
         Thumbnails = new ThumbnailCache(paths.ThumbnailCache);
         Images = new DeviceImageHandler(hub, Thumbnails, Screenshots, transcoder, Path.Combine(paths.Root, "cache", "viewer"));
+        Videos = new VideoHandler(hub, Path.Combine(paths.Root, "cache", "video"));
+        DragOuts = dragOuts;
     }
 
     public AppPaths Paths { get; }
@@ -46,6 +50,14 @@ internal sealed class HostServices : IAsyncDisposable
     public ThumbnailCache Thumbnails { get; }
     public DeviceImageHandler Images { get; }
 
+    /// <summary>video/{deviceId}/{assetId}?size=…, with HTTP Range so the viewer can seek.</summary>
+    public VideoHandler Videos { get; }
+
+    /// <summary>Drags into File Explorer that are still copying (see DragOutService).</summary>
+    public DragOutRegistry DragOuts { get; }
+
+    public string DragOutStaging => Path.Combine(Paths.Root, "cache", "dragout");
+
     public static string Version { get; } =
         typeof(HostServices).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.1.0";
 
@@ -62,13 +74,23 @@ internal sealed class HostServices : IAsyncDisposable
         hub.ProviderStopFailed += (_, e) => ShellLog.Error($"Provider {e.ProviderId} did not stop cleanly.", e.Error);
         var store = new SqliteTransferStore(paths.TransfersDatabase);
         var transcoder = new WicImageTranscoder();
-        var transfers = new TransferQueue(hub, store, TransferHandlers.All(transcoder), new WindowsKeepAwake());
+        var dragOuts = new DragOutRegistry();
+        var transfers = new TransferQueue(hub, store, [.. TransferHandlers.All(transcoder), new DragOutHandler(dragOuts)], new WindowsKeepAwake());
         transfers.Start();
         var settings = new SettingsStore(paths.SettingsFile);
-        return new HostServices(paths, devMode, fake, hub, store, transfers, settings, transcoder);
+        var host = new HostServices(paths, devMode, fake, hub, store, transfers, settings, transcoder, dragOuts);
+
+        // A drag into File Explorer doesn't survive a restart: Explorer's end of it is gone.
+        foreach (var job in transfers.List().Where(j => j.Kind == TransferKind.DragOut && j.State is not (TransferState.Done or TransferState.Failed or TransferState.Cancelled)))
+        {
+            transfers.Cancel(job.Id);
+        }
+
+        DragOutService.ClearStaging(host.DragOutStaging);
+        return host;
     }
 
-    public BridgeServices BridgeServices(IShellServices shell) => new()
+    public BridgeServices BridgeServices(IShellServices shell, INotificationService notifications, IDesktopShell desktop) => new()
     {
         Hub = Hub,
         Transfers = Transfers,
@@ -77,6 +99,8 @@ internal sealed class HostServices : IAsyncDisposable
         Screenshots = Screenshots,
         Version = Version,
         DevFake = Fake,
+        Notifications = notifications,
+        Desktop = desktop,
     };
 
     /// <summary>Starts the providers once the window is up, so the first paint isn't waiting on USB.</summary>
@@ -112,6 +136,7 @@ internal sealed class HostServices : IAsyncDisposable
     {
         var clock = Stopwatch.StartNew();
         await StepAsync("transfer queue", async () => await Transfers.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);
+        await StepAsync("video cache", async () => await Videos.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);
         await StepAsync("transfer store", () =>
         {
             Store.Dispose();

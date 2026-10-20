@@ -3,9 +3,14 @@ namespace DeviceDeck.Bridge;
 // What the desktop window adds on top of IShellServices (round 2): drag out to File Explorer, opening a PC file,
 // and app updates. The Shell implements it; tests use a fake. See docs/bridge-contract.md, "Desktop".
 
+/// <summary>One dragged photo or phone file, as the page knows it (so nothing has to be looked up on the phone first).</summary>
+/// <param name="Id">The asset id, or the file's path in its root.</param>
+/// <param name="Size">Bytes; 0 when unknown.</param>
+public sealed record DragOutEntry(string Id, string Name, long Size = 0, bool IsDirectory = false, DateTimeOffset? Modified = null);
+
 /// <summary>shell.dragOut: what is being dragged out of the page.</summary>
-/// <param name="Source">"photos" (AssetIds of DeviceId), "files" (Paths in Root of DeviceId) or "pc" (Paths on this PC).</param>
-public sealed record DragOutParams(string Source, string? DeviceId = null, string? Root = null, IReadOnlyList<string>? AssetIds = null, IReadOnlyList<string>? Paths = null);
+/// <param name="Source">"photos" (Items of DeviceId), "files" (Items in Root of DeviceId) or "pc" (Paths on this PC).</param>
+public sealed record DragOutParams(string Source, string? DeviceId = null, string? Root = null, IReadOnlyList<DragOutEntry>? Items = null, IReadOnlyList<string>? Paths = null);
 
 /// <summary>Where the drag ended, in the page's CSS pixels, when it was dropped back on the window itself.</summary>
 public sealed record DragPoint(double X, double Y);

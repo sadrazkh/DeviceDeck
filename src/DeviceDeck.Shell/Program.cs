@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.Windows.AppLifecycle;
+using Velopack;
 
 namespace DeviceDeck.Shell;
 
@@ -14,6 +15,11 @@ public static partial class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        // First, always: Velopack's install, update and uninstall hooks run here and exit.
+        VelopackApp.Build()
+            .OnBeforeUninstallFastCallback(_ => ForgetNotifications())
+            .Run();
+
         WinRT.ComWrappersSupport.InitializeComWrappers();
         if (RedirectedToRunningInstance())
         {
@@ -51,6 +57,20 @@ public static partial class Program
         {
             // Off this thread: its dispatcher is gone, so nothing may try to resume on it.
             Task.Run(async () => await host.DisposeAsync()).GetAwaiter().GetResult();
+        }
+    }
+
+    /// <summary>Uninstalling: remove what Windows keeps for this app's notifications (its registration and Action Center entries).</summary>
+    private static void ForgetNotifications()
+    {
+        try
+        {
+            WinRT.ComWrappersSupport.InitializeComWrappers();
+            Microsoft.Windows.AppNotifications.AppNotificationManager.Default.UnregisterAll();
+        }
+        catch (Exception)
+        {
+            // Nothing registered, or the runtime isn't usable here; the uninstall goes on.
         }
     }
 
