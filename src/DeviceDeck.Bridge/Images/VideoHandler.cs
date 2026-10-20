@@ -264,31 +264,35 @@ internal sealed class VideoSpool
 
     public void Release()
     {
-        bool delete;
         lock (_gate)
         {
             _readers--;
-            delete = _evicted && _readers == 0;
-        }
-
-        if (delete)
-        {
-            _ = EvictAsync();
         }
     }
 
     public void Evict() => _ = EvictAsync();
 
-    /// <summary>Stops the copy and deletes the file once no reader holds it.</summary>
+    /// <summary>Readers holding this spool (for diagnostics; eviction doesn't wait for them).</summary>
+    public int Readers
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _readers;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Stops the copy and deletes the file. WebView2 may hold a response stream long after the viewer moved on (it
+    /// releases them when it likes), so this doesn't wait for readers: one still reading just ends with an error.
+    /// </summary>
     public async Task EvictAsync()
     {
         lock (_gate)
         {
             _evicted = true;
-            if (_readers > 0)
-            {
-                return;
-            }
         }
 
         await _stop.CancelAsync().ConfigureAwait(false);
@@ -376,6 +380,11 @@ internal sealed class VideoSpool
             Task next;
             lock (_gate)
             {
+                if (_evicted)
+                {
+                    throw new IOException("The video was dropped from the cache.");
+                }
+
                 if (_error is not null)
                 {
                     throw new IOException("The video couldn't be read from the phone.", _error);
