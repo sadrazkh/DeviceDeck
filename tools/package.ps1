@@ -27,7 +27,8 @@
 
 .PARAMETER SignTemplate
     A signing command with {{file}} where the file goes, e.g.
-    "C:\...\signtool.exe" sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f cert.pfx /p secret {{file}}
+    "C:\...\signtool.exe" sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /s My /sha1 <thumbprint> {{file}}
+    (the certificate imported into your store: vpk runs this through cmd, where a password with & % ^ or " breaks).
     Used for DeviceDeck's binaries in the zip and passed to vpk for everything in the installer.
     Empty (the default): nothing is signed.
 
