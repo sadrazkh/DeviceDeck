@@ -7,6 +7,16 @@ const expect = baseExpect.configure({ timeout: 15_000 });
 
 const ANDROID = 'R5CY10QWERT';
 
+/**
+ * Loads a screen and waits until it has settled before anything is clicked: the shell remounts the first screen once
+ * just after it appears, and a dialog opened in that moment would be dropped with it.
+ */
+async function open(page: Page, params: Record<string, string>, ready: string, variant: Variant = 'light') {
+  await page.goto(query(variant, { queue: '0', ...params }));
+  await expect(page.locator(ready).first()).toBeVisible();
+  await settle(page);
+}
+
 /** Runs the mock's simulated time forward (backups take ~15 s of it). */
 async function fastForward(page: Page, ms: number) {
   await page.evaluate((total) => {
@@ -38,7 +48,7 @@ for (const screen of SCREENS) {
 test('messages tab shows a conversation with the newest message at the bottom', async ({ page }) => {
   const consoleWatch = watchConsole(page);
   for (const variant of ['light', 'rtl'] as const) {
-    await page.goto(query(variant, { queue: '0', screen: 'contacts' }));
+    await open(page, { screen: 'contacts' }, '[data-testid=contact-details]', variant);
     await page.getByRole('radio', { name: variant === 'rtl' ? 'پیام‌ها' : 'Messages' }).click();
     await expect(page.getByTestId('message').first()).toBeVisible();
     const thread = page.getByTestId('message-thread');
@@ -51,7 +61,7 @@ test('messages tab shows a conversation with the newest message at the bottom', 
 
 test('Back up now → progress → done → older backup offered → deleted after confirming', async ({ page }) => {
   const consoleWatch = watchConsole(page);
-  await page.goto(query('light', { queue: '0', screen: 'backup' }));
+  await open(page, { screen: 'backup' }, '[data-testid=backup-row]');
   await expect(page.getByTestId('backup-list').getByTestId('backup-row')).toHaveCount(3);
 
   await page.getByTestId('backup-now').click();
@@ -83,7 +93,7 @@ test('Back up now → progress → done → older backup offered → deleted aft
 
 test('a pulled cable pauses the backup and it carries on when the phone is back', async ({ page }) => {
   const consoleWatch = watchConsole(page);
-  await page.goto(query('light', { queue: '0', screen: 'backup', device: 'android' }));
+  await open(page, { screen: 'backup', device: 'android' }, '[data-testid=backup-now]');
   await page.getByTestId('backup-now').click();
   await page.getByRole('dialog').getByTestId('backup-start').click();
   await page.getByRole('dialog').getByRole('button', { name: 'Keep running in the background' }).click();
@@ -102,7 +112,7 @@ test('a pulled cable pauses the backup and it carries on when the phone is back'
 
 test('restore asks for the phone’s name before it starts', async ({ page }) => {
   const consoleWatch = watchConsole(page);
-  await page.goto(query('light', { queue: '0', screen: 'backup' }));
+  await open(page, { screen: 'backup' }, '[data-testid=restore-open]');
   await page.getByTestId('restore-open').click();
   const dialog = page.getByRole('dialog');
   await expect(dialog.getByTestId('restore-choice')).toHaveCount(4);
@@ -130,7 +140,7 @@ test('restore asks for the phone’s name before it starts', async ({ page }) =>
 
 test('turning on backup encryption waits for the passcode on the phone', async ({ page }) => {
   const consoleWatch = watchConsole(page);
-  await page.goto(query('light', { queue: '0', screen: 'backup' }));
+  await open(page, { screen: 'backup' }, '[data-testid=encryption-on]');
   await page.getByTestId('encryption-on').click();
   const dialog = page.getByRole('dialog');
   await dialog.getByTestId('encryption-password').fill('secret');
@@ -150,7 +160,7 @@ test('turning on backup encryption waits for the passcode on the phone', async (
 
 test('an encrypted backup opens with its password and its files extract to the PC', async ({ page }) => {
   const consoleWatch = watchConsole(page);
-  await page.goto(query('light', { queue: '0', screen: 'backup' }));
+  await open(page, { screen: 'backup' }, '[data-testid=backup-others] [data-testid=backup-row]');
   const old = page.getByTestId('backup-others').getByTestId('backup-row').filter({ hasText: 'iPhone 12' });
   await old.getByTestId('backup-browse').click();
   const dialog = page.getByRole('dialog');
@@ -177,9 +187,8 @@ test('an encrypted backup opens with its password and its files extract to the P
 
 test('contacts export as vCard from the selected contacts', async ({ page }) => {
   const consoleWatch = watchConsole(page);
-  await page.goto(query('light', { queue: '0', screen: 'contacts' }));
+  await open(page, { screen: 'contacts' }, '[data-testid=contact-row]');
   const rows = page.getByTestId('contact-row');
-  await expect(rows.first()).toBeVisible();
   await rows.nth(1).getByRole('checkbox').click();
   await rows.nth(2).getByRole('checkbox').click();
   await page.getByTestId('contacts-export').click();
@@ -195,7 +204,7 @@ test('contacts export as vCard from the selected contacts', async ({ page }) => 
 
 test('Overview’s Back up now opens the backup wizard', async ({ page }) => {
   const consoleWatch = watchConsole(page);
-  await page.goto(query('light', { queue: '0', screen: 'overview' }));
+  await open(page, { screen: 'overview' }, '[data-testid=overview-backup]');
   await page.getByTestId('overview-backup').click();
   await expect(page.getByTestId('screen-backup')).toBeVisible();
   await expect(page.getByRole('dialog')).toContainText(`Back up Nima’s iPhone`);
