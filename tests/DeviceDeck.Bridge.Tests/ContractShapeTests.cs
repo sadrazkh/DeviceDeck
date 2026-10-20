@@ -165,7 +165,8 @@ public sealed class ContractShapeTests
         Assert.Single(apps);
 
         var settings = (await host.ResultAsync("settings.get"))!.AsObject();
-        Assert.Equal(8, settings.Count);
+        // Round 1's eight first; round-2 features add theirs after them.
+        Assert.Equal(["language", "theme", "density", "photoExportFolder", "photoFolderPattern", "convertHeic", "fileCopyFolder", "conflictRule"], Keys(settings)[..8]);
 
         var shot = (await host.ResultAsync("tools.screenshot", new { deviceId = TestPhones.IphoneId }))!.AsObject();
         Assert.StartsWith("https://device.local/shot/test-iphone/", (string?)shot["url"]);

@@ -152,8 +152,8 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
                 // Something else has the video's name there: write both again, together, under a free name.
             }
 
-            var ext = jpeg is not null ? ".jpg" : Path.GetExtension(PhotoBackupNaming.SafeName(info.FileName));
-            var stillName = Path.GetFileNameWithoutExtension(planned) + ext;
+            // The disk decides the name now ("IMG_0001", then "IMG_0001 (1)", …), not the plan's guess.
+            var stillName = PhotoBackupNaming.StillName(info.FileName, convertHeic: jpeg is not null);
             var (stillPath, motionPath) = PhotoBackupNaming.FreeStem(folder, stillName, motion?.FileName, p => !File.Exists(p) && !Directory.Exists(p));
             long written;
             if (jpeg is not null)
