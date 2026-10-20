@@ -1,0 +1,14 @@
+total 88
+drwxrws--- 12 u0_a197 media_rw 3488 2024-02-10 08:30 .
+drwx--x--x  4 root    root     3488 2022-11-20 18:00 ..
+drwxrws---  2 u0_a197 media_rw 3488 2022-11-20 18:00 Alarms
+drwxrws---  4 u0_a197 media_rw 3488 2022-11-20 18:00 Android
+drwxrws---  5 u0_a197 media_rw 3488 2024-02-10 08:30 DCIM
+drwxrws---  2 u0_a197 media_rw 3488 2024-01-15 21:12 Documents
+drwxrws---  3 u0_a197 media_rw 3488 2024-02-09 14:00 Download
+drwxrws---  2 u0_a197 media_rw 3488 2022-11-20 18:00 Movies
+drwxrws---  3 u0_a197 media_rw 3488 2023-08-01 10:10 Pictures
+drwxrws---  2 u0_a197 media_rw 3488 2023-08-01 10:10 Samsung
+-rw-rw----  1 u0_a197 media_rw 734003200 2024-01-02 23:59 Backup 2024-01-02.zip
+-rw-rw----  1 u0_a197 media_rw     4096 2023-12-12 12:12 file with  two  spaces.txt
+-rw-rw----  1 u0_a197 media_rw      512 2023-12-12 12:12 trailing-arrow -> not a link.txt

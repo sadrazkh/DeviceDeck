@@ -1,0 +1,5 @@
+package:/data/app/~~UGhvdG9zMjAyNQ==/com.google.android.apps.photos-UGhvdG9zQmFzZQ==/base.apk=com.google.android.apps.photos versionCode:50100230  installer=com.android.vending uid:10178
+package:/data/app/~~TXlrZXQyMDI1==/ir.mservices.market-TXlrZXRCYXNl==/base.apk=ir.mservices.market versionCode:1302  installer=com.google.android.packageinstaller uid:10340
+package:/data/app/~~QmFsZTIwMjU==/ir.balad-QmFsZUJhc2U==/base.apk=ir.balad versionCode:410  installer=ir.mservices.market uid:10341
+package:/system/priv-app/Shell/Shell.apk=com.android.shell versionCode:36  installer=null uid:2000
+package:/apex/com.android.mediaprovider/priv-app/MediaProviderGoogle@360910000/MediaProviderGoogle.apk=com.google.android.providers.media.module versionCode:360910000  installer=null uid:10203

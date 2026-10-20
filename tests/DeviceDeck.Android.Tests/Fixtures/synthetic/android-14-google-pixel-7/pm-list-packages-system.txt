@@ -1,0 +1,5 @@
+package:com.google.android.apps.photos
+package:com.android.systemui
+package:com.android.settings
+package:com.google.android.providers.media.module
+package:com.android.shell

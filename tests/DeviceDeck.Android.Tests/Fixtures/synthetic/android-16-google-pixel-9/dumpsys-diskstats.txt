@@ -1,0 +1,20 @@
+Latency: 2ms [512B Data Write]
+Recent Disk Write Speed (kB/s) = 88412
+Data-Free: 141352500K / 240117932K total = 58% free
+Cache-Free: 141352500K / 240117932K total = 58% free
+System-Free: 0K / 3604480K total = 0% free
+Metadata-Free: 56312K / 60360K total = 93% free
+File-based Encryption: true
+App Size: 17179869184
+App Data Size: 12884901888
+App Cache Size: 1073741824
+Photos Size: 42949672960
+Videos Size: 10737418240
+Audio Size: 536870912
+Downloads Size: 1073741824
+System Size: 15032385536
+Other Size: 2147483648
+Package Names: ["com.google.android.apps.photos"]
+App Sizes: [301989888]
+App Data Sizes: [2147483648]
+Cache Sizes: [268435456]

@@ -1,0 +1,11 @@
+45f8|3488|1668954600|/sdcard/Alarms
+45f8|3488|1668954600|/sdcard/Android
+45f8|3488|1707541200|/sdcard/DCIM
+45f8|3488|1705340520|/sdcard/Documents
+45f8|3488|1707474600|/sdcard/Download
+45f8|3488|1668954600|/sdcard/Movies
+45f8|3488|1690868400|/sdcard/Pictures
+45f8|3488|1690868400|/sdcard/Samsung
+81b0|734003200|1704227340|/sdcard/Backup 2024-01-02.zip
+81b0|4096|1702370520|/sdcard/file with  two  spaces.txt
+81b0|512|1702370520|/sdcard/trailing-arrow -> not a link.txt

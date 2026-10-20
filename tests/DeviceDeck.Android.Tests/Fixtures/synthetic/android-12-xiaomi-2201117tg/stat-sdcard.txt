@@ -1,0 +1,13 @@
+45f8|3452|1673328600|/sdcard//Alarms
+45f8|3452|1673328600|/sdcard//Android
+45f8|3452|1714546800|/sdcard//DCIM
+45f8|3452|1715525400|/sdcard//Download
+45f8|3452|1673328600|/sdcard//Music
+45f8|3452|1713705240|/sdcard//Pictures
+45f8|3452|1701333000|/sdcard//Telegram Files
+81b0|1048576|1712029500|/sdcard//My Notes (copy).txt
+81b0|20480|1711823460|/sdcard//گزارش مالی ۱۴۰۳.pdf
+81b0|1234|1711823460|/sdcard//日本語のファイル.txt
+81b0|0|1715525400|/sdcard//.nomedia
+81b0|512|1715525400|/sdcard//a|b.txt
+45f8|3452|1673328600|/sdcard//music link

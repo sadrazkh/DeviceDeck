@@ -1,0 +1,4 @@
+Filesystem       1K-blocks     Used Available Use% Mounted on
+/dev/block/dm-8  110450884 61364896  49085988  56% /data
+/dev/fuse        110450884 61364896  49085988  56% /storage/emulated
+tmpfs              1866888        0   1866888   0% /storage

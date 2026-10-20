@@ -1,0 +1,5 @@
+package:/data/app/~~T2tGaWxlc0FwcA==/com.oneplus.filemanager-Rmlsb3NCYXNl==/base.apk=com.oneplus.filemanager versionCode:150001  installer=com.heytap.market uid:10211
+package:/data/app/~~V2hhdHNBcHBQYXRo==/com.whatsapp-V2hhdHNCYXNl==/base.apk=com.whatsapp versionCode:241982005  installer=com.android.vending uid:10288
+package:/data/app/~~QmF6YWFyWDE1==/com.farsitel.bazaar-QmF6YWFyQmFzZQ==/base.apk=com.farsitel.bazaar versionCode:2401100  installer=null uid:10290
+package:/system/priv-app/Shell/Shell.apk=com.android.shell versionCode:35  installer=null uid:2000
+package:/apex/com.android.mediaprovider/priv-app/MediaProviderGoogle@351611020/MediaProviderGoogle.apk=com.google.android.providers.media.module versionCode:351611020  installer=null uid:10203

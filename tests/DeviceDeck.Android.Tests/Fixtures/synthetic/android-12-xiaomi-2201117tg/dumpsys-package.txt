@@ -1,0 +1,59 @@
+Packages:
+  Package [com.whatsapp] (8c2f1e4):
+    userId=10213
+    pkg=Package{e1b77a0 com.whatsapp}
+    codePath=/data/app/~~p5Zx0hAQ0JcHzaQ2Hk3s1A==/com.whatsapp-Jw7qQ3r_lwGv0g9sF7ukXg==
+    resourcePath=/data/app/~~p5Zx0hAQ0JcHzaQ2Hk3s1A==/com.whatsapp-Jw7qQ3r_lwGv0g9sF7ukXg==
+    legacyNativeLibraryDir=/data/app/~~p5Zx0hAQ0JcHzaQ2Hk3s1A==/com.whatsapp-Jw7qQ3r_lwGv0g9sF7ukXg==/lib
+    primaryCpuAbi=arm64-v8a
+    secondaryCpuAbi=null
+    versionCode=231275003 minSdk=21 targetSdk=33
+    versionName=2.23.12.75
+    splits=[base]
+    apkSigningVersion=3
+    applicationInfo=ApplicationInfo{e1b77a0 com.whatsapp}
+    flags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ALLOW_BACKUP ]
+    privateFlags=[ PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE_VIA_SDK_VERSION ALLOW_AUDIO_PLAYBACK_CAPTURE PRIVATE_FLAG_REQUEST_LEGACY_EXTERNAL_STORAGE ]
+    forceQueryable=false
+    queriesPackages=[]
+    dataDir=/data/user/0/com.whatsapp
+    supportsScreens=[small, medium, large, xlarge, resizeable, anyDensity]
+    timeStamp=2023-06-18 21:40:12
+    firstInstallTime=2021-09-02 14:05:33
+    lastUpdateTime=2023-06-18 21:40:15
+    installerPackageName=com.android.vending
+    signatures=PackageSignatures{4f2ab13 version:3, signatures:[2c6e7a1b], past signatures:[]}
+    installPermissionsFixed=true
+    pkgFlags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ALLOW_BACKUP ]
+    User 0: ceDataInode=131072 installed=true hidden=false suspended=false distractionFlags=0 stopped=false notLaunched=false enabled=0 instant=false virtual=false
+  Package [ir.mservices.market] (2a7d9c1):
+    userId=10261
+    codePath=/data/app/~~c2VjcmV0X2tleV8xMjM0NQ==/ir.mservices.market-ZHVtbXlfZGF0YV9oZXJl==
+    versionCode=1120 minSdk=21 targetSdk=31
+    versionName=9.6.2
+    flags=[ HAS_CODE ALLOW_CLEAR_USER_DATA ALLOW_BACKUP LARGE_HEAP ]
+    timeStamp=2023-02-01 08:00:01
+    firstInstallTime=2023-02-01 08:00:04
+    lastUpdateTime=2023-02-01 08:00:04
+    installerPackageName=null
+    User 0: ceDataInode=262144 installed=true hidden=false suspended=false distractionFlags=0 stopped=false notLaunched=false enabled=0 instant=false virtual=false
+  Package [com.android.chrome] (5b31e0d):
+    userId=10154
+    codePath=/data/app/~~Y2hyb21lX3VwZGF0ZQ==/com.android.chrome-Y2hyb21lX2Jhc2U2NA==
+    versionCode=572815333 minSdk=29 targetSdk=33
+    versionName=114.0.5735.196
+    flags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA UPDATED_SYSTEM_APP ALLOW_BACKUP ]
+    timeStamp=2023-07-01 03:12:44
+    firstInstallTime=2009-01-01 03:30:00
+    lastUpdateTime=2023-07-01 03:12:50
+    installerPackageName=com.android.vending
+    User 0: ceDataInode=8192 installed=true hidden=false suspended=false distractionFlags=0 stopped=false notLaunched=false enabled=0 instant=false virtual=false
+
+Hidden system packages:
+  Package [com.android.chrome] (7cd1209):
+    userId=10154
+    codePath=/product/app/Chrome
+    versionCode=447211456 minSdk=29 targetSdk=31
+    versionName=96.0.4664.104
+    flags=[ SYSTEM HAS_CODE ALLOW_CLEAR_USER_DATA ALLOW_BACKUP ]
+    firstInstallTime=2009-01-01 03:30:00

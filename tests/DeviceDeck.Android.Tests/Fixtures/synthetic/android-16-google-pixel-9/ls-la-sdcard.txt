@@ -1,0 +1,8 @@
+total 32
+drwxrws---  6 u0_a210 media_rw 3452 2025-06-20 21:00 .
+drwx--x--x  4 root    root     3452 2025-01-05 10:00 ..
+drwxrws---  4 u0_a210 media_rw 3452 2025-01-05 10:00 Android
+drwxrws---  4 u0_a210 media_rw 3452 2025-06-20 21:00 DCIM
+drwxrws---  2 u0_a210 media_rw 3452 2025-06-01 12:34 Download
+drwxrws---  2 u0_a210 media_rw 3452 2025-01-05 10:00 Documents
+-rw-rw----  1 u0_a210 media_rw  77824 2025-06-01 12:34 فاکتور شماره ۱۲.pdf

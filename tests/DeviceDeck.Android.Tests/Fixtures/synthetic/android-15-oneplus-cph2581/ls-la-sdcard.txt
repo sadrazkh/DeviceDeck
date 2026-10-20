@@ -1,0 +1,9 @@
+total 40
+drwxrws---  7 u0_a223 media_rw 3452 2024-11-20 10:00 .
+drwx--x--x  4 root    root     3452 2024-06-01 09:00 ..
+drwxrws---  4 u0_a223 media_rw 3452 2024-06-01 09:00 Android
+drwxrws---  4 u0_a223 media_rw 3452 2024-11-20 10:00 DCIM
+drwxrws---  2 u0_a223 media_rw 3452 2024-11-02 08:00 Download
+drwxrws---  2 u0_a223 media_rw 3452 2024-06-01 09:00 Music
+drwxrws---  3 u0_a223 media_rw 3452 2024-09-09 09:09 Pictures
+-rw-rw----  1 u0_a223 media_rw   9876 2024-11-02 08:00 हिन्दी notes.txt

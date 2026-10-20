@@ -1,0 +1,15 @@
+total 104
+drwxrws--- 14 u0_a181 media_rw 3452 2024-05-12 18:20 .
+drwx--x--x  4 root    root     3452 2023-01-10 09:00 ..
+drwxrws---  2 u0_a181 media_rw 3452 2023-01-10 09:00 Alarms
+drwxrws---  5 u0_a181 media_rw 3452 2023-01-10 09:00 Android
+drwxrws---  4 u0_a181 media_rw 3452 2024-05-01 11:00 DCIM
+drwxrws---  3 u0_a181 media_rw 3452 2024-05-12 18:20 Download
+drwxrws---  2 u0_a181 media_rw 3452 2023-01-10 09:00 Music
+drwxrws---  5 u0_a181 media_rw 3452 2024-04-21 16:44 Pictures
+drwxrws---  2 u0_a181 media_rw 3452 2023-11-30 12:00 Telegram Files
+-rw-rw----  1 u0_a181 media_rw 1048576 2024-04-02 07:15 My Notes (copy).txt
+-rw-rw----  1 u0_a181 media_rw   20480 2024-03-30 22:01 گزارش مالی ۱۴۰۳.pdf
+-rw-rw----  1 u0_a181 media_rw    1234 2024-03-30 22:01 日本語のファイル.txt
+-rw-rw----  1 u0_a181 media_rw       0 2024-05-12 18:20 .nomedia
+lrwxrwxrwx  1 root    root          23 2023-01-10 09:00 music link -> /sdcard/Music/Favorites
