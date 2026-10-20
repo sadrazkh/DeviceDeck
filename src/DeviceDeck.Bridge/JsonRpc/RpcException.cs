@@ -1,5 +1,6 @@
 using System.Text.Json.Serialization;
 using DeviceDeck.Core.Abstractions;
+using DeviceDeck.Core.Backups;
 
 namespace DeviceDeck.Bridge.JsonRpc;
 
@@ -22,6 +23,9 @@ public static class RpcErrorCodes
         DeviceErrorCodes.NotFound, DeviceErrorCodes.Disconnected, DeviceErrorCodes.Locked, DeviceErrorCodes.TrustRequired,
         DeviceErrorCodes.Unauthorized, DeviceErrorCodes.NotSupported, DeviceErrorCodes.PathNotFound, DeviceErrorCodes.PermissionDenied,
         DeviceErrorCodes.AlreadyExists, DeviceErrorCodes.InstallFailed, DeviceErrorCodes.DriverMissing, DeviceErrorCodes.Protocol,
+        // Backup (round 2)
+        BackupErrors.WrongPassword, BackupErrors.PasswordRequired, BackupErrors.Busy, BackupErrors.Missing, BackupErrors.Corrupt,
+        BackupErrors.NoSpace, BackupErrors.Refused,
         Internal,
     };
 }

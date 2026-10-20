@@ -11,6 +11,8 @@ import {
 import type { BridgeEvents, EventName, MethodName, MethodParams, MethodResult } from '../methods';
 import type { AppInfo, DeviceCapability, DeviceSummary, DriverStatus, FolderPattern, NotificationShowParams, Settings, UpdateStatus } from '../types';
 import { mockAppFiles, mockMeasure } from './appFiles';
+import { batteryHandlers } from './battery';
+import { cleanupHandlers } from './cleanup';
 import { MockFileSystem, joinPath, normalise } from './files';
 import { appIconUrl, photoUrl, phoneScreenshotUrl, thumbnailUrl } from './images';
 import {
@@ -32,11 +34,13 @@ import {
   seedTransfers,
   storage,
 } from './mock-data';
+import { MockBackups } from './backup';
 import { MockPc, PcError } from './pc';
 import { assetsInAlbum, generateLibrary, toContractAsset, type MockAsset, type MockLibrary } from './photos';
 import { MockPhotoBackup } from './photosBackup';
 import { hashString } from './random';
 import { TransferEngine, type JobItem } from './transfers';
+import { MockToolbox } from './toolbox';
 
 export type MockScenario = 'ready' | 'empty' | 'trust' | 'limited' | 'driverMissing' | 'iphoneOnly';
 
@@ -227,6 +231,7 @@ export class MockBackend {
       for (const step of due) step.run();
     }
     this.engine.tick(ms);
+    this.backups.tick(ms);
   }
 
   // ---------- Images (the mock's stand-in for https://device.local/) ----------
@@ -284,7 +289,34 @@ export class MockBackend {
     badParams,
   });
 
+  /** Toolbox methods (round 2); its arrows reach this backend only when called. */
+  private readonly toolbox = new MockToolbox({
+    emit: (event, params) => this.emit(event, params),
+    ready: (deviceId, capability) => this.requireReady(deviceId, capability),
+    after: (ms, run) => this.after(ms, run),
+    now: () => this.now(),
+    details: (deviceId) => structuredClone(details[deviceId] ?? { rows: [] }),
+    fault: (code, message) => fault(code, message),
+    badParams: (message) => badParams(message),
+  });
+
+  /** Backups, contacts and messages (round 2); its handlers are part of the table below. */
+  readonly backups = new MockBackups({
+    emit: (event, params) => this.emit(event, params),
+    now: () => this.now(),
+    device: (id) => this.devices.get(id),
+    requireReady: (id, capability) => this.requireReady(id, capability),
+    settings: () => this.settings,
+    fault: (code, message) => fault(code, message),
+    badParams: (message) => badParams(message),
+    restart: (id) => {
+      this.unplug(id);
+      this.after(2500, () => this.plugBack(id));
+    },
+  });
+
   readonly handlers: { [M in MethodName]: Handler<M> } = {
+    ...this.backups.handlers,
     'app.hello': () => ({ version: '0.1.0-mock', isWebView: false }),
     'drivers.status': () => this.driverList.map((d) => ({ ...d })),
     'device.list': () => [...this.devices.values()].map((d) => ({ ...d, capabilities: [...d.capabilities] })),
@@ -552,6 +584,29 @@ export class MockBackend {
       return mockMeasure(this.fs(deviceId), root, paths);
     },
     ...this.photoBackup.handlers,
+    // ---------- Clean-up and battery history (round 2) ----------
+    ...cleanupHandlers({
+      requireReady: (deviceId, capability) => this.requireReady(deviceId, capability),
+      library: (deviceId) => this.library(deviceId),
+      apps: (deviceId) => this.appLists.get(deviceId) ?? [],
+      setApps: (deviceId, list) => void this.appLists.set(deviceId, list),
+      fs: (deviceId) => this.fs(deviceId),
+      storage: (deviceId) => storage[deviceId],
+      addJob: (spec) => this.engine.add(spec),
+      emit: (event, params) => this.emit(event, params),
+      after: (ms, run) => this.after(ms, run),
+      now: () => this.now(),
+      fault: (code, message) => fault(code, message),
+      badParams,
+    }),
+    ...batteryHandlers({
+      requireReady: (deviceId, capability) => this.requireReady(deviceId, capability),
+      battery: (deviceId) => battery[deviceId],
+      emit: (event, params) => this.emit(event, params),
+      now: () => this.now(),
+      badParams,
+    }),
+    ...this.toolbox.handlers,
   };
 
   private pcCall<T>(run: () => T): T {
@@ -742,6 +797,8 @@ const SETTINGS_KEYS: (keyof Settings)[] = [
   'photoBackupFolder',
   'photoBackupPattern',
   'photoBackupConvertHeic',
+  'backupFolder',
+  'backupKeep',
 ];
 
 function pickSettings(patch: Partial<Settings>): Partial<Settings> {

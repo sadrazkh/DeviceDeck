@@ -490,3 +490,7 @@ web/playwright-report/
 
 artifacts/
 !docs/releases/
+# The backup feature's source folders, not Visual Studio's conversion backups (Backup*/ above).
+!src/**/Backup*/
+!tests/**/Backup*/
+!web/src/**/Backup*/

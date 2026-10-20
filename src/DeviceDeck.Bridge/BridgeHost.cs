@@ -16,6 +16,7 @@ public sealed class BridgeHost : IDisposable
     private readonly BridgeServices _services;
     private readonly HashSet<IPhotoIndexProgressSource> _indexSources = [];
     private readonly Lock _gate = new();
+    private readonly IDisposable[] _featureEvents;
     private readonly DesktopEvents _desktopEvents;
     private CancellationTokenSource _page = new();
 
@@ -24,11 +25,15 @@ public sealed class BridgeHost : IDisposable
         _transport = transport;
         _services = services;
         Dispatcher = BridgeMethods.Register(new JsonRpcDispatcher(), services);
+        Toolbox.ToolboxMethods.Register(Dispatcher, services, Publish);
 
         transport.MessageReceived += OnMessage;
         services.Hub.DeviceChanged += OnDeviceChanged;
         services.Hub.DriversChanged += OnDriversChanged;
         services.Transfers.JobUpdated += OnJobUpdated;
+        if (services.Backups is { } backups)
+            backups.JobUpdated += OnBackupUpdated;
+        _featureEvents = [CleanupMethods.PublishEvents(services, Publish), BatteryMethods.PublishEvents(services, Publish)];
         _desktopEvents = new DesktopEvents(services, Publish);
         foreach (var summary in services.Hub.ListDevices())
         {
@@ -97,6 +102,8 @@ public sealed class BridgeHost : IDisposable
 
     private void OnJobUpdated(object? sender, TransferJob job) => Publish("transfer.updated", job);
 
+    private void OnBackupUpdated(object? sender, Core.Backups.BackupJob job) => Publish("backup.updated", job);
+
     private void WatchIndexing(string deviceId)
     {
         if (!_services.Hub.TryGetDevice(deviceId, out var device) || device.Photos is not IPhotoIndexProgressSource source)
@@ -121,6 +128,13 @@ public sealed class BridgeHost : IDisposable
         _services.Hub.DeviceChanged -= OnDeviceChanged;
         _services.Hub.DriversChanged -= OnDriversChanged;
         _services.Transfers.JobUpdated -= OnJobUpdated;
+        if (_services.Backups is { } backups)
+            backups.JobUpdated -= OnBackupUpdated;
+        foreach (var subscription in _featureEvents)
+        {
+            subscription.Dispose();
+        }
+
         _desktopEvents.Dispose();
         lock (_gate)
         {

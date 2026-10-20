@@ -3,6 +3,7 @@ import { useEffect, useRef } from 'react';
 import { AppShell } from '../shell/AppShell';
 import { usePrefs, type NavLayout } from '../state/prefs';
 import { SECTIONS, useUi, type Section } from '../state/ui';
+import { useBackupEvents } from '../screens/backup/backupQueries';
 import { useBridge } from './bridgeContext';
 import { useDevices, useSettings } from './queries';
 import { useDocumentState } from './useDocumentState';
@@ -30,6 +31,7 @@ export function App() {
 
   useDocumentState(client.kind === 'webview' ? 'webview' : 'browser');
   useLiveUpdates();
+  useBackupEvents();
   useShortcuts();
 
   useEffect(() => {

@@ -4,6 +4,9 @@ using DeviceDeck.Bridge;
 using DeviceDeck.Bridge.Images;
 using DeviceDeck.Bridge.Methods;
 using DeviceDeck.Core;
+using DeviceDeck.Core.Backups;
+using DeviceDeck.Core.Battery;
+using DeviceDeck.Core.Cleanup;
 using DeviceDeck.Core.Fake;
 using DeviceDeck.Core.Hub;
 using DeviceDeck.Core.Notifications;
@@ -19,9 +22,11 @@ namespace DeviceDeck.Shell.Hosting;
 internal sealed class HostServices : IAsyncDisposable
 {
     private HostServices(AppPaths paths, bool devMode, FakeDeviceProvider? fake, DeviceHub hub, SqliteTransferStore store,
-        TransferQueue transfers, SettingsStore settings, WicImageTranscoder transcoder, DragOutRegistry dragOuts, PhotoBackupService photoBackup)
+        TransferQueue transfers, SettingsStore settings, WicImageTranscoder transcoder, DragOutRegistry dragOuts, PhotoBackupService photoBackup,
+        BackupService backups)
     {
         PhotoBackup = photoBackup;
+        Backups = backups;
         Paths = paths;
         DevMode = devMode;
         Fake = fake;
@@ -51,6 +56,7 @@ internal sealed class HostServices : IAsyncDisposable
     public ScreenshotStore Screenshots { get; }
     public ThumbnailCache Thumbnails { get; }
     public DeviceImageHandler Images { get; }
+    public BackupService Backups { get; }
 
     /// <summary>video/{deviceId}/{assetId}?size=…, with HTTP Range so the viewer can seek.</summary>
     public VideoHandler Videos { get; }
@@ -64,6 +70,10 @@ internal sealed class HostServices : IAsyncDisposable
 
     /// <summary>Photos backup; <c>CountNewAsync(deviceId, ct)</c> gives the "N new photos" count for a notification.</summary>
     public PhotoBackupService PhotoBackup { get; }
+
+    // Clean-up and battery history (round 2).
+    public CleanupService Cleanup { get; private init; } = null!;
+    public BatteryRecorder Battery { get; private init; } = null!;
 
     public static string Version { get; } =
         typeof(HostServices).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.1.0";
@@ -83,11 +93,24 @@ internal sealed class HostServices : IAsyncDisposable
         var transcoder = new WicImageTranscoder();
         var settings = new SettingsStore(paths.SettingsFile);
         var photoBackup = new PhotoBackupService(Path.Combine(paths.Root, "photo-backup.db"), hub, settings, transcoder, PhotosHeicProbe.Check());
+        var keepAwake = new WindowsKeepAwake();
         var dragOuts = new DragOutRegistry();
-        var transfers = new TransferQueue(hub, store, [.. TransferHandlers.All(transcoder), photoBackup.Handler, new DragOutHandler(dragOuts)], new WindowsKeepAwake());
+        var transfers = new TransferQueue(hub, store, [.. TransferHandlers.All(transcoder), photoBackup.Handler, new DragOutHandler(dragOuts)], keepAwake);
         transfers.Start();
         photoBackup.Attach(transfers);
-        var host = new HostServices(paths, devMode, fake, hub, store, transfers, settings, transcoder, dragOuts, photoBackup);
+        var backups = new BackupService(hub, settings, new DeviceDeck.Ios.Backup.Format.IosBackupFormat(),
+            new BackupServiceOptions { KeepAwake = keepAwake, Transcoder = transcoder });
+        backups.Start();
+
+        // Before the hub starts, so the first phones to arrive get their battery snapshot.
+        var battery = new BatteryRecorder(hub, new BatteryHistoryStore(BatteryHistoryStore.PathIn(paths)));
+        battery.RecordFailed += (_, e) => ShellLog.Error($"Battery snapshot for {e.DeviceId} failed.", e.Error);
+        var cleanup = new CleanupService(hub, transfers, settings);
+        var host = new HostServices(paths, devMode, fake, hub, store, transfers, settings, transcoder, dragOuts, photoBackup, backups)
+        {
+            Cleanup = cleanup,
+            Battery = battery,
+        };
 
         // A drag into File Explorer doesn't survive a restart: Explorer's end of it is gone.
         foreach (var job in transfers.List().Where(j => j.Kind == TransferKind.DragOut && j.State is not (TransferState.Done or TransferState.Failed or TransferState.Cancelled)))
@@ -101,7 +124,8 @@ internal sealed class HostServices : IAsyncDisposable
         return host;
     }
 
-    public BridgeServices BridgeServices(IShellServices shell, INotificationService notifications, IDesktopShell desktop) => new()
+    /// <summary>The main window passes its notifications and desktop shell; a second window (mirroring) goes without.</summary>
+    public BridgeServices BridgeServices(IShellServices shell, INotificationService? notifications = null, IDesktopShell? desktop = null) => new()
     {
         Hub = Hub,
         Transfers = Transfers,
@@ -110,9 +134,13 @@ internal sealed class HostServices : IAsyncDisposable
         Screenshots = Screenshots,
         Version = Version,
         DevFake = Fake,
-        Notifications = notifications,
+        Notifications = notifications ?? NullNotificationService.Instance,
         Desktop = desktop,
         PhotoBackup = PhotoBackup,
+        Cleanup = Cleanup,
+        Battery = Battery,
+        Toolbox = DeviceDeck.Shell.Toolbox.ShellToolbox.Create(this),
+        Backups = Backups,
     };
 
     /// <summary>Starts the providers once the window is up, so the first paint isn't waiting on USB.</summary>
@@ -147,8 +175,11 @@ internal sealed class HostServices : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         var clock = Stopwatch.StartNew();
+        await StepAsync("clean-up", async () => await Cleanup.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);
+        await StepAsync("battery history", async () => await Battery.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);
         await StepAsync("transfer queue", async () => await Transfers.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);
         await StepAsync("video cache", async () => await Videos.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);
+        await StepAsync("backup service", async () => await Backups.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);
         await StepAsync("transfer store", () =>
         {
             Store.Dispose();

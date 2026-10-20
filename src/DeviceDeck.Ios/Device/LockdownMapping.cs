@@ -10,7 +10,9 @@ public static class LockdownMapping
         DeviceCapability.Info | DeviceCapability.Storage | DeviceCapability.Battery |
         DeviceCapability.PhotosRead | DeviceCapability.Files | DeviceCapability.AppDocuments |
         DeviceCapability.AppsList | DeviceCapability.AppsInstall | DeviceCapability.AppsUninstall |
-        DeviceCapability.Reboot | DeviceCapability.Shutdown | DeviceCapability.Rename;
+        DeviceCapability.Syslog | DeviceCapability.CrashReports |
+        DeviceCapability.Reboot | DeviceCapability.Shutdown | DeviceCapability.Rename |
+        DeviceCapability.Backup | DeviceCapability.Restore | DeviceCapability.Contacts | DeviceCapability.Messages;
 
     public static DeviceCapability CapabilitiesFor(DeviceState state) => state switch
     {

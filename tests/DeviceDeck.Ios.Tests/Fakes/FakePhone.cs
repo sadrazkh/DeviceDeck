@@ -59,6 +59,11 @@ internal sealed class FakePhone
     /// <summary>Install: the progress statuses to send before Complete, or an Error to fail with.</summary>
     public string? InstallError { get; set; }
 
+    /// <summary>Toolbox tests: serves services this fake doesn't know (syslog_relay, crash reports); true = handled.</summary>
+    public Func<string, Stream, CancellationToken, Task<bool>>? ExtraService { get; set; }
+    /// <summary>More services by name, served by the test (mobilebackup2 and notification_proxy in the backup tests).</summary>
+    public Dictionary<string, Func<Stream, CancellationToken, Task>> ExtraServices { get; } = new(StringComparer.Ordinal);
+
     public bool HasPort(int port) => port == LockdownPort || _servicePorts.ContainsKey(port);
 
     public Task ServePortAsync(int port, Stream s, CancellationToken ct) =>
@@ -117,6 +122,23 @@ internal sealed class FakePhone
                 case "StopSession":
                     session = false;
                     break;
+                case "SetValue":
+                {
+                    var domain = msg.GetString("Domain") ?? "";
+                    if (!session)
+                        reply["Error"] = "InvalidSession";
+                    else if (msg.GetString("Key") is { } key && msg.TryGetValue("Value", out var value) && value is not null)
+                    {
+                        if (!Domains.TryGetValue(domain, out var values))
+                            Domains[domain] = values = new PlistDict();
+                        values[key] = value;
+                        lock (Log)
+                            Log.Add($"lockdown:SetValue {domain} {key}");
+                    }
+                    else
+                        reply["Error"] = "MissingValue";
+                    break;
+                }
                 case "Pair":
                 {
                     var record = msg.GetDict("PairRecord");
@@ -158,6 +180,8 @@ internal sealed class FakePhone
     {
         lock (Log)
             Log.Add("service:" + service);
+        if (ExtraService is { } extra && await extra(service, s, ct))
+            return;
         switch (service)
         {
             case "com.apple.afc":
@@ -206,6 +230,10 @@ internal sealed class FakePhone
                     };
                     await Wire.WritePlistAsync(s, reply, ct);
                 }
+                return;
+            default:
+                if (ExtraServices.TryGetValue(service, out var serve))
+                    await serve(s, ct);
                 return;
         }
     }

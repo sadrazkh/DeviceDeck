@@ -99,6 +99,9 @@ public sealed class DeviceConnector(IUsbmuxConnector usbmux, int usbmuxDeviceId,
         var connection = await StartServiceAsync(ServiceNames.Afc, ct).ConfigureAwait(false);
         return new AfcClient(connection.Detach());
     }
+
+    /// <summary>The pair record this connector uses (escrow bag, host certificate); null before the phone trusts the PC.</summary>
+    public Task<PairRecord?> GetPairRecordAsync(CancellationToken ct) => pairRecord(ct);
 }
 
 public static class ServiceNames

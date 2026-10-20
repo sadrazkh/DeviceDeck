@@ -100,6 +100,11 @@ Step "Google's platform-tools (adb)"
 Invoke-Native 'fetch-platform-tools' { powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'fetch-platform-tools.ps1') }
 Copy-Item -Recurse (Join-Path $repo 'third_party\platform-tools') (Join-Path $stage 'platform-tools')
 
+# Toolbox: Android screen mirroring pushes scrcpy-server (Apache-2.0) to the phone; it looks in scrcpy\ next to the exe.
+Step 'scrcpy-server for Android mirroring'
+Invoke-Native 'fetch-scrcpy-server' { powershell -NoProfile -ExecutionPolicy Bypass -File (Join-Path $PSScriptRoot 'fetch-scrcpy-server.ps1') }
+Copy-Item -Recurse (Join-Path $repo 'third_party\scrcpy') (Join-Path $stage 'scrcpy')
+
 Step 'Readme and notices'
 Copy-Item (Join-Path $repo 'THIRD-PARTY-NOTICES.md') $stage
 @"

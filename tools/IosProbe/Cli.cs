@@ -42,6 +42,10 @@ internal sealed class Cli
           thumb <assetId> <out.jpg> [--size 256]   the phone's own thumbnail, if it has one
           photo-pull <assetId> <dest>         copy an original off the phone
 
+        Clean-up (read-only)
+          cleanup [--top 10] [--min-mb 10] [--names]   biggest apps, largest media, exact duplicates, big app files
+                                              (sizes only; photo and file names hidden unless --names)
+
         Diagnostics
           values <domain|-> [--key K]         raw lockdown values of a domain ('-' = top; e.g. com.apple.disk_usage)
           carrier                             the SIMs' carrier bundles (no ICCID / IMSI) and the mapped name
@@ -50,6 +54,11 @@ internal sealed class Cli
           afcinfo                             AFC's view of the Media volume (FSTotalBytes, FSFreeBytes)
           bench-storage [--browse]            time each source of the storage categories
           bench-overview                      storage while apps, photo index and icons load, as the host does
+
+        Toolbox
+          syslog [--seconds 5] [--show 5]     stream the live log, then counts by level and process
+          crashes [--limit 10]                crash reports (moves new ones into place first, like Finder)
+          wifisync [on|off --yes]             the "show this iPhone when on Wi-Fi" switch
 
         Power
           reboot --yes                        restart the phone
@@ -70,7 +79,7 @@ internal sealed class Cli
     public IReadOnlyList<string> Positional { get; }
     public IReadOnlyDictionary<string, string?> Options { get; }
 
-    private static readonly HashSet<string> Flags = ["reveal", "system", "yes", "recursive", "browse"];
+    private static readonly HashSet<string> Flags = ["reveal", "system", "yes", "recursive", "browse", "names"];
 
     public static Cli Parse(string[] args)
     {

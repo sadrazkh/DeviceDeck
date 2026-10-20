@@ -3,6 +3,9 @@ using System.Text.Json.Nodes;
 using DeviceDeck.Bridge.Images;
 using DeviceDeck.Bridge.JsonRpc;
 using DeviceDeck.Core.Abstractions;
+using DeviceDeck.Core.Backups;
+using DeviceDeck.Core.Battery;
+using DeviceDeck.Core.Cleanup;
 using DeviceDeck.Core.Fake;
 using DeviceDeck.Core.Hub;
 using DeviceDeck.Core.Notifications;
@@ -34,6 +37,15 @@ public sealed class BridgeServices
     public IDesktopShell? Desktop { get; init; }
     /// <summary>Photos backup (photos.newCount, photos.backup*); without it those methods answer not_supported.</summary>
     public PhotoBackupService? PhotoBackup { get; init; }
+
+    // Clean-up and battery history (round 2): cleanup.* and battery.* are registered only when set.
+    public CleanupService? Cleanup { get; init; }
+    public BatteryRecorder? Battery { get; init; }
+    /// <summary>Converters, the mirror window and folders for the toolbox methods (Toolbox/ToolboxMethods.cs).</summary>
+    public Toolbox.ToolboxServices Toolbox { get; init; } = new();
+
+    /// <summary>Backups, contacts and messages (round 2); null answers those methods with not_supported.</summary>
+    public BackupService? Backups { get; init; }
 }
 
 /// <summary>Registers every method of docs/bridge-contract.md on a dispatcher.</summary>
@@ -221,6 +233,13 @@ public static class BridgeMethods
         DesktopMethods.Register(rpc, s);
         // Photos backup and adding photos to an iPhone app (round 2).
         PhotosBackupMethods.Register(rpc, s);
+
+        // Clean-up and battery history (round 2).
+        CleanupMethods.Register(rpc, s);
+        BatteryMethods.Register(rpc, s);
+
+        // Backups, contacts and messages (round 2).
+        BackupMethods.Register(rpc, s);
 
         if (s.DevFake is { } fake)
         {

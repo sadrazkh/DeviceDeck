@@ -14,6 +14,9 @@ export default defineConfig({
   workers: 4,
   reporter: [['list']],
   timeout: 60_000,
+  // Auto-waiting assertions get 15 s instead of 5: with 4 workers on a busy PC (or GitHub's slower runner) a screen
+  // can take longer than 5 s to load its mock data. A test that passes fast is not slowed down by this.
+  expect: { timeout: 15_000 },
   use: {
     channel: 'msedge',
     baseURL: url,

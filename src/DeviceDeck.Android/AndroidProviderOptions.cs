@@ -39,4 +39,7 @@ public sealed class AndroidProviderOptions
 
     /// <summary>How long apps.list waits for labels it hasn't cached yet before falling back to package names.</summary>
     public TimeSpan AppLabelBudget { get; init; } = TimeSpan.FromSeconds(20);
+
+    /// <summary>scrcpy-server for mirroring; null = DEVICEDECK_SCRCPY_SERVER, then scrcpy/ next to the app, then third_party/scrcpy.</summary>
+    public string? ScrcpyServerPath { get; init; }
 }

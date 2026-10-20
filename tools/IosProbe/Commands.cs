@@ -75,6 +75,7 @@ internal static class Commands
         ["install"] = new(["app.ipa"], (d, c, ct) => InstallAsync(d, c.Positional[0], ct)),
         ["uninstall"] = new(["bundleId"], (d, c, ct) => UninstallAsync(d, c.Positional[0], ct), NeedsYes: true),
         ["photos"] = new([], (d, c, ct) => PhotosAsync(d, c.IntOption("limit", 50), c.Option("album"), ct)),
+        ["cleanup"] = new([], CleanupProbe.RunAsync),
         ["values"] = new(["domain"], async (d, c, ct) =>
         {
             var domain = c.Positional[0] == "-" ? null : c.Positional[0];
@@ -115,6 +116,9 @@ internal static class Commands
             ?? throw new DeviceException(DeviceErrorCodes.NotFound, "No IORegistry entry of that class."))),
         ["thumb"] = new(["assetId", "out.jpg"], (d, c, ct) => ThumbAsync(d, c.Positional[0], c.Positional[1], c.IntOption("size", 256), ct)),
         ["photo-pull"] = new(["assetId", "dest"], (d, c, ct) => PhotoPullAsync(d, c.Positional[0], c.Positional[1], ct)),
+        ["syslog"] = new([], (d, c, ct) => ToolboxCommands.SyslogAsync(d, c.IntOption("seconds", 5), c.IntOption("show", 5), ct)),
+        ["crashes"] = new([], (d, c, ct) => ToolboxCommands.CrashesAsync(d, c.IntOption("limit", 10), ct)),
+        ["wifisync"] = new([], (d, c, ct) => ToolboxCommands.WifiSyncAsync(d, c.OptionalArg(0), c.Has("yes"), ct)),
         ["reboot"] = new([], async (d, _, ct) =>
         {
             await d.Actions.RebootAsync(RebootTarget.System, ct);

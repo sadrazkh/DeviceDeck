@@ -32,6 +32,7 @@ import { jobFraction } from '../../state/transfers';
 import { useUi } from '../../state/ui';
 import { progressLine } from '../../shell/TransferDrawer';
 import { DeviceName } from '../../shell/DeviceName';
+import { useBackupUi } from '../backup/backupQueries';
 import { ScreenLayout } from '../ScreenLayout';
 import styles from './Overview.module.css';
 
@@ -324,13 +325,18 @@ export function OverviewScreen({ device }: { device: DeviceSummary }) {
               {t('overview.exportPhotos')}
             </Button>
           )}
-          <Tooltip content={t('overview.comingLater')}>
-            <span>
-              <Button variant="accent" icon={<ArchiveRegular />} disabled>
-                {t('overview.backupNow')}
-              </Button>
-            </span>
-          </Tooltip>
+          <Button
+            variant="accent"
+            icon={<ArchiveRegular />}
+            disabled={!caps.has('backup')}
+            onClick={() => {
+              useBackupUi.getState().openWizard(device.id);
+              navigate('backup');
+            }}
+            data-testid="overview-backup"
+          >
+            {t('overview.backupNow')}
+          </Button>
         </>
       }
       banners={

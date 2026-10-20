@@ -14,6 +14,9 @@ public sealed class FakeOptions
     /// <summary>Simulated photo-library indexing on arrival (raises <see cref="Extensions.IPhotoIndexProgressSource.IndexProgress"/>).</summary>
     public TimeSpan IndexDuration { get; init; } = TimeSpan.FromSeconds(2);
 
+    /// <summary>How long a fake iPhone's backup or restore takes (round 2, backup).</summary>
+    public TimeSpan BackupDuration { get; init; } = TimeSpan.FromSeconds(8);
+
     /// <summary>The phones to simulate; the plan's sample data when null.</summary>
     public IReadOnlyList<FakeDeviceSpec>? Devices { get; init; }
 
@@ -23,6 +26,7 @@ public sealed class FakeOptions
         BytesPerSecond = null,
         RebootDelay = TimeSpan.FromMilliseconds(50),
         IndexDuration = TimeSpan.Zero,
+        BackupDuration = TimeSpan.Zero,
         Devices = devices.Length == 0 ? null : devices,
     };
 }

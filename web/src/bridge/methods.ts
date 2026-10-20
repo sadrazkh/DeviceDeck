@@ -1,6 +1,19 @@
 import type {
   AppInfo,
+  BackupDeleteResult,
+  BackupDeviceInfo,
+  BackupDomain,
+  BackupEntry,
+  BackupInfo,
+  BackupItemRef,
+  BackupJob,
   BatteryInfo,
+  Contact,
+  ContactsFormat,
+  Conversation,
+  Message,
+  MessagesFormat,
+  PrunePlan,
   ConflictChoice,
   DeletedCount,
   DragOutParams,
@@ -30,6 +43,20 @@ import type {
   TransferJob,
 } from './types';
 import type { AppFilesOverview, FolderUsage } from './appFiles';
+import type { BatteryDevice, BatterySnapshot, CleanupFileItem, CleanupItem, CleanupResult, CleanupStatus } from './cleanupTypes';
+import type {
+  CrashReportList,
+  LogLevel,
+  LogLine,
+  MirrorInput,
+  MirrorVideoEvent,
+  ReportFormat,
+  ToolboxError,
+  ToolboxFeatures,
+  ToolboxJob,
+  WifiQrEvent,
+  WirelessResult,
+} from './toolbox';
 
 type DeviceParams = { deviceId: string };
 
@@ -125,6 +152,106 @@ export interface BridgeMethods {
   'photos.backup': { params: DeviceParams; result: JobStarted };
   'photos.backupForget': { params: DeviceParams; result: { forgotten: number } };
   'photos.importToApp': { params: DeviceParams & { appId: string; files: string[] }; result: JobStarted };
+  // Clean-up and battery history (round 2)
+  'cleanup.status': { params: DeviceParams; result: CleanupStatus };
+  'cleanup.analyze': { params: DeviceParams; result: CleanupStatus };
+  'cleanup.cancel': { params: DeviceParams; result: Empty };
+  'cleanup.deleteMedia': {
+    params: DeviceParams & { items: CleanupItem[]; expectedBytes: number; copyFirstTo?: string | null };
+    result: CleanupResult;
+  };
+  'cleanup.deleteFiles': {
+    params: DeviceParams & { items: CleanupFileItem[]; expectedBytes: number; copyFirstTo?: string | null };
+    result: CleanupResult;
+  };
+  'cleanup.uninstallApps': {
+    params: DeviceParams & { items: CleanupItem[]; expectedBytes: number; copyFirstTo?: string | null };
+    result: CleanupResult;
+  };
+  'cleanup.trimCaches': { params: DeviceParams; result: CleanupResult };
+  'battery.devices': { params: Empty; result: BatteryDevice[] };
+  'battery.history': { params: DeviceParams; result: BatterySnapshot[] };
+  'battery.record': { params: DeviceParams; result: BatterySnapshot };
+  'battery.export': { params: DeviceParams & { destination: string; language?: 'en' | 'fa' }; result: { path: string } };
+
+  // ---- Toolbox (round 2) ----
+  'toolbox.features': { params: DeviceParams; result: ToolboxFeatures };
+  'log.start': { params: DeviceParams; result: { sessionId: string } };
+  'log.stop': { params: { sessionId: string }; result: Empty };
+  'log.clear': { params: { sessionId: string }; result: Empty };
+  'log.export': {
+    params: { sessionId: string; minLevel?: LogLevel; search?: string | null; destination?: string | null };
+    result: { path: string; count: number };
+  };
+  'crash.list': { params: DeviceParams; result: CrashReportList };
+  'crash.read': { params: DeviceParams & { id: string }; result: { text: string; truncated: boolean; size: number } };
+  'crash.export': {
+    params: DeviceParams & { ids: string[]; destination?: string | null };
+    result: { folder: string; files: string[] };
+  };
+  'crash.delete': { params: DeviceParams & { ids: string[] }; result: DeletedCount };
+  'report.preview': { params: DeviceParams & { language: 'en' | 'fa'; revealSerials: boolean }; result: { html: string } };
+  'report.save': {
+    params: DeviceParams & { language: 'en' | 'fa'; revealSerials: boolean; format: ReportFormat; destination?: string | null };
+    result: { path: string; count: number };
+  };
+  'heic.status': { params: Empty; result: { available: boolean } };
+  'heic.convert': {
+    params: { files: string[]; quality: number; destination?: string | null };
+    result: { jobId: string; total: number };
+  };
+  'toolbox.cancelJob': { params: { jobId: string }; result: Empty };
+  'mirror.open': { params: DeviceParams; result: Empty };
+  'wifi.status': { params: Empty; result: { wirelessDebugging: boolean } };
+  'wifi.pair': { params: { host: string; port: number; code: string }; result: WirelessResult };
+  'wifi.connect': { params: { host: string; port: number }; result: WirelessResult };
+  'wifi.disconnect': { params: DeviceParams; result: Empty };
+  'wifi.qrStart': { params: Empty; result: { sessionId: string; name: string; password: string; payload: string } };
+  'wifi.qrCancel': { params: { sessionId: string }; result: Empty };
+  'wifi.iphoneSync': { params: DeviceParams; result: { enabled: boolean | null } };
+  'wifi.setIphoneSync': { params: DeviceParams & { enabled: boolean }; result: { enabled: boolean | null } };
+  'ringtone.create': {
+    params: DeviceParams & { files: string[]; startSeconds: number; endSeconds: number; name?: string | null; setAsDefault: boolean };
+    result: { devicePath: string; isDefault: boolean; bytes: number };
+  };
+  // Served by the mirror window's own bridge (web/mirror.html), not the main window's.
+  'mirror.start': {
+    params: DeviceParams & { maxSize?: number; bitRate?: number; maxFps?: number };
+    result: { sessionId: string; deviceName: string; codec: string };
+  };
+  'mirror.input': { params: { sessionId: string } & MirrorInput; result: Empty };
+  'mirror.stop': { params: { sessionId: string }; result: Empty };
+  'mirror.screenshot': { params: DeviceParams; result: { path: string } };
+  // Backup, contacts and messages (round 2)
+  'backup.list': { params: { deviceId?: string }; result: BackupInfo[] };
+  'backup.device': { params: DeviceParams; result: BackupDeviceInfo };
+  'backup.start': { params: DeviceParams & { full?: boolean }; result: BackupJob };
+  'backup.restore': {
+    params: DeviceParams & { backupId: string; confirmName: string; password?: string; restoreSettings?: boolean };
+    result: BackupJob;
+  };
+  'backup.setEncryption': { params: DeviceParams & { enable: boolean; password?: string; oldPassword?: string }; result: BackupJob };
+  'backup.jobs': { params: Empty; result: BackupJob[] };
+  'backup.cancel': { params: { jobId: string }; result: Empty };
+  'backup.prunePlan': { params: DeviceParams; result: PrunePlan };
+  'backup.deletePlan': { params: { backupIds: string[] }; result: PrunePlan };
+  'backup.delete': { params: { backupIds: string[] }; result: BackupDeleteResult };
+  'backup.unlock': { params: { backupId: string; password: string }; result: Empty };
+  'backup.lock': { params: { backupId: string }; result: Empty };
+  'backup.domains': { params: { backupId: string }; result: BackupDomain[] };
+  'backup.files': { params: { backupId: string; domain: string; path: string }; result: BackupEntry[] };
+  'backup.extract': { params: { backupId: string; items: BackupItemRef[]; destination: string }; result: BackupJob };
+  'contacts.list': { params: { backupId: string }; result: Contact[] };
+  'contacts.export': {
+    params: { backupId: string; format: ContactsFormat; destination: string; contactIds?: string[] };
+    result: BackupJob;
+  };
+  'messages.conversations': { params: { backupId: string }; result: Conversation[] };
+  'messages.list': { params: { backupId: string; conversationId: string; offset: number; limit: number }; result: Page<Message> };
+  'messages.export': {
+    params: { backupId: string; conversationIds: string[]; format: MessagesFormat; destination: string };
+    result: BackupJob;
+  };
 }
 
 export type MethodName = keyof BridgeMethods;
@@ -195,6 +322,68 @@ const methodTable = {
   'photos.backup': true,
   'photos.backupForget': true,
   'photos.importToApp': true,
+  // Clean-up and battery history (round 2)
+  'cleanup.status': true,
+  'cleanup.analyze': true,
+  'cleanup.cancel': true,
+  'cleanup.deleteMedia': true,
+  'cleanup.deleteFiles': true,
+  'cleanup.uninstallApps': true,
+  'cleanup.trimCaches': true,
+  'battery.devices': true,
+  'battery.history': true,
+  'battery.record': true,
+  'battery.export': true,
+  // Toolbox (round 2)
+  'toolbox.features': true,
+  'log.start': true,
+  'log.stop': true,
+  'log.clear': true,
+  'log.export': true,
+  'crash.list': true,
+  'crash.read': true,
+  'crash.export': true,
+  'crash.delete': true,
+  'report.preview': true,
+  'report.save': true,
+  'heic.status': true,
+  'heic.convert': true,
+  'toolbox.cancelJob': true,
+  'mirror.open': true,
+  'wifi.status': true,
+  'wifi.pair': true,
+  'wifi.connect': true,
+  'wifi.disconnect': true,
+  'wifi.qrStart': true,
+  'wifi.qrCancel': true,
+  'wifi.iphoneSync': true,
+  'wifi.setIphoneSync': true,
+  'ringtone.create': true,
+  'mirror.start': true,
+  'mirror.input': true,
+  'mirror.stop': true,
+  'mirror.screenshot': true,
+  // Backup, contacts and messages (round 2)
+  'backup.list': true,
+  'backup.device': true,
+  'backup.start': true,
+  'backup.restore': true,
+  'backup.setEncryption': true,
+  'backup.jobs': true,
+  'backup.cancel': true,
+  'backup.prunePlan': true,
+  'backup.deletePlan': true,
+  'backup.delete': true,
+  'backup.unlock': true,
+  'backup.lock': true,
+  'backup.domains': true,
+  'backup.files': true,
+  'backup.extract': true,
+  'contacts.list': true,
+  'contacts.export': true,
+  'messages.conversations': true,
+  'messages.list': true,
+  'messages.export': true,
 } as const satisfies Record<MethodName, true>;
 
 export const METHOD_NAMES = Object.keys(methodTable) as MethodName[];
@@ -207,6 +396,18 @@ export interface BridgeEvents {
   'drivers.changed': DriverStatus[];
   'transfer.updated': TransferJob;
   'photos.indexProgress': { deviceId: string; done: number; total: number };
+  // Clean-up and battery history (round 2)
+  'cleanup.updated': CleanupStatus;
+  'battery.recorded': BatterySnapshot;
+  // Toolbox (round 2)
+  'log.lines': { sessionId: string; lines: LogLine[]; dropped: number };
+  'log.ended': { sessionId: string; error: ToolboxError | null };
+  'toolbox.job': ToolboxJob;
+  'wifi.qr': WifiQrEvent;
+  'mirror.video': MirrorVideoEvent;
+  'mirror.ended': { sessionId: string; error: ToolboxError | null };
+  // Backup, contacts and messages (round 2)
+  'backup.updated': BackupJob;
   // Desktop (round 2)
   'notification.activated': NotificationActivation;
   'app.updateChanged': UpdateStatus;
@@ -221,6 +422,18 @@ const eventTable = {
   'drivers.changed': true,
   'transfer.updated': true,
   'photos.indexProgress': true,
+  // Clean-up and battery history (round 2)
+  'cleanup.updated': true,
+  'battery.recorded': true,
+  // Toolbox (round 2)
+  'log.lines': true,
+  'log.ended': true,
+  'toolbox.job': true,
+  'wifi.qr': true,
+  'mirror.video': true,
+  'mirror.ended': true,
+  // Backup, contacts and messages (round 2)
+  'backup.updated': true,
   // Desktop (round 2)
   'notification.activated': true,
   'app.updateChanged': true,
