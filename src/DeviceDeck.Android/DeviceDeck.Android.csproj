@@ -8,6 +8,18 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <RootNamespace>DeviceDeck.Android</RootNamespace>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- Apache-2.0 -->
+    <PackageReference Include="AdvancedSharpAdbClient" Version="3.6.16" />
+    <!-- MIT; thumbnails only (ImageSharp's licence is not permissive for commercial use) -->
+    <PackageReference Include="SkiaSharp" Version="3.119.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DeviceDeck.Android.Tests" />
+  </ItemGroup>
 
 </Project>
