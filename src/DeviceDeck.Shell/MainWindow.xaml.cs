@@ -55,7 +55,11 @@ public sealed partial class MainWindow : Window
         AppWindow.Changed += OnAppWindowChanged;
         AppWindow.Closing += OnClosing;
         Closed += OnClosed;
-        Root.Loaded += (_, _) => Root.XamlRoot.Changed += (_, _) => ApplyMinimumSize();
+        Root.Loaded += (_, _) => Root.XamlRoot.Changed += (_, _) =>
+        {
+            ApplyMinimumSize();
+            PublishCaptionInsets();
+        };
 
         ApplyTheme(host.Settings.Current.Theme);
         host.Settings.Changed += OnSettingsChanged;
@@ -163,8 +167,31 @@ public sealed partial class MainWindow : Window
         return right - left >= 120 && bottom - top >= 24;
     }
 
+    /// <summary>
+    /// Tells the page where the caption buttons are, in CSS px, as variables on &lt;html&gt;:
+    /// --dd-caption-left, --dd-caption-right and --dd-titlebar-height. The buttons stay on the right in Persian too.
+    /// </summary>
+    private void PublishCaptionInsets()
+    {
+        if (WebView.CoreWebView2 is not { } core)
+        {
+            return;
+        }
+
+        var scale = Scale;
+        var bar = AppWindow.TitleBar;
+        var script = FormattableString.Invariant(
+            $"(()=>{{const s=document.documentElement.style;s.setProperty('--dd-caption-left','{bar.LeftInset / scale:0.##}px');s.setProperty('--dd-caption-right','{bar.RightInset / scale:0.##}px');s.setProperty('--dd-titlebar-height','{bar.Height / scale:0.##}px');}})()");
+        _ = core.ExecuteScriptAsync(script);
+    }
+
     private void OnAppWindowChanged(AppWindow sender, AppWindowChangedEventArgs args)
     {
+        if (args.DidSizeChange || args.DidPresenterChange)
+        {
+            PublishCaptionInsets();
+        }
+
         if ((args.DidPositionChange || args.DidSizeChange) &&
             sender.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Restored })
         {
@@ -220,6 +247,7 @@ public sealed partial class MainWindow : Window
             core.AddWebResourceRequestedFilter(DeviceImageHandler.Filter, CoreWebView2WebResourceContext.All, CoreWebView2WebResourceRequestSourceKinds.All);
             core.WebResourceRequested += (sender, e) => _ = ServeImageAsync(environment, e);
             core.NavigationStarting += OnNavigationStarting;
+            core.DOMContentLoaded += (_, _) => PublishCaptionInsets();
             core.NewWindowRequested += OnNewWindowRequested;
             core.ProcessFailed += (_, e) => ShellLog.Error($"WebView2 process failed: {e.ProcessFailedKind} ({e.Reason}, exit {e.ExitCode}).");
 

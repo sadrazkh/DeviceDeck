@@ -22,7 +22,7 @@
   * { box-sizing: border-box; }
   html, body { margin: 0; height: 100%; background: transparent; color: var(--text);
                font: 14px/20px "Segoe UI Variable Text", "Segoe UI", system-ui, sans-serif; overflow: hidden; }
-  .titlebar { height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 152px 0 16px;
+  .titlebar { height: 48px; display: flex; align-items: center; gap: 12px; padding: 0 calc(var(--dd-caption-right, 140px) + 12px) 0 16px;
               app-region: drag; -webkit-app-region: drag; user-select: none; }
   .brand { display: flex; align-items: center; gap: 10px; font-weight: 600; }
   .logo { width: 22px; height: 22px; border-radius: 6px; background: linear-gradient(135deg, var(--accent), #b05bf6); }
@@ -225,6 +225,10 @@
       const region = getComputedStyle(document.querySelector('.titlebar'));
       const value = (region.getPropertyValue('app-region') || region.getPropertyValue('-webkit-app-region')).trim();
       check('app-region', value === 'drag', `title bar computes to "${value}"`);
+      setTimeout(() => {
+        const right = getComputedStyle(document.documentElement).getPropertyValue('--dd-caption-right').trim();
+        check('caption insets', right.endsWith('px'), `--dd-caption-right = ${right || 'unset'}`);
+      }, 300);
     } catch (err) {
       $('hello').textContent = 'The host did not answer: ' + JSON.stringify(err);
     }
