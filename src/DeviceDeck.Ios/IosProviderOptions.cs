@@ -22,4 +22,7 @@ public sealed class IosProviderOptions
 
     /// <summary>Send lockdown Pair when there is no pair record, so the phone shows "Trust This Computer?".</summary>
     public bool AutoPair { get; init; } = true;
+
+    /// <summary>Ask installation_proxy for app sizes as soon as a phone is ready (for the storage categories).</summary>
+    public bool PrefetchAppSizes { get; init; } = true;
 }

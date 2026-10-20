@@ -28,6 +28,33 @@ internal static class Out
             Console.WriteLine($"  {label.PadRight(width)} : {value}");
     }
 
+    /// <summary>A plist tree, one key per line; serial-number-like values are masked.</summary>
+    public static void Plist(DeviceDeck.Ios.Plist.PlistDict dict, string indent = "  ")
+    {
+        foreach (var (key, value) in dict.OrderBy(kv => kv.Key, StringComparer.Ordinal))
+        {
+            switch (value)
+            {
+                case DeviceDeck.Ios.Plist.PlistDict child:
+                    Console.WriteLine($"{indent}{key}:");
+                    Plist(child, indent + "  ");
+                    break;
+                case List<object> list:
+                    Console.WriteLine($"{indent}{key}: [{list.Count} item(s)]{(list.Count is > 0 and <= 8 && list.All(x => x is long or double or bool) ? " " + string.Join(", ", list) : "")}");
+                    break;
+                case byte[] data:
+                    Console.WriteLine($"{indent}{key}: <{data.Length} bytes>");
+                    break;
+                case string s when key.Contains("Serial", StringComparison.OrdinalIgnoreCase) || key.Contains("UDID", StringComparison.OrdinalIgnoreCase):
+                    Console.WriteLine($"{indent}{key}: {Mask(s)}");
+                    break;
+                default:
+                    Console.WriteLine($"{indent}{key}: {Convert.ToString(value, CultureInfo.InvariantCulture)}");
+                    break;
+            }
+        }
+    }
+
     public static string Bytes(long bytes)
     {
         string[] units = ["B", "KB", "MB", "GB", "TB"];

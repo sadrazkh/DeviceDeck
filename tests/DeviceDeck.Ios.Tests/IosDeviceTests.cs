@@ -224,6 +224,24 @@ public sealed class IosDeviceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Storage_on_ios27_sums_app_sizes_from_installation_proxy()
+    {
+        var phone = PairedPhone();
+        phone.Domains["com.apple.disk_usage"] = PlistSerializer.ParseDict(Fixture.Bytes("Plist", "disk_usage_ios27.xml"));
+        phone.Apps.Add(App("com.example.a", "A", staticBytes: 30_000_000_000, dynamicBytes: 6_000_000_000));
+        phone.Apps.Add(App("com.apple.MobileSMS", "Messages", type: "System", staticBytes: 50_000_000, dynamicBytes: 800_000_000));
+        var device = await AttachAsync(phone);
+
+        var c = (await device.GetStorageAsync(Ct)).Volumes[0].Categories.ToDictionary(x => x.Key, x => x.Bytes);
+        Assert.Equal(36_800_000_000, c["apps"]); // user code + data, built-in apps' data only
+        Assert.Equal(26_000_000_000, c["photos"]);
+        Assert.False(c.ContainsKey("videos")); // no photo index yet
+
+        await device.GetStorageAsync(Ct);
+        Assert.True(phone.Log.Count(l => l == "instproxy:Browse") <= 1, "app sizes are cached (and prefetched once)");
+    }
+
+    [Fact]
     public async Task File_roots_media_and_app_documents()
     {
         var phone = PairedPhone();

@@ -33,6 +33,10 @@ public sealed class IosDevice : IDevice, IAsyncDisposable
     private IosPairing.Attempt? _pendingPairing;
     private bool _pairingDenied;
     private readonly SharedConnection<AfcClient> _mediaAfc;
+    private readonly object _appSizeGate = new();
+    private (long Bytes, DateTime AtUtc)? _appBytes;
+    private Task<long>? _appSizeScan;
+    private bool _prefetched;
     private Task _loop = Task.CompletedTask;
     private bool _gone;
 
@@ -162,6 +166,13 @@ public sealed class IosDevice : IDevice, IAsyncDisposable
             }
 
             UpdateSummary(state);
+            if (state == DeviceState.Ready && !_prefetched && _options.PrefetchAppSizes)
+            {
+                // App sizes take the phone several seconds to compute; start now so the storage card is quick.
+                _prefetched = true;
+                _ = GetAppBytesAsync(ct).ContinueWith(t => _ = t.Exception, CancellationToken.None,
+                    TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
+            }
             var delay = state == DeviceState.Ready && failures == 0
                 ? Timeout.InfiniteTimeSpan
                 : TimeSpan.FromTicks(_options.RetryInterval.Ticks * Math.Min(1 << Math.Min(failures, 4), 10));
@@ -207,7 +218,7 @@ public sealed class IosDevice : IDevice, IAsyncDisposable
         try
         {
             await using var lockdown = await connector.OpenSessionAsync(ct).ConfigureAwait(false);
-            _values = await lockdown.GetAllValuesAsync(null, ct).ConfigureAwait(false);
+            _values = await ReadDeviceValuesAsync(lockdown, ct).ConfigureAwait(false);
             // A phone that has not been unlocked since boot accepts the session but refuses services.
             // Connect to the started service and close it: a service started and never connected to is
             // reaped by the phone later, and that was seen taking a live AFC connection down with it.
@@ -219,6 +230,18 @@ public sealed class IosDevice : IDevice, IAsyncDisposable
         {
             return DeviceState.Locked;
         }
+    }
+
+    /// <summary>Every top-level value, plus the colour keys that recent iOS leaves out of the full dump.</summary>
+    private static async Task<PlistDict> ReadDeviceValuesAsync(LockdownClient lockdown, CancellationToken ct)
+    {
+        var values = await lockdown.GetAllValuesAsync(null, ct).ConfigureAwait(false);
+        foreach (var key in new[] { "DeviceEnclosureColor", "DeviceColor" })
+        {
+            if (!values.ContainsKey(key) && await lockdown.GetValueAsync(null, key, ct).ConfigureAwait(false) is { } value)
+                values[key] = value;
+        }
+        return values;
     }
 
     private async Task<DeviceState> PairAsync(DeviceConnector connector, CancellationToken ct)
@@ -336,15 +359,69 @@ public sealed class IosDevice : IDevice, IAsyncDisposable
             return true;
         });
 
+    /// <summary>
+    /// Capacity, free space and categories. Apps come from installation_proxy sizes (about 7 s on a phone with
+    /// 100+ apps, so cached for 10 minutes); videos are split from photos once the photo index has been built.
+    /// </summary>
     public Task<StorageInfo> GetStorageAsync(CancellationToken ct) => UseAsync(async c =>
     {
-        await using var lockdown = await c.OpenSessionAsync(ct).ConfigureAwait(false);
-        var usage = await lockdown.GetAllValuesAsync("com.apple.disk_usage", ct).ConfigureAwait(false);
-        var factory = await lockdown.GetAllValuesAsync("com.apple.disk_usage.factory", ct).ConfigureAwait(false);
-        foreach (var (k, v) in factory)
-            usage.TryAdd(k, v);
-        return LockdownMapping.Storage(usage);
+        PlistDict usage;
+        await using (var lockdown = await c.OpenSessionAsync(ct).ConfigureAwait(false))
+        {
+            usage = await lockdown.GetAllValuesAsync("com.apple.disk_usage", ct).ConfigureAwait(false);
+            var factory = await lockdown.GetAllValuesAsync("com.apple.disk_usage.factory", ct).ConfigureAwait(false);
+            foreach (var (k, v) in factory)
+                usage.TryAdd(k, v);
+        }
+        long? appBytes = null;
+        if (usage.GetLong("MobileApplicationUsage") is null)
+            appBytes = await GetAppBytesAsync(ct).ConfigureAwait(false);
+        var videoBytes = (Photos as IosPhotoLibrary)?.LastIndex?.VideoBytes;
+        return LockdownMapping.Storage(usage, appBytes, videoBytes);
     });
+
+    private static readonly string[] SizeAttributes = ["CFBundleIdentifier", "ApplicationType", "StaticDiskUsage", "DynamicDiskUsage"];
+
+    /// <summary>Cached app bytes, or the result of the one scan in flight (the prefetch, or a new one).</summary>
+    private Task<long> GetAppBytesAsync(CancellationToken ct)
+    {
+        lock (_appSizeGate)
+        {
+            if (_appBytes is { } cached && DateTime.UtcNow - cached.AtUtc < TimeSpan.FromMinutes(10))
+                return Task.FromResult(cached.Bytes);
+            if (_appSizeScan is null || _appSizeScan.IsCompleted)
+                _appSizeScan = ScanAppBytesAsync(_life.Token);
+            return _appSizeScan.WaitAsync(ct);
+        }
+    }
+
+    private async Task<long> ScanAppBytesAsync(CancellationToken ct)
+    {
+        await using var proxy = await Connector().StartServiceAsync(ServiceNames.InstallationProxy, ct).ConfigureAwait(false);
+        var apps = await InstallationProxyClient.BrowseAsync(proxy, "Any", ct, SizeAttributes).ConfigureAwait(false);
+        return RememberAppSizes(apps);
+    }
+
+    /// <summary>
+    /// User apps count with their code and data; built-in apps only with their data (their code lives on the
+    /// sealed system volume, already in "system").
+    /// </summary>
+    internal long RememberAppSizes(IReadOnlyList<PlistDict> apps)
+    {
+        long total = 0;
+        foreach (var a in apps)
+        {
+            total += a.GetString("ApplicationType") switch
+            {
+                "User" => (a.GetLong("StaticDiskUsage") ?? 0) + (a.GetLong("DynamicDiskUsage") ?? 0),
+                "System" => a.GetLong("DynamicDiskUsage") ?? 0,
+                _ => 0,
+            };
+        }
+        lock (_appSizeGate)
+            _appBytes = (total, DateTime.UtcNow);
+        return total;
+    }
 
     public Task<BatteryInfo> GetBatteryAsync(CancellationToken ct) => UseAsync(async c =>
     {
@@ -366,10 +443,42 @@ public sealed class IosDevice : IDevice, IAsyncDisposable
         return LockdownMapping.Battery(powerSource, domain);
     });
 
+    /// <summary>Raw lockdown values of one domain (null = the top domain), for diagnostics.</summary>
+    public Task<PlistDict> GetLockdownValuesAsync(string? domain, CancellationToken ct) => UseAsync(async c =>
+    {
+        await using var lockdown = await c.OpenSessionAsync(ct).ConfigureAwait(false);
+        return await lockdown.GetAllValuesAsync(domain, ct).ConfigureAwait(false);
+    });
+
+    /// <summary>One lockdown value by key (some keys only come back when asked for by name), for diagnostics.</summary>
+    public Task<object?> GetLockdownValueAsync(string? domain, string key, CancellationToken ct) => UseAsync(async c =>
+    {
+        await using var lockdown = await c.OpenSessionAsync(ct).ConfigureAwait(false);
+        return await lockdown.GetValueAsync(domain, key, ct).ConfigureAwait(false);
+    });
+
+    /// <summary>Raw IORegistry properties for an entry class (e.g. IOPMPowerSource), for diagnostics.</summary>
+    public Task<PlistDict?> GetIORegistryAsync(string? entryClass, CancellationToken ct, string? entryName = null, string? plane = null) => UseAsync(async c =>
+    {
+        await using var relay = await c.StartServiceAsync(ServiceNames.DiagnosticsRelay, ct).ConfigureAwait(false);
+        var values = await DiagnosticsRelayClient.IORegistryAsync(relay, entryClass, ct, entryName, plane).ConfigureAwait(false);
+        await DiagnosticsRelayClient.GoodbyeAsync(relay, ct).ConfigureAwait(false);
+        return values;
+    });
+
+    /// <summary>A diagnostics_relay report such as "GasGauge", for diagnostics.</summary>
+    public Task<PlistDict?> GetDiagnosticsAsync(string request, CancellationToken ct) => UseAsync(async c =>
+    {
+        await using var relay = await c.StartServiceAsync(ServiceNames.DiagnosticsRelay, ct).ConfigureAwait(false);
+        var values = await DiagnosticsRelayClient.DiagnosticsAsync(relay, request, ct).ConfigureAwait(false);
+        await DiagnosticsRelayClient.GoodbyeAsync(relay, ct).ConfigureAwait(false);
+        return values;
+    });
+
     public Task<DeviceDetails> GetDetailsAsync(CancellationToken ct) => UseAsync(async c =>
     {
         await using var lockdown = await c.OpenSessionAsync(ct).ConfigureAwait(false);
-        _values = await lockdown.GetAllValuesAsync(null, ct).ConfigureAwait(false);
+        _values = await ReadDeviceValuesAsync(lockdown, ct).ConfigureAwait(false);
         return LockdownMapping.Details(Udid, _values);
     });
 

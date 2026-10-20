@@ -24,6 +24,9 @@ public sealed class IosPhotoLibrary(IosDevice device, string cacheDirectory) : I
 
     public string CacheDirectory { get; } = cacheDirectory;
 
+    /// <summary>The last index built, however old, or null; never triggers a build.</summary>
+    public PhotoIndex? LastIndex => _index;
+
     public async IAsyncEnumerable<PhotoAlbum> GetAlbumsAsync([EnumeratorCancellation] CancellationToken ct)
     {
         var index = await GetIndexAsync(refresh: false, ct).ConfigureAwait(false);

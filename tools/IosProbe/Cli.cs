@@ -36,6 +36,12 @@ internal sealed class Cli
           thumb <assetId> <out.jpg> [--size 256]   the phone's own thumbnail, if it has one
           photo-pull <assetId> <dest>         copy an original off the phone
 
+        Diagnostics
+          values <domain|-> [--key K]         raw lockdown values of a domain ('-' = top; e.g. com.apple.disk_usage)
+          carrier                             the SIMs' carrier bundles (no ICCID / IMSI) and the mapped name
+          ioreg <entry-class>                 raw IORegistry properties (e.g. IOPMPowerSource)
+          diag <request>                      a diagnostics_relay report (e.g. GasGauge)
+
         Power
           reboot --yes                        restart the phone
           shutdown --yes                      shut the phone down

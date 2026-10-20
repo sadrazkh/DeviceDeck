@@ -19,6 +19,8 @@ internal sealed class IosAppManager(IosDevice device) : IAppManager, IAsyncDispo
     {
         await using var proxy = await c.StartServiceAsync(ServiceNames.InstallationProxy, ct).ConfigureAwait(false);
         var apps = await InstallationProxyClient.BrowseAsync(proxy, includeSystem ? "Any" : "User", ct).ConfigureAwait(false);
+        if (includeSystem)
+            device.RememberAppSizes(apps);
         return apps
             .Where(a => a.GetString("CFBundleIdentifier") is not null)
             .Where(a => a.GetString("ApplicationType") is null or "User" or "System")

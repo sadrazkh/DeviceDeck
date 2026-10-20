@@ -53,6 +53,9 @@ public sealed class PhotoIndex
     /// <summary>How Photos.sqlite was obtained (copied or reused, sizes, speed), for diagnostics.</summary>
     public string? Note { get; }
 
+    /// <summary>Bytes of video files on the phone (hidden and recently deleted included); null without Photos.sqlite.</summary>
+    public long? VideoBytes { get; private init; }
+
     /// <summary>True for any media file in DCIM, including the video halves of Live Photos.</summary>
     public bool IsKnownFile(string assetId) => _dcimFiles.Contains(assetId);
 
@@ -95,6 +98,7 @@ public sealed class PhotoIndex
         var assets = new List<PhotoAsset>();
         var covered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var idByPk = new Dictionary<long, string>();
+        long? videoBytes = rows is null ? null : 0;
 
         if (rows is not null)
         {
@@ -104,6 +108,8 @@ public sealed class PhotoIndex
                 if (!path.StartsWith("DCIM/", StringComparison.OrdinalIgnoreCase))
                     continue;
                 covered.Add(path);
+                if (row.Kind == 1 && files.Contains(path))
+                    videoBytes += row.OriginalFileSize ?? 0;
                 var livePair = row.KindSubtype == 2 ? PairedVideo(path, files, actualCase) : null;
                 if (livePair is not null)
                     covered.Add(livePair);
@@ -200,7 +206,10 @@ public sealed class PhotoIndex
         }
 
         return new PhotoIndex(assets, albums, members, files,
-            rows is null ? PhotoIndexMode.DcimOnly : PhotoIndexMode.Database, schemaVariant, fallbackReason, note);
+            rows is null ? PhotoIndexMode.DcimOnly : PhotoIndexMode.Database, schemaVariant, fallbackReason, note)
+        {
+            VideoBytes = videoBytes,
+        };
     }
 
     private static string? PairedVideo(string imagePath, HashSet<string> files, Dictionary<string, string> actualCase)

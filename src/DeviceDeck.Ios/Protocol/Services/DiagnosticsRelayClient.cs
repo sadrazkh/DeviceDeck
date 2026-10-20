@@ -7,14 +7,22 @@ namespace DeviceDeck.Ios.Protocol.Services;
 public static class DiagnosticsRelayClient
 {
     /// <summary>The IORegistry properties of the first entry of <paramref name="entryClass"/> (e.g. IOPMPowerSource).</summary>
-    public static async Task<PlistDict?> IORegistryAsync(PlistConnection connection, string entryClass, CancellationToken ct)
+    public static async Task<PlistDict?> IORegistryAsync(PlistConnection connection, string? entryClass, CancellationToken ct,
+        string? entryName = null, string? plane = null)
     {
-        var reply = await RequestAsync(connection, new PlistDict
-        {
-            ["Request"] = "IORegistry",
-            ["EntryClass"] = entryClass,
-        }, ct).ConfigureAwait(false);
+        var request = new PlistDict { ["Request"] = "IORegistry" };
+        if (entryClass is not null) request["EntryClass"] = entryClass;
+        if (entryName is not null) request["EntryName"] = entryName;
+        if (plane is not null) request["CurrentPlane"] = plane;
+        var reply = await RequestAsync(connection, request, ct).ConfigureAwait(false);
         return reply.GetDict("Diagnostics")?.GetDict("IORegistry");
+    }
+
+    /// <summary>A diagnostics report ("GasGauge", "WiFi", "NAND", "All"); null when the phone returns none.</summary>
+    public static async Task<PlistDict?> DiagnosticsAsync(PlistConnection connection, string request, CancellationToken ct)
+    {
+        var reply = await RequestAsync(connection, new PlistDict { ["Request"] = request }, ct).ConfigureAwait(false);
+        return reply.GetDict("Diagnostics");
     }
 
     /// <summary>The phone restarts once this connection closes.</summary>

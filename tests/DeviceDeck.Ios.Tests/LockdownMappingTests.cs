@@ -63,6 +63,35 @@ public class LockdownMappingTests
     }
 
     [Fact]
+    public void Storage_on_ios27_counts_the_camera_roll_once_and_takes_apps_and_videos_from_outside()
+    {
+        var usage = Load("disk_usage_ios27.xml");
+
+        var merged = LockdownMapping.Storage(usage).Volumes[0].Categories.ToDictionary(x => x.Key, x => x.Bytes);
+        Assert.Equal(26_000_000_000, merged["photos"]); // not 52 GB: CameraUsage == PhotoUsage
+        Assert.False(merged.ContainsKey("apps"));
+
+        var v = LockdownMapping.Storage(usage, appBytes: 36_800_000_000, videoBytes: 16_500_000_000).Volumes[0];
+        var c = v.Categories.ToDictionary(x => x.Key, x => x.Bytes);
+        Assert.Equal(4_300_000_000, v.FreeBytes); // AmountDataAvailable, not TotalDataAvailable
+        Assert.Equal(9_500_000_000, c["photos"]);
+        Assert.Equal(16_500_000_000, c["videos"]);
+        Assert.Equal(36_800_000_000, c["apps"]);
+        Assert.Equal(8_800_000_000, c["system"]);
+        Assert.Equal(v.TotalBytes - v.FreeBytes, v.Categories.Sum(x => x.Bytes));
+        Assert.Equal(["photos", "videos", "apps", "media", "system", "other"], v.Categories.Select(x => x.Key));
+    }
+
+    [Fact]
+    public void Storage_never_reports_more_video_than_camera_roll()
+    {
+        var v = LockdownMapping.Storage(Load("disk_usage_ios27.xml"), videoBytes: 99_000_000_000).Volumes[0];
+        var c = v.Categories.ToDictionary(x => x.Key, x => x.Bytes);
+        Assert.Equal(26_000_000_000, c["videos"]);
+        Assert.False(c.ContainsKey("photos"));
+    }
+
+    [Fact]
     public void Storage_without_category_keys_is_all_other()
     {
         var info = LockdownMapping.Storage(new PlistDict { ["TotalDiskCapacity"] = 64_000_000_000L, ["AmountDataAvailable"] = 4_000_000_000L });
@@ -82,6 +111,18 @@ public class LockdownMappingTests
         Assert.Equal(3279, b.FullChargeCapacityMah);
         Assert.Equal(92, b.HealthPercent);          // 3279 / 3561
         Assert.Equal(30.5, b.TemperatureCelsius);
+    }
+
+    [Fact]
+    public void Battery_on_ios27_reads_capacities_from_BatteryData_and_has_no_temperature()
+    {
+        var b = LockdownMapping.Battery(Load("ioreg_powersource_ios27.xml"), new PlistDict());
+        Assert.Equal(88, b.LevelPercent);
+        Assert.Equal(617, b.CycleCount);
+        Assert.Equal(3521, b.DesignCapacityMah);
+        Assert.NotNull(b.FullChargeCapacityMah);
+        Assert.NotNull(b.HealthPercent);
+        Assert.Null(b.TemperatureCelsius);
     }
 
     [Fact]
@@ -128,6 +169,32 @@ public class LockdownMappingTests
         Assert.Equal("iPhone 16 · iPhone17,3 · MYE73ZD/A", rows["model"].Value);
         Assert.True(rows["phone"].Sensitive);
     }
+
+    [Fact]
+    public void Carrier_unknown_bundle_uses_the_mcc_mnc_table_and_merges_identical_sims()
+    {
+        var values = Load("carrier_unknown_dual_sim.xml");
+        Assert.Equal("MCI (IR) · 432/11 (2 SIMs)", LockdownMapping.Carrier(values));
+
+        var mixed = new PlistDict
+        {
+            ["CarrierBundleInfoArray"] = new List<object>
+            {
+                new PlistDict { ["CFBundleIdentifier"] = "com.apple.Irancell_ir", ["MCC"] = "432", ["MNC"] = "35" },
+                new PlistDict { ["CFBundleIdentifier"] = "com.apple.Unknown", ["MCC"] = "432", ["MNC"] = "11" },
+                new PlistDict { ["CFBundleIdentifier"] = "com.apple.Unknown", ["MCC"] = "999", ["MNC"] = "99" },
+            },
+        };
+        Assert.Equal("Irancell (IR) · 432/35, MCI (IR) · 432/11, 999/99", LockdownMapping.Carrier(mixed));
+    }
+
+    [Theory]
+    [InlineData("iPhone10,3", "#E1E4E3", "#e1e4e3")]
+    [InlineData("iPhone17,3", "#zzzzzz", null)]
+    [InlineData("iPhone99,1", "18", null)]
+    [InlineData(null, null, null)]
+    public void Colour_from_enclosure_colour(string? productType, string? enclosure, string? expected) =>
+        Assert.Equal(expected, DeviceColors.Hex(productType, enclosure));
 
     [Theory]
     [InlineData("iPhone15,2", "iPhone 14 Pro")]

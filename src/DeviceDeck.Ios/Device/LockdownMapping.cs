@@ -22,7 +22,7 @@ public static class LockdownMapping
     public static DeviceSummary Summary(string udid, PlistDict values, ConnectionKind connection, DeviceState state)
     {
         var productType = values.GetString("ProductType");
-        var enclosure = values.GetString("DeviceEnclosureColor");
+        var enclosure = values.GetString("DeviceEnclosureColor") ?? values.GetLong("DeviceEnclosureColor")?.ToString(System.Globalization.CultureInfo.InvariantCulture);
         return new DeviceSummary(
             Id: udid,
             Name: values.GetString("DeviceName") ?? DeviceModels.MarketingName(productType) ?? "iPhone",
@@ -34,14 +34,17 @@ public static class LockdownMapping
             State: state,
             Mode: DeviceMode.Full,
             Capabilities: CapabilitiesFor(state),
-            ColorHex: enclosure is { Length: 7 } && enclosure[0] == '#' ? enclosure.ToLowerInvariant() : null);
+            ColorHex: DeviceColors.Hex(productType, enclosure));
     }
 
     /// <summary>
     /// From the com.apple.disk_usage domain (merged with com.apple.disk_usage.factory where the first lacks a key).
-    /// Categories: photos (camera roll + photo library), media, apps, system; "other" is what is used but unaccounted for.
+    /// Categories: photos, videos, apps, media, system; "other" is what is used but unaccounted for.
     /// </summary>
-    public static StorageInfo Storage(PlistDict diskUsage)
+    /// <param name="appBytes">Installed apps and their data, summed from installation_proxy (recent iOS has no
+    /// MobileApplicationUsage key); null to use the domain's own figure.</param>
+    /// <param name="videoBytes">Video files in the camera roll (from Photos.sqlite), split out of the photo usage; null when unknown.</param>
+    public static StorageInfo Storage(PlistDict diskUsage, long? appBytes = null, long? videoBytes = null)
     {
         var total = diskUsage.GetLong("TotalDiskCapacity") ?? 0;
         var dataCapacity = diskUsage.GetLong("TotalDataCapacity");
@@ -53,9 +56,19 @@ public static class LockdownMapping
         else if (dataCapacity is { } dc && total > dc)
             system = total - dc;
 
-        var photos = Sum(diskUsage.GetLong("CameraUsage"), diskUsage.GetLong("PhotoUsage"));
+        // Older iOS reports the camera roll and the synced photo library separately; newer iOS (seen on 27)
+        // puts the same camera-roll figure in both keys.
+        var camera = diskUsage.GetLong("CameraUsage");
+        var library = diskUsage.GetLong("PhotoUsage");
+        var photos = camera is not null && camera == library ? camera : Sum(camera, library);
+        long? videos = null;
+        if (videoBytes is > 0 && photos is > 0)
+        {
+            videos = Math.Min(videoBytes.Value, photos.Value);
+            photos -= videos;
+        }
         var media = Sum(diskUsage.GetLong("MediaCacheUsage"), diskUsage.GetLong("VoicemailUsage"));
-        var apps = Sum(diskUsage.GetLong("MobileApplicationUsage"), diskUsage.GetLong("WebAppCacheUsage"));
+        var apps = appBytes ?? Sum(diskUsage.GetLong("MobileApplicationUsage"), diskUsage.GetLong("WebAppCacheUsage"));
 
         var categories = new List<StorageCategory>();
         void Add(string key, long? bytes)
@@ -64,13 +77,14 @@ public static class LockdownMapping
                 categories.Add(new StorageCategory(key, bytes.Value));
         }
         Add("photos", photos);
+        Add("videos", videos);
         Add("apps", apps);
         Add("media", media);
         Add("system", system);
 
         var used = Math.Max(0, total - free);
         var known = categories.Sum(c => c.Bytes);
-        Add("other", used - known);
+        Add("other", used - known); // skipped when the parts already exceed the used space (estimates overlap)
 
         return new StorageInfo([new StorageVolume("internal", "iPhone storage", total, free, categories)]);
     }
@@ -132,7 +146,10 @@ public static class LockdownMapping
         return new DeviceDetails(rows);
     }
 
-    /// <summary>"Irancell (IR) · 432/35" from CarrierBundleInfoArray; one entry per SIM.</summary>
+    /// <summary>
+    /// "Irancell (IR) · 432/35" from CarrierBundleInfoArray, one entry per SIM ("… (2 SIMs)" when both are the same).
+    /// The name comes from the carrier bundle id, or from the MCC/MNC table when the bundle is "Unknown".
+    /// </summary>
     public static string? Carrier(PlistDict values)
     {
         var entries = values.GetArray("CarrierBundleInfoArray")?.OfType<PlistDict>().ToList();
@@ -141,22 +158,40 @@ public static class LockdownMapping
         var parts = new List<string>();
         foreach (var e in entries)
         {
-            var id = e.GetString("CFBundleIdentifier");
-            string? name = null;
-            if (id is not null)
-            {
-                var bare = id.StartsWith("com.apple.", StringComparison.Ordinal) ? id["com.apple.".Length..] : id;
-                var us = bare.LastIndexOf('_');
-                name = us > 0 && bare.Length - us - 1 is 2 or 3
-                    ? $"{bare[..us].Replace('_', ' ')} ({bare[(us + 1)..].ToUpperInvariant()})"
-                    : bare.Replace('_', ' ');
-            }
-            var mccMnc = e.GetString("MCC") is { } mcc && e.GetString("MNC") is { } mnc ? $"{mcc}/{mnc}" : null;
+            var mcc = Text(e, "MCC");
+            var mnc = Text(e, "MNC");
+            var name = BundleCarrierName(e.GetString("CFBundleIdentifier"));
+            if (name is null && Carriers.Name(mcc, mnc) is { } known)
+                name = Carriers.Country(mcc) is { } iso ? $"{known} ({iso})" : known;
+            var mccMnc = mcc is not null && mnc is not null ? $"{mcc}/{mnc}" : null;
             if (JoinNonEmpty(" · ", name, mccMnc) is { } text)
                 parts.Add(text);
         }
-        return parts.Count == 0 ? null : string.Join(", ", parts);
+        var distinct = parts.Distinct(StringComparer.Ordinal).ToList();
+        return distinct.Count switch
+        {
+            0 => null,
+            1 when parts.Count > 1 => $"{distinct[0]} ({parts.Count} SIMs)",
+            _ => string.Join(", ", distinct),
+        };
     }
+
+    /// <summary>"com.apple.Irancell_ir" → "Irancell (IR)"; null for a missing or "Unknown" bundle.</summary>
+    private static string? BundleCarrierName(string? id)
+    {
+        if (id is null)
+            return null;
+        var bare = id.StartsWith("com.apple.", StringComparison.Ordinal) ? id["com.apple.".Length..] : id;
+        if (bare.Length == 0 || bare.Equals("Unknown", StringComparison.OrdinalIgnoreCase))
+            return null;
+        var us = bare.LastIndexOf('_');
+        return us > 0 && bare.Length - us - 1 is 2 or 3
+            ? $"{bare[..us].Replace('_', ' ')} ({bare[(us + 1)..].ToUpperInvariant()})"
+            : bare.Replace('_', ' ');
+    }
+
+    private static string? Text(PlistDict d, string key) =>
+        d.GetString(key) ?? d.GetLong(key)?.ToString(System.Globalization.CultureInfo.InvariantCulture);
 
     private static long? Sum(long? a, long? b) => a is null && b is null ? null : (a ?? 0) + (b ?? 0);
 

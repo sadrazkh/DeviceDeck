@@ -56,6 +56,7 @@ public sealed class PhotosTests : IDisposable
         var index = PhotoIndex.Build(DcimFiles, db.ReadAssets(), db.ReadAlbums(), db.Schema.Variant);
 
         Assert.Equal(PhotoIndexMode.Database, index.Mode);
+        Assert.Equal(40_000_000, index.VideoBytes); // the one video whose file is on the phone
         // Newest first; trashed (5) and hidden (6) are left out; IMG_0007.JPG is not in the database and comes last.
         Assert.Equal(
             ["DCIM/101APPLE/IMG_0101.HEIC", "DCIM/100APPLE/IMG_0004.PNG", "DCIM/100APPLE/IMG_0003.MOV",
@@ -112,6 +113,7 @@ public sealed class PhotosTests : IDisposable
 
         Assert.Equal(PhotoIndexMode.DcimOnly, index.Mode);
         Assert.Equal("no database", index.FallbackReason);
+        Assert.Null(index.VideoBytes);
         var byId = index.Assets.ToDictionary(a => a.Id);
         Assert.Equal(7, byId.Count); // 8 files, the Live Photo's MOV folded into its HEIC
         Assert.Equal(PhotoKind.LivePhoto, byId["DCIM/100APPLE/IMG_0002.HEIC"].Kind);

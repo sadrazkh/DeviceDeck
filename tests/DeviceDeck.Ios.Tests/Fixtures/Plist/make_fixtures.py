@@ -123,3 +123,57 @@ ioreg_powersource = {
 for name, value in [("disk_usage", disk_usage), ("battery_domain", battery_domain), ("ioreg_powersource", ioreg_powersource)]:
     with open(name + ".xml", "wb") as f:
         plistlib.dump(value, f, fmt=plistlib.FMT_XML, sort_keys=True)
+
+# iOS 27 (iPhone 16), as seen on a real phone; sizes rounded. CameraUsage and PhotoUsage carry the same
+# figure, there is no MobileApplicationUsage, and TotalDataAvailable is not the free space.
+disk_usage_ios27 = {
+    "AmountDataAvailable": 4_300_000_000,
+    "AmountDataReserved": 209_715_200,
+    "AmountRestoreAvailable": 13_300_000_000,
+    "CalculateDiskUsage": "OkilyDokily",
+    "CalendarUsage": 2_000_000,
+    "CameraUsage": 26_000_000_000,
+    "MediaCacheUsage": 4096,
+    "NotesUsage": 0,
+    "PhotoUsage": 26_000_000_000,
+    "TotalDataAvailable": 87_600_000_000,
+    "TotalDataCapacity": 118_600_000_000,
+    "TotalDiskCapacity": 128_000_000_000,
+    "TotalSystemAvailable": 0,
+    "TotalSystemCapacity": 8_800_000_000,
+    "VoicemailUsage": 0,
+    "WebAppCacheUsage": 0,
+}
+
+# iOS 27 IOPMPowerSource: no Temperature, no AppleRawMaxCapacity; capacities only inside BatteryData.
+ioreg_powersource_ios27 = {
+    "BatteryData": {
+        "CurrentCapacity": 88,
+        "DesignCapacity": 3521,
+        "FullChargeCapacity": 3321,
+        "MaxCapacity": 100,
+        "NominalChargeCapacity": 3243,
+    },
+    "CurrentCapacity": 88,
+    "CycleCount": 617,
+    "ExternalConnected": True,
+    "FullyCharged": False,
+    "IsCharging": False,
+    "MaxCapacity": 100,
+    "Voltage": 4256,
+}
+
+carrier_unknown_dual_sim = {
+    "CarrierBundleInfoArray": [
+        {"CFBundleIdentifier": "com.apple.Unknown", "CFBundleVersion": "72.0", "MCC": "432", "MNC": "11", "Slot": "kOne"},
+        {"CFBundleIdentifier": "com.apple.Unknown", "CFBundleVersion": "72.0", "MCC": "432", "MNC": "11", "Slot": "kTwo"},
+    ],
+    "DeviceColor": "1",
+    "DeviceEnclosureColor": "18",
+    "ProductType": "iPhone17,3",
+}
+
+for name, value in [("disk_usage_ios27", disk_usage_ios27), ("ioreg_powersource_ios27", ioreg_powersource_ios27),
+                    ("carrier_unknown_dual_sim", carrier_unknown_dual_sim)]:
+    with open(name + ".xml", "wb") as f:
+        plistlib.dump(value, f, fmt=plistlib.FMT_XML, sort_keys=True)

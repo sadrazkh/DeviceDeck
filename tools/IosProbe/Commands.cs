@@ -52,6 +52,37 @@ internal static class Commands
         ["install"] = new(["app.ipa"], (d, c, ct) => InstallAsync(d, c.Positional[0], ct)),
         ["uninstall"] = new(["bundleId"], (d, c, ct) => UninstallAsync(d, c.Positional[0], ct), NeedsYes: true),
         ["photos"] = new([], (d, c, ct) => PhotosAsync(d, c.IntOption("limit", 50), c.Option("album"), ct)),
+        ["values"] = new(["domain"], async (d, c, ct) =>
+        {
+            var domain = c.Positional[0] == "-" ? null : c.Positional[0];
+            if (c.Option("key") is { } key)
+            {
+                var value = await d.GetLockdownValueAsync(domain, key, ct);
+                if (value is DeviceDeck.Ios.Plist.PlistDict dict)
+                    Out.Plist(dict);
+                else
+                    Console.WriteLine($"  {key}: {(value is null ? "(missing)" : value is byte[] b ? $"<{b.Length} bytes>" : value)}");
+                return;
+            }
+            Out.Plist(await d.GetLockdownValuesAsync(domain, ct));
+        }),
+        ["carrier"] = new([], async (d, _, ct) =>
+        {
+            // Bundle ids and network codes only; ICCID and IMSI are left out.
+            var values = await d.GetLockdownValuesAsync(null, ct);
+            foreach (var entry in values.GetArray("CarrierBundleInfoArray")?.OfType<DeviceDeck.Ios.Plist.PlistDict>() ?? [])
+            {
+                Console.WriteLine("  SIM:");
+                foreach (var key in entry.Keys.Where(k => k is not ("IntegratedCircuitCardIdentity" or "InternationalMobileSubscriberIdentity")).Order())
+                    Console.WriteLine($"    {key}: {entry[key]}");
+            }
+            Console.WriteLine($"  Mapped: {LockdownMapping.Carrier(values) ?? "(none)"}");
+        }),
+        ["diag"] = new(["request"], async (d, c, ct) => Out.Plist(await d.GetDiagnosticsAsync(c.Positional[0], ct)
+            ?? throw new DeviceException(DeviceErrorCodes.NotFound, "The phone returned no diagnostics for that request."))),
+        ["ioreg"] = new(["entry-class"], async (d, c, ct) => Out.Plist(await d.GetIORegistryAsync(
+                c.Positional[0] == "-" ? null : c.Positional[0], ct, c.Option("name"), c.Option("plane"))
+            ?? throw new DeviceException(DeviceErrorCodes.NotFound, "No IORegistry entry of that class."))),
         ["thumb"] = new(["assetId", "out.jpg"], (d, c, ct) => ThumbAsync(d, c.Positional[0], c.Positional[1], c.IntOption("size", 256), ct)),
         ["photo-pull"] = new(["assetId", "dest"], (d, c, ct) => PhotoPullAsync(d, c.Positional[0], c.Positional[1], ct)),
         ["reboot"] = new([], async (d, _, ct) =>
@@ -174,7 +205,13 @@ internal static class Commands
 
     private static async Task StorageAsync(IosDevice device, CancellationToken ct)
     {
+        // The host splits videos out once the Photos page has built the index; the probe builds it up front.
+        var sw = Stopwatch.StartNew();
+        var index = await ((IosPhotoLibrary)device.Photos).GetIndexAsync(refresh: false, ct);
+        Console.Error.WriteLine($"(photo index: {index.Mode}, {sw.Elapsed.TotalSeconds:0.0} s)");
+        sw.Restart();
         var info = await device.GetStorageAsync(ct);
+        Console.Error.WriteLine($"(storage: {sw.Elapsed.TotalSeconds:0.0} s)");
         foreach (var v in info.Volumes)
         {
             Console.WriteLine($"{v.Label}: {Out.Bytes(v.TotalBytes)} total, {Out.Bytes(v.FreeBytes)} free, {Out.Bytes(v.TotalBytes - v.FreeBytes)} used");
