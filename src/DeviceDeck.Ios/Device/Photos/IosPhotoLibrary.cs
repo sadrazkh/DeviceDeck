@@ -24,8 +24,48 @@ public sealed class IosPhotoLibrary(IosDevice device, string cacheDirectory) : I
 
     public string CacheDirectory { get; } = cacheDirectory;
 
-    /// <summary>The last index built, however old, or null; never triggers a build.</summary>
-    public PhotoIndex? LastIndex => _index;
+    private (long Bytes, DateTime AtUtc)? _videoBytes;
+
+    /// <summary>
+    /// Bytes of the camera roll's videos (hidden and recently deleted included: they take space), from the DCIM
+    /// listing plus one stat per video. A video whose name matches a photo's is that Live Photo's motion and counts
+    /// as photo. About 0.3 s for 4,500 files on an idle USB link; cached for two minutes.
+    /// </summary>
+    public async Task<long> GetVideoBytesAsync(CancellationToken ct)
+    {
+        if (_videoBytes is { } cached && DateTime.UtcNow - cached.AtUtc < TimeSpan.FromMinutes(2))
+            return cached.Bytes;
+        var files = await device.UseMediaAfcAsync(afc => ListDcimAsync(afc, ct), ct).ConfigureAwait(false);
+        var videos = StandAloneVideos(files).ToList();
+        var total = await device.UseAsync(async c =>
+        {
+            // AFC answers one request at a time per connection, and while the link is busy (the Photos.sqlite copy)
+            // each answer waits behind bulk data; a few connections side by side keep the stats flowing.
+            var lanes = Math.Clamp(videos.Count / 16, 1, StatLanes);
+            var sums = await Task.WhenAll(Enumerable.Range(0, lanes).Select(async lane =>
+            {
+                await using var afc = await c.StartAfcAsync(ct).ConfigureAwait(false);
+                long sum = 0;
+                for (var i = lane; i < videos.Count; i += lanes)
+                    sum += (await afc.GetFileInfoAsync("/" + videos[i], ct).ConfigureAwait(false))?.Size ?? 0;
+                return sum;
+            })).ConfigureAwait(false);
+            return sums.Sum();
+        }).ConfigureAwait(false);
+        _videoBytes = (total, DateTime.UtcNow);
+        return total;
+    }
+
+    private const int StatLanes = 4;
+
+    /// <summary>Video files that are not the motion half of a Live Photo (no photo with the same name beside them).</summary>
+    internal static IEnumerable<string> StandAloneVideos(IReadOnlyCollection<string> dcimFiles)
+    {
+        var stills = dcimFiles.Where(f => !PhotoIndex.IsVideoFile(f))
+            .Select(f => Path.ChangeExtension(f, null))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        return dcimFiles.Where(f => PhotoIndex.IsVideoFile(f) && !stills.Contains(Path.ChangeExtension(f, null)));
+    }
 
     public async IAsyncEnumerable<PhotoAlbum> GetAlbumsAsync([EnumeratorCancellation] CancellationToken ct)
     {
