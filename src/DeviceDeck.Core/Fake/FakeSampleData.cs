@@ -157,7 +157,7 @@ public static class FakeSampleData
             DeviceCapability.PhotosRead | DeviceCapability.PhotosDelete | DeviceCapability.PhotosImport |
             DeviceCapability.Files |
             DeviceCapability.AppsList | DeviceCapability.AppsInstall | DeviceCapability.AppsUninstall | DeviceCapability.AppsExport |
-            DeviceCapability.Backup | DeviceCapability.Screenshot | DeviceCapability.ScreenMirror | DeviceCapability.Syslog |
+            DeviceCapability.Backup | DeviceCapability.Screenshot | DeviceCapability.ScreenMirror | DeviceCapability.Syslog | DeviceCapability.CrashReports |
             DeviceCapability.Reboot | DeviceCapability.Shutdown | DeviceCapability.RebootToRecovery | DeviceCapability.RebootToBootloader,
             "#7D8FA6"); // Titanium Silverblue
 
