@@ -98,6 +98,7 @@ internal sealed class HostServices : IAsyncDisposable
         PhotoBackup = PhotoBackup,
         Cleanup = Cleanup,
         Battery = Battery,
+        Toolbox = DeviceDeck.Shell.Toolbox.ShellToolbox.Create(this),
     };
 
     /// <summary>Starts the providers once the window is up, so the first paint isn't waiting on USB.</summary>

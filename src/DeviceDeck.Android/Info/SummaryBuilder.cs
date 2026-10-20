@@ -10,7 +10,7 @@ internal static class SummaryBuilder
         | DeviceCapability.PhotosRead | DeviceCapability.PhotosDelete | DeviceCapability.PhotosImport
         | DeviceCapability.Files | DeviceCapability.AppDocuments
         | DeviceCapability.AppsList | DeviceCapability.AppsInstall | DeviceCapability.AppsUninstall | DeviceCapability.AppsExport
-        | DeviceCapability.Screenshot
+        | DeviceCapability.Screenshot | DeviceCapability.ScreenMirror | DeviceCapability.Syslog | DeviceCapability.CrashReports
         | DeviceCapability.Reboot | DeviceCapability.Shutdown | DeviceCapability.RebootToRecovery | DeviceCapability.RebootToBootloader;
 
     /// <summary>adb's state word for a device that is fully usable.</summary>

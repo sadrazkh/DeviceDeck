@@ -38,6 +38,7 @@ import { assetsInAlbum, generateLibrary, toContractAsset, type MockAsset, type M
 import { MockPhotoBackup } from './photosBackup';
 import { hashString } from './random';
 import { TransferEngine, type JobItem } from './transfers';
+import { MockToolbox } from './toolbox';
 
 export type MockScenario = 'ready' | 'empty' | 'trust' | 'limited' | 'driverMissing' | 'iphoneOnly';
 
@@ -278,6 +279,17 @@ export class MockBackend {
     now: () => this.now(),
     fault,
     badParams,
+  });
+
+  /** Toolbox methods (round 2); its arrows reach this backend only when called. */
+  private readonly toolbox = new MockToolbox({
+    emit: (event, params) => this.emit(event, params),
+    ready: (deviceId, capability) => this.requireReady(deviceId, capability),
+    after: (ms, run) => this.after(ms, run),
+    now: () => this.now(),
+    details: (deviceId) => structuredClone(details[deviceId] ?? { rows: [] }),
+    fault: (code, message) => fault(code, message),
+    badParams: (message) => badParams(message),
   });
 
   readonly handlers: { [M in MethodName]: Handler<M> } = {
@@ -529,6 +541,7 @@ export class MockBackend {
       now: () => this.now(),
       badParams,
     }),
+    ...this.toolbox.handlers,
   };
 
   // ---------- helpers ----------

@@ -10,7 +10,7 @@ namespace DeviceDeck.Android.Adb;
 /// The real <see cref="IAdbChannel"/>: shell v2 and exec through our own smart-socket client (exit codes and
 /// error text survive), push/pull through AdvancedSharpAdbClient's sync service.
 /// </summary>
-internal sealed class AdbChannel(EndPoint endPoint, AdbDeviceRef device) : IAdbChannel
+internal sealed class AdbChannel(EndPoint endPoint, AdbDeviceRef device) : IAdbChannel, Mirror.IAdbSocketChannel
 {
     // Shell v2 packet ids (system/core/adb/shell_protocol.h).
     private const byte IdStdout = 1;
@@ -118,6 +118,10 @@ internal sealed class AdbChannel(EndPoint endPoint, AdbDeviceRef device) : IAdbC
         await using var connection = await OpenServiceAsync("reboot:" + target, ct).ConfigureAwait(false);
         return true;
     });
+
+    /// <summary>A raw device socket ("localabstract:name") on a connection of its own; dispose the stream to close it.</summary>
+    public Task<Stream> OpenSocketAsync(string service, CancellationToken ct) => GuardAsync<Stream>(async () =>
+        (await OpenServiceAsync(service, ct).ConfigureAwait(false)).Stream);
 
     private async Task<AdbConnection> OpenServiceAsync(string service, CancellationToken ct)
     {

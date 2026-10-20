@@ -33,6 +33,7 @@ internal sealed class TestHost : IAsyncDisposable
         Transport = new MemoryTransport();
         Cleanup = new CleanupService(hub, queue, Settings, CleanupOptions) { ProgressInterval = TimeSpan.Zero };
         Battery = new BatteryRecorder(hub, new BatteryHistoryStore(BatteryHistoryStore.PathIn(Paths)), new BatteryRecorderOptions { SettleDelay = TimeSpan.Zero });
+        Toolbox = new ToolboxFakes(root);
         Services = new BridgeServices
         {
             Hub = hub,
@@ -44,6 +45,7 @@ internal sealed class TestHost : IAsyncDisposable
             DevFake = fake,
             Cleanup = Cleanup,
             Battery = Battery,
+            Toolbox = Toolbox.Services,
         };
         Bridge = new BridgeHost(Transport, Services);
     }
@@ -65,6 +67,7 @@ internal sealed class TestHost : IAsyncDisposable
 
     /// <summary>Small enough that the test phones' files count as big.</summary>
     public static StorageAnalyzerOptions CleanupOptions { get; } = new() { AppFileMinBytes = 100_000, DuplicatePrefixBytes = 1024 };
+    public ToolboxFakes Toolbox { get; }
 
     public string PcFolder(string name)
     {

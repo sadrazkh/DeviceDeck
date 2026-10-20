@@ -340,3 +340,64 @@ type BatterySnapshot = {
 type BatteryDevice = { deviceId: string; name: string; platform: "ios" | "android"; model: string; count: number;
                        firstAt: string; lastAt: string; latest: BatterySnapshot };
 ```
+## Toolbox (round 2)
+
+Shapes are in `src/DeviceDeck.Bridge/Toolbox/ToolboxParams.cs` and `web/src/bridge/toolbox.ts`. Files the toolbox saves go to
+`Documents\DeviceDeck\{Logs, Crash reports, Reports}` unless `destination` names a folder; nothing is ever overwritten
+(a second copy gets " (2)"). Screenshots from the mirror window go to `Pictures\DeviceDeck`.
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `toolbox.features` | `{ deviceId }` | `{ log, crashReports, mirror, ringtone, wifiSync, report, wirelessDebugging }` (booleans) |
+| `log.start` | `{ deviceId }` | `{ sessionId }`; lines arrive as `log.lines`; a page reload stops the session |
+| `log.stop` / `log.clear` | `{ sessionId }` | `{}` |
+| `log.export` | `{ sessionId, minLevel?, search?, destination? }` | `{ path, count }` (UTF-8 text of the kept lines that pass the filter) |
+| `crash.list` | `{ deviceId }` | `CrashReportList` |
+| `crash.read` | `{ deviceId, id }` | `{ text, truncated, size }` (first 2 MB) |
+| `crash.export` | `{ deviceId, ids, destination? }` | `{ folder, files }` |
+| `crash.delete` | `{ deviceId, ids }` | `{ deleted }`; only when `canDelete` (iPhone); the page confirms first, listing names and sizes |
+| `report.preview` | `{ deviceId, language: "en" \| "fa", revealSerials }` | `{ html }` (self-contained, no scripts) |
+| `report.save` | `{ deviceId, language, revealSerials, format: "html" \| "pdf", destination? }` | `{ path, count }` |
+| `heic.status` | — | `{ available }` (Windows can decode HEIC) |
+| `heic.convert` | `{ files: string[], quality: 1–100, destination? }` (files or folders; dropped File objects fill `files`) | `{ jobId, total }`; progress as `toolbox.job` |
+| `toolbox.cancelJob` | `{ jobId }` | `{}` |
+| `mirror.open` | `{ deviceId }` | `{}`; the host opens (or brings forward) the phone's mirror window |
+| `wifi.status` | — | `{ wirelessDebugging }` (Android provider running) |
+| `wifi.pair` | `{ host, port, code }` | `WirelessResult`; wrong code = `unauthorized`, nothing there = `device_not_found` |
+| `wifi.connect` | `{ host, port }` | `WirelessResult` (`serial` = the new device id) |
+| `wifi.disconnect` | `{ deviceId }` | `{}` |
+| `wifi.qrStart` | — | `{ sessionId, name, password, payload }` (`payload` = `WIFI:T:ADB;S:<name>;P:<password>;;` for the QR); stages as `wifi.qr` |
+| `wifi.qrCancel` | `{ sessionId }` | `{}` |
+| `wifi.iphoneSync` / `wifi.setIphoneSync` | `{ deviceId }` / `{ deviceId, enabled }` | `{ enabled: boolean \| null }` |
+| `ringtone.create` | `{ deviceId, files: [path], startSeconds, endSeconds, name?, setAsDefault }` | `{ devicePath, isDefault, bytes }`; Android only (an iPhone is `not_supported`) |
+
+The mirror window's page (`mirror.html?device=<id>`) talks to its own bridge (`MirrorBridge`): `app.hello`, `settings.get`,
+`mirror.start { deviceId, maxSize?, bitRate?, maxFps? }` → `{ sessionId, deviceName, codec: "h264" }`,
+`mirror.input { sessionId, kind, … }` (send as a notification: no reply, applied strictly in order),
+`mirror.stop { sessionId }`, `mirror.screenshot { deviceId }` → `{ path }`, `shell.revealInExplorer`.
+
+| Event | Params |
+| --- | --- |
+| `log.lines` | `{ sessionId, lines: LogLine[], dropped }` (every 100 ms, at most 1,000 lines; `dropped` lines skipped for the page are still in the export) |
+| `log.ended` | `{ sessionId, error: { code, message } \| null }` (the phone went away or stopped sending) |
+| `toolbox.job` | `ToolboxJob` (at most 10 a second, plus the final state) |
+| `wifi.qr` | `{ sessionId, stage: "waiting" \| "pairing" \| "connecting" \| "done" \| "failed" \| "cancelled" \| "expired", serial, message, error }` |
+| `mirror.video` | `{ sessionId, kind: "session" \| "config" \| "frame", pts, key, width, height, data }` (`data` = base64 H.264 Annex B) |
+| `mirror.ended` | `{ sessionId, error }` |
+
+```ts
+type LogLine = { seq: number; time: string | null; level: "verbose" | "debug" | "info" | "notice" | "warning" | "error" | "fault";
+                 process: string; pid: number | null; tag: string | null; message: string };
+type CrashReport = { id: string; fileName: string; process: string; kind: "crash" | "hang" | "memory" | "panic" | "tombstone" | "diagnostic";
+                     time: string | null; size: number; readable: boolean };
+type CrashReportList = { reports: CrashReport[]; canDelete: boolean; unreadable: string[] /* "tombstones", "anr" */ };
+type ToolboxJob = { id: string; kind: "heic"; state: "running" | "done" | "failed" | "cancelled"; total: number; done: number;
+                    failed: number; current: string | null; outputs: string[]; errors: string[] };
+type WirelessResult = { serial: string | null; message: string };
+type MirrorInput =
+  | { kind: "touch"; action: "down" | "up" | "move" | "cancel"; pointerId: number /* -2 = mouse */; x; y; width; height; pressure }
+  | { kind: "key"; down: boolean; keyCode: number /* Android KeyEvent */ } | { kind: "text"; text: string }
+  | { kind: "scroll"; x; y; width; height; hScroll; vScroll } | { kind: "command"; command: "backOrScreenOn" | "rotate" | "resetVideo" | … };
+```
+
+Capabilities: an iPhone now has `syslog` and `crashReports`; an Android phone `syslog`, `crashReports` and `screenMirror`.

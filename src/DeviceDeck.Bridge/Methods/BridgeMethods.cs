@@ -32,6 +32,8 @@ public sealed class BridgeServices
     // Clean-up and battery history (round 2): cleanup.* and battery.* are registered only when set.
     public CleanupService? Cleanup { get; init; }
     public BatteryRecorder? Battery { get; init; }
+    /// <summary>Converters, the mirror window and folders for the toolbox methods (Toolbox/ToolboxMethods.cs).</summary>
+    public Toolbox.ToolboxServices Toolbox { get; init; } = new();
 }
 
 /// <summary>Registers every method of docs/bridge-contract.md on a dispatcher.</summary>

@@ -11,7 +11,7 @@ namespace DeviceDeck.Android;
 /// host:track-devices-l, and turns each line into an <see cref="IDevice"/>: Unauthorized while the phone shows
 /// "Allow USB debugging?", Connecting while getprop is read, then Ready.
 /// </summary>
-public sealed class AndroidDeviceProvider : IDeviceProvider
+public sealed partial class AndroidDeviceProvider : IDeviceProvider
 {
     private readonly AndroidProviderOptions _options;
     private readonly AppMetadataCache _cache;

@@ -24,6 +24,7 @@ public sealed class BridgeHost : IDisposable
         _transport = transport;
         _services = services;
         Dispatcher = BridgeMethods.Register(new JsonRpcDispatcher(), services);
+        Toolbox.ToolboxMethods.Register(Dispatcher, services, Publish);
 
         transport.MessageReceived += OnMessage;
         services.Hub.DeviceChanged += OnDeviceChanged;
