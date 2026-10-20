@@ -11,7 +11,7 @@ namespace DeviceDeck.Ios.Device.Photos;
 /// a temp copy of /PhotoData/Photos.sqlite when it can be copied and read, else from the DCIM listing alone.
 /// Thumbnails are the phone's own JPEGs in /PhotoData/Thumbnails/V2 when present.
 /// </summary>
-internal sealed class IosPhotoLibrary(IosDevice device, string cacheDirectory) : IPhotoLibrary
+public sealed class IosPhotoLibrary(IosDevice device, string cacheDirectory) : IPhotoLibrary
 {
     private const string PhotosDb = "/PhotoData/Photos.sqlite";
     private const string ThumbnailRoot = "/PhotoData/Thumbnails/V2/";
