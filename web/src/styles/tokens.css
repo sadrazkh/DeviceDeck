@@ -24,11 +24,12 @@
   --iris-100: #c7c7ff;
   --ink-900: #111827;
   --ink-700: #374151;
+  /* Text greys keep WCAG AA (4.5:1) on every surface they sit on, hovered and selected rows too (tests/e2e/contrast.ts). */
   --ink-600: #4b5563;
-  --ink-500: #6b7280;
+  --ink-500: #5f6673;
   --mist-50: #f3f4f6;
-  --mist-300: #a1a7b3;
-  --mist-400: #8a909c;
+  --mist-300: #aab0bb;
+  --mist-400: #9aa0ab;
 
   --green-600: #16a34a;
   --amber-600: #d97706;
