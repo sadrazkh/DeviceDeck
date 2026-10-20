@@ -58,9 +58,9 @@ public sealed class AndroidDeviceProvider : IDeviceProvider
         {
             return;
         }
-        if (Host.AdbPath == null)
+        if (Host.AdbPath == null && await Host.GetServerVersionAsync(ct).ConfigureAwait(false) == null)
         {
-            return; // GetDriverStatusAsync reports Missing
+            return; // no adb to start a server with; GetDriverStatusAsync reports Missing
         }
         _tracker = new DeviceTracker(Host, OnSnapshotAsync);
         _tracker.Start();
@@ -69,17 +69,18 @@ public sealed class AndroidDeviceProvider : IDeviceProvider
 
     public async Task<DriverStatus> GetDriverStatusAsync(CancellationToken ct)
     {
+        int? protocol = await Host.GetServerVersionAsync(ct).ConfigureAwait(false);
+        string? version = await Host.GetToolsVersionAsync(ct).ConfigureAwait(false);
+        if (protocol != null)
+        {
+            return new DriverStatus(Id, DriverState.Ready, version ?? $"adb protocol {protocol}", null);
+        }
         if (Host.AdbPath == null)
         {
             return new DriverStatus(Id, DriverState.Missing, null,
                 _options.AdbPath != null
                     ? $"adb wasn't found at {_options.AdbPath}."
                     : "adb isn't installed; run tools/fetch-platform-tools.ps1 to download Google's platform-tools.");
-        }
-        string? version = await Host.GetToolsVersionAsync(ct).ConfigureAwait(false);
-        if (await Host.GetServerVersionAsync(ct).ConfigureAwait(false) != null)
-        {
-            return new DriverStatus(Id, DriverState.Ready, version, null);
         }
         if (_tracker?.LastError is { } error)
         {

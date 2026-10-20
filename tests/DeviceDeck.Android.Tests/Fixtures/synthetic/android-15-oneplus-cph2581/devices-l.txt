@@ -1,0 +1,1 @@
+192.168.1.42:5555       device product:CPH2581EEA model:CPH2581 device:OP595DL1 transport_id:4

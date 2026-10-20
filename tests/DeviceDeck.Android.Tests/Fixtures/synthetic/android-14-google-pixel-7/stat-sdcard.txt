@@ -1,0 +1,9 @@
+45f8|3452|1678802400|/sdcard/Alarms
+45f8|3452|1678802400|/sdcard/Android
+45f8|3452|1707112800|/sdcard/DCIM
+45f8|3452|1706813700|/sdcard/Download
+45f8|3452|1678802400|/sdcard/Music
+45f8|3452|1703439000|/sdcard/Pictures
+45f8|3452|1678802400|/sdcard/Recordings
+81b0|52428800|1706813700|/sdcard/app-release.apk
+81b0|2048|1703439000|/sdcard/Grüße & Ümlaute.txt

@@ -1,0 +1,1 @@
+adb-28031FDH200ABC-xYz1Ab._adb-tls-connect._tcp device product:panther model:Pixel_7 device:panther transport_id:5

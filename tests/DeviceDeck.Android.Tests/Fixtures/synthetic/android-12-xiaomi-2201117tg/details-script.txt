@@ -1,0 +1,15 @@
+@@dd:meminfo@@
+MemTotal:        3735424 kB
+@@dd:kernel@@
+4.19.157-perf-gb2c1e2f
+@@dd:mac@@
+3: wlan0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP mode DORMANT group default qlen 3000
+    link/ether 9a:3c:51:aa:07:12 brd ff:ff:ff:ff:ff:ff
+@@dd:imei@@
+Result: Parcel(
+  0x00000000: ffffffff 0000004a 00650052 00750071 '....J...R.e.q.u.'
+  0x00000010: 00720069 00730065 00520020 00410045 'i.r.e.s. .R.E.A.'
+  0x00000020: 005f0044 00520050 00560049 004c0049 'D._.P.R.I.V.I.L.'
+  0x00000030: 00470045 00440045 0050005f 004f0048 'E.G.E.D._.P.H.O.'
+  0x00000040: 0045004e 0053005f 00410054 00450054 'N.E._.S.T.A.T.E.'
+  0x00000050: 00000000                            '....            ')

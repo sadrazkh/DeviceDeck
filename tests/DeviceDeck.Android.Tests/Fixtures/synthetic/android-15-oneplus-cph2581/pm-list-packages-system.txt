@@ -1,0 +1,2 @@
+package:com.android.shell
+package:com.google.android.providers.media.module

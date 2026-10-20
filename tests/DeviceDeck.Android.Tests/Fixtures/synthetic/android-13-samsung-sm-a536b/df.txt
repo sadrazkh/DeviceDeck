@@ -1,0 +1,5 @@
+Filesystem        1K-blocks     Used Available Use% Mounted on
+/dev/block/dm-45  110215416 42259980  67955436  39% /data
+/dev/fuse         110215416 42259980  67955436  39% /storage/emulated
+/dev/fuse          62513152 20971520  41541632  34% /storage/3A1F-12C9
+tmpfs               2789384        0   2789384   0% /storage

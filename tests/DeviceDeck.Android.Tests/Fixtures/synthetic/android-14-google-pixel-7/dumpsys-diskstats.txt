@@ -1,0 +1,20 @@
+Latency: 3ms [512B Data Write]
+Recent Disk Write Speed (kB/s) = 61022
+Data-Free: 54704676K / 115217320K total = 47% free
+Cache-Free: 54704676K / 115217320K total = 47% free
+System-Free: 0K / 3201432K total = 0% free
+Metadata-Free: 50820K / 60360K total = 84% free
+File-based Encryption: true
+App Size: 14495514624
+App Data Size: 9126805504
+App Cache Size: 2147483648
+Photos Size: 21474836480
+Videos Size: 6442450944
+Audio Size: 268435456
+Downloads Size: 805306368
+System Size: 12884901888
+Other Size: 1073741824
+Package Names: ["com.google.android.apps.photos","org.telegram.messenger","com.spotify.music"]
+App Sizes: [276824064,98566144,163577856]
+App Data Sizes: [1342177280,3221225472,4294967296]
+Cache Sizes: [536870912,268435456,1073741824]

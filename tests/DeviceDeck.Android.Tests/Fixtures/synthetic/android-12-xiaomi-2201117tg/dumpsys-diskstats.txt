@@ -1,0 +1,20 @@
+Latency: 2ms [512B Data Write]
+Recent Disk Write Speed (kB/s) = 41231
+Data-Free: 49085988K / 110450884K total = 44% free
+Cache-Free: 49085988K / 110450884K total = 44% free
+System-Free: 0K / 4521476K total = 0% free
+Metadata-Free: 10544K / 11760K total = 89% free
+File-based Encryption: true
+App Size: 9663676416
+App Data Size: 4831838208
+App Cache Size: 1073741824
+Photos Size: 12884901888
+Videos Size: 8589934592
+Audio Size: 536870912
+Downloads Size: 1073741824
+System Size: 13958643712
+Other Size: 3221225472
+Package Names: ["com.android.chrome","com.whatsapp","org.telegram.messenger","com.instagram.android","ir.mservices.market"]
+App Sizes: [312475648,104857600,94371840,157286400,26214400]
+App Data Sizes: [73400320,2147483648,1610612736,524288000,10485760]
+Cache Sizes: [104857600,52428800,314572800,209715200,5242880]

@@ -1,0 +1,10 @@
+@@dd:meminfo@@
+MemTotal:        11756328 kB
+@@dd:kernel@@
+6.1.124-android14-11-g4f3a2b1c0d9e-ab13578606
+@@dd:mac@@
+@@dd:imei@@
+Result: Parcel(
+  0x00000000: ffffffff 0000004a 00650052 00750071 '....J...R.e.q.u.'
+  0x00000010: 00720069 00730065 00520020 00410045 'i.r.e.s. .R.E.A.'
+  0x00000020: 00000000                            '....            ')

@@ -55,7 +55,8 @@ internal static partial class AdbErrors
             return new DeviceException(DeviceErrorCodes.Disconnected,
                 "The phone is connected but not answering (offline). Unplug it and plug it back in.", inner);
         }
-        if (Contains(text, "not found") && (Contains(text, "device") || Contains(text, "emulator")) && !Contains(text, "No such file"))
+        if ((Contains(text, "not found") && (Contains(text, "device") || Contains(text, "emulator")) && !Contains(text, "No such file"))
+            || Contains(text, "no devices/emulators found"))
         {
             return new DeviceException(DeviceErrorCodes.NotFound, "The phone isn't connected any more.", inner);
         }

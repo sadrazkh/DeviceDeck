@@ -9,7 +9,8 @@ namespace DeviceDeck.Android.Photos;
 
 /// <summary>
 /// Photos and videos through MediaStore (`content query`), albums = buckets (folders). The index is read once and
-/// kept until the first page is asked for again, a delete or an import.
+/// reused for paging and album switches; asking for a first page again re-reads it once it is older than
+/// <see cref="IndexMaxAge"/>, and deletes and imports drop it.
 /// </summary>
 internal sealed partial class AndroidPhotoLibrary(IAdbChannel channel, Func<int> sdk) : IPhotoLibrary
 {
@@ -23,6 +24,9 @@ internal sealed partial class AndroidPhotoLibrary(IAdbChannel channel, Func<int>
     private readonly SemaphoreSlim _thumbnailGate = new(4, 4);
     private readonly MediaScanner _scanner = new(channel);
     private IReadOnlyList<MediaItem>? _index;
+    private DateTime _indexTime;
+
+    public static readonly TimeSpan IndexMaxAge = TimeSpan.FromSeconds(10);
 
     public async IAsyncEnumerable<PhotoAlbum> GetAlbumsAsync([EnumeratorCancellation] CancellationToken ct)
     {
@@ -35,7 +39,8 @@ internal sealed partial class AndroidPhotoLibrary(IAdbChannel channel, Func<int>
 
     public async Task<Page<PhotoAsset>> GetAssetsAsync(string? albumId, int offset, int limit, CancellationToken ct)
     {
-        var items = await GetIndexAsync(refresh: offset == 0 || _index == null, ct).ConfigureAwait(false);
+        bool stale = _index == null || (offset == 0 && DateTime.UtcNow - _indexTime > IndexMaxAge);
+        var items = await GetIndexAsync(refresh: stale, ct).ConfigureAwait(false);
         var filtered = MediaQuery.Filter(items, albumId).ToList();
         var page = filtered.Skip(Math.Max(0, offset)).Take(Math.Clamp(limit, 0, 10_000)).Select(i => i.ToAsset()).ToList();
         return new Page<PhotoAsset>(page, filtered.Count);
@@ -50,10 +55,17 @@ internal sealed partial class AndroidPhotoLibrary(IAdbChannel channel, Func<int>
             if (!item.IsVideo && Thumbnailer.CanDecode(item.MimeType) && item.Size is > 0 and <= MaxOriginalForThumbnail)
             {
                 using var original = new MemoryStream((int)item.Size);
-                await channel.PullAsync(item.Path, original, null, ct).ConfigureAwait(false);
-                if (Thumbnailer.Create(original.ToArray(), size) is { } jpeg)
+                try
                 {
-                    return jpeg;
+                    await channel.PullAsync(item.Path, original, null, ct).ConfigureAwait(false);
+                    if (Thumbnailer.Create(original.ToArray(), size) is { } jpeg)
+                    {
+                        return jpeg;
+                    }
+                }
+                catch (DeviceException ex) when (ex.Code is DeviceErrorCodes.PathNotFound or DeviceErrorCodes.PermissionDenied)
+                {
+                    // Moved or deleted since the index was read; MediaStore may still have a thumbnail.
                 }
             }
             // Video, HEIC, RAW or a file Skia can't read: MediaStore makes one (openFile on .../media/<id>/thumbnail).
@@ -150,6 +162,7 @@ internal sealed partial class AndroidPhotoLibrary(IAdbChannel channel, Func<int>
                 throw AdbErrors.FromShell("content", result);
             }
             _index = MediaQuery.Parse(result.Output, sdk());
+            _indexTime = DateTime.UtcNow;
             return _index;
         }
         finally
@@ -199,7 +212,9 @@ internal sealed partial class AndroidPhotoLibrary(IAdbChannel channel, Func<int>
 
     internal static string SafeFileName(string fileName)
     {
-        string name = UnsafeChars().Replace(Path.GetFileName(fileName.Replace('\\', '/')), "_").Trim().TrimStart('.');
+        // Not Path.GetFileName: on Windows it reads "a:b.jpg" as a drive letter.
+        string normalized = fileName.Replace('\\', '/');
+        string name = UnsafeChars().Replace(normalized[(normalized.LastIndexOf('/') + 1)..], "_").Trim().TrimStart('.');
         if (name.Length == 0)
         {
             throw new DeviceException(DeviceErrorCodes.PathNotFound, "The file has no usable name.");

@@ -1,0 +1,52 @@
+Packages:
+  Package [org.telegram.messenger] (4b5f0c3):
+    appId=10301
+    pkg=Package{a2b1c0d org.telegram.messenger}
+    codePath=/data/app/~~Ux2nS8pQ4yH0dW6kR1fZ3g==/org.telegram.messenger-4hT0mQ7zL2cW9nX5yB1oKw==
+    resourcePath=/data/app/~~Ux2nS8pQ4yH0dW6kR1fZ3g==/org.telegram.messenger-4hT0mQ7zL2cW9nX5yB1oKw==
+    primaryCpuAbi=arm64-v8a
+    secondaryCpuAbi=null
+    cpuAbiOverride=null
+    versionCode=44932 minSdk=19 targetSdk=34
+    minExtensionVersions=[]
+    versionName=10.6.2
+    hiddenApiEnforcementPolicy=2
+    usesNonSdkApi=false
+    splits=[base]
+    apkSigningVersion=2
+    flags=[ HAS_CODE ALLOW_CLEAR_USER_DATA LARGE_HEAP ]
+    privateFlags=[ PRIVATE_FLAG_ACTIVITIES_RESIZE_MODE_RESIZEABLE PRIVATE_FLAG_REQUEST_LEGACY_EXTERNAL_STORAGE ]
+    forceQueryable=false
+    dataDir=/data/user/0/org.telegram.messenger
+    supportsScreens=[small, medium, large, xlarge, resizeable, anyDensity]
+    timeStamp=2024-01-28 09:10:11
+    lastUpdateTime=2024-01-28 09:10:14
+    installerPackageName=com.android.vending
+    installerPackageUid=10146
+    updateOwnerPackageName=null
+    installerAttributionTag=null
+    packageSource=0
+    appMetadataFilePath=null
+    signatures=PackageSignatures{f1e2d3c version:2, signatures:[d29d7fa3], past signatures:[]}
+    installPermissionsFixed=true
+    pkgFlags=[ HAS_CODE ALLOW_CLEAR_USER_DATA LARGE_HEAP ]
+    User 0: ceDataInode=553311 deDataInode=553312 installed=true hidden=false suspended=false distractionFlags=0 stopped=false notLaunched=false enabled=0 instant=false virtual=false quarantined=false
+      installReason=4
+      dataDir=/data/user/0/org.telegram.messenger
+      firstInstallTime=2023-03-14 15:09:26
+      uninstallReason=0
+  Package [com.example.sideloaded] (77aa001):
+    appId=10320
+    codePath=/data/app/~~bm8gaW5zdGFsbGVy==/com.example.sideloaded-Zm9vYmFyYmF6==
+    versionCode=7 minSdk=26 targetSdk=34
+    versionName=null
+    flags=[ HAS_CODE ALLOW_CLEAR_USER_DATA DEBUGGABLE ]
+    timeStamp=2024-02-01 20:00:00
+    lastUpdateTime=2024-02-01 20:00:01
+    installerPackageName=null
+    User 0: ceDataInode=553400 deDataInode=553401 installed=true hidden=false suspended=false distractionFlags=0 stopped=false notLaunched=false enabled=0 instant=false virtual=false quarantined=false
+      installReason=0
+      firstInstallTime=2024-02-01 20:00:01
+
+Queries:
+  system apps queryable: false

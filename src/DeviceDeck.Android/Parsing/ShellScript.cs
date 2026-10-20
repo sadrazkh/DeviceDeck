@@ -28,7 +28,10 @@ internal static class ShellScript
         var sections = new Dictionary<string, string>(StringComparer.Ordinal);
         string? name = null;
         var body = new StringBuilder();
-        foreach (string raw in output.Split('\n'))
+        string[] lines = output.Split('\n');
+        // A trailing newline leaves an empty last element that isn't a line of output.
+        int count = lines.Length > 0 && lines[^1].Length == 0 ? lines.Length - 1 : lines.Length;
+        foreach (string raw in lines.Take(count))
         {
             string line = raw.TrimEnd('\r');
             if (line.StartsWith(Prefix, StringComparison.Ordinal) && line.EndsWith(Suffix, StringComparison.Ordinal) && line.Length > Prefix.Length + Suffix.Length)

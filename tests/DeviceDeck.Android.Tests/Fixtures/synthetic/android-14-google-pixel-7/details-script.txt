@@ -1,0 +1,12 @@
+@@dd:meminfo@@
+MemTotal:        7697304 kB
+@@dd:kernel@@
+5.10.198-android13-4-00050-g7b4a1c3d2e1f-ab11224170
+@@dd:mac@@
+11: wlan0: <BROADCAST,MULTICAST,UP,LOWER_UP> mtu 1500 qdisc mq state UP mode DORMANT group default qlen 3000
+    link/ether 2a:6f:c4:10:9e:5d brd ff:ff:ff:ff:ff:ff
+@@dd:imei@@
+Result: Parcel(
+  0x00000000: ffffffff 0000004a 00650052 00750071 '....J...R.e.q.u.'
+  0x00000010: 00720069 00730065 00520020 00410045 'i.r.e.s. .R.E.A.'
+  0x00000020: 00000000                            '....            ')

@@ -1,0 +1,1 @@
+4A281FDJH00XYZ         device usb:1-4 product:tokay model:Pixel_9 device:tokay transport_id:7

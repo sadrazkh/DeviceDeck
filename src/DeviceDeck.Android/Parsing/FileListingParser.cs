@@ -119,7 +119,8 @@ internal static partial class FileListingParser
                 symlink,
                 directory || symlink ? 0 : size,
                 ParseLsTime(match, phoneOffset),
-                !mode.AsSpan(1).ContainsAny('w', 'W')));
+                !mode.AsSpan(1).ContainsAny('w', 'W'),
+                target));
         }
         return files;
     }

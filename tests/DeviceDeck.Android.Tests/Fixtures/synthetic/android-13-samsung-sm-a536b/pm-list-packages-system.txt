@@ -1,0 +1,5 @@
+package:com.samsung.android.app.notes
+package:com.android.settings
+package:com.sec.android.app.myfiles
+package:com.google.android.providers.media.module
+package:com.android.shell

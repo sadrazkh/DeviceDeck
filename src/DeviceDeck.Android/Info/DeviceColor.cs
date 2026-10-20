@@ -70,13 +70,17 @@ internal static partial class DeviceColor
         {
             return "#" + hex.Groups["hex"].Value.ToUpperInvariant();
         }
+        // The first colour word wins ("Mint Green" is mint); at the same spot the longer one ("phantom black").
         string lower = value.ToLowerInvariant().Replace('_', ' ').Replace('-', ' ');
-        foreach (var (word, color) in Words.OrderByDescending(w => w.Word.Length))
+        var best = Words
+            .Select(w => (w.Hex, w.Word.Length, Match: Regex.Match(lower, $@"\b{Regex.Escape(w.Word)}\b")))
+            .Where(m => m.Match.Success)
+            .OrderBy(m => m.Match.Index)
+            .ThenByDescending(m => m.Length)
+            .FirstOrDefault();
+        if (best.Hex != null)
         {
-            if (Regex.IsMatch(lower, $@"\b{Regex.Escape(word)}\b"))
-            {
-                return color;
-            }
+            return best.Hex;
         }
         string upper = value.ToUpperInvariant();
         foreach (var (code, word) in Codes.OrderByDescending(c => c.Code.Length))

@@ -1,0 +1,2 @@
+battery/charge_full=4402000
+battery/charge_full_design=4558000

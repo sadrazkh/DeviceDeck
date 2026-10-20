@@ -1,0 +1,12 @@
+total 72
+drwxrws--- 11 u0_a204 media_rw 3452 2024-02-05 07:00 .
+drwx--x--x  4 root    root     3452 2023-03-14 14:00 ..
+drwxrws---  2 u0_a204 media_rw 3452 2023-03-14 14:00 Alarms
+drwxrws---  4 u0_a204 media_rw 3452 2023-03-14 14:00 Android
+drwxrws---  4 u0_a204 media_rw 3452 2024-02-05 07:00 DCIM
+drwxrws---  2 u0_a204 media_rw 3452 2024-02-01 19:55 Download
+drwxrws---  2 u0_a204 media_rw 3452 2023-03-14 14:00 Music
+drwxrws---  4 u0_a204 media_rw 3452 2023-12-24 18:30 Pictures
+drwxrws---  2 u0_a204 media_rw 3452 2023-03-14 14:00 Recordings
+-rw-rw----  1 u0_a204 media_rw 52428800 2024-02-01 19:55 app-release.apk
+-rw-rw----  1 u0_a204 media_rw     2048 2023-12-24 18:30 Grüße & Ümlaute.txt

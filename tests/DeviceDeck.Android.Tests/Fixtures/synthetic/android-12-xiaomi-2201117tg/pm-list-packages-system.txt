@@ -1,0 +1,6 @@
+package:com.android.chrome
+package:com.android.settings
+package:com.miui.gallery
+package:com.google.android.permissioncontroller
+package:com.android.shell
+package:com.google.android.providers.media.module

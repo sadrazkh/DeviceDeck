@@ -1,0 +1,1 @@
+a1b2c3d4               device usb:1-1 product:spes_global model:2201117TG device:spes transport_id:1
