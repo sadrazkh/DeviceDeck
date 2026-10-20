@@ -26,6 +26,18 @@ public sealed record AppSettings
     public string FileCopyFolder { get; init; } = DefaultCopyFolder();
     public ConflictRule ConflictRule { get; init; } = ConflictRule.Ask;
 
+    // Backup (round 2, backup session)
+    public const int MaxBackupKeep = 20;
+
+    /// <summary>Where backups go: per iPhone Apple's layout plus dated copies, per Android backup one folder.</summary>
+    public string BackupFolder { get; init; } = DefaultBackupFolder();
+
+    /// <summary>Backups of each phone to keep; older ones are offered for deletion (never deleted unasked).</summary>
+    public int BackupKeep { get; init; } = 3;
+
+    public static string DefaultBackupFolder() =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "DeviceDeck", "Backups");
+
     public static string DefaultPhotoFolder() =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "DeviceDeck");
 
@@ -48,6 +60,16 @@ public sealed record AppSettings
         if (string.IsNullOrWhiteSpace(FileCopyFolder))
         {
             throw new ArgumentException("fileCopyFolder must not be empty.", nameof(FileCopyFolder));
+        }
+
+        if (string.IsNullOrWhiteSpace(BackupFolder) || !Path.IsPathFullyQualified(BackupFolder))
+        {
+            throw new ArgumentException("backupFolder must be a full path on this PC.", nameof(BackupFolder));
+        }
+
+        if (BackupKeep is < 1 or > MaxBackupKeep)
+        {
+            throw new ArgumentException($"backupKeep must be between 1 and {MaxBackupKeep}.", nameof(BackupKeep));
         }
 
         if (!Enum.IsDefined(Language) || !Enum.IsDefined(Theme) || !Enum.IsDefined(Density) || !Enum.IsDefined(ConflictRule))
