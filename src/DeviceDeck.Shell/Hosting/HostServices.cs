@@ -8,6 +8,7 @@ using DeviceDeck.Core.Battery;
 using DeviceDeck.Core.Cleanup;
 using DeviceDeck.Core.Fake;
 using DeviceDeck.Core.Hub;
+using DeviceDeck.Core.Photos;
 using DeviceDeck.Core.Settings;
 using DeviceDeck.Core.Transfers;
 using DeviceDeck.Core.Transfers.Handlers;
@@ -18,8 +19,9 @@ namespace DeviceDeck.Shell.Hosting;
 internal sealed class HostServices : IAsyncDisposable
 {
     private HostServices(AppPaths paths, bool devMode, FakeDeviceProvider? fake, DeviceHub hub, SqliteTransferStore store,
-        TransferQueue transfers, SettingsStore settings, WicImageTranscoder transcoder)
+        TransferQueue transfers, SettingsStore settings, WicImageTranscoder transcoder, PhotoBackupService photoBackup)
     {
+        PhotoBackup = photoBackup;
         Paths = paths;
         DevMode = devMode;
         Fake = fake;
@@ -48,6 +50,9 @@ internal sealed class HostServices : IAsyncDisposable
     public ThumbnailCache Thumbnails { get; }
     public DeviceImageHandler Images { get; }
 
+    /// <summary>Photos backup; <c>CountNewAsync(deviceId, ct)</c> gives the "N new photos" count for a notification.</summary>
+    public PhotoBackupService PhotoBackup { get; }
+
     // Clean-up and battery history (round 2).
     public CleanupService Cleanup { get; private init; } = null!;
     public BatteryRecorder Battery { get; private init; } = null!;
@@ -68,15 +73,17 @@ internal sealed class HostServices : IAsyncDisposable
         hub.ProviderStopFailed += (_, e) => ShellLog.Error($"Provider {e.ProviderId} did not stop cleanly.", e.Error);
         var store = new SqliteTransferStore(paths.TransfersDatabase);
         var transcoder = new WicImageTranscoder();
-        var transfers = new TransferQueue(hub, store, TransferHandlers.All(transcoder), new WindowsKeepAwake());
-        transfers.Start();
         var settings = new SettingsStore(paths.SettingsFile);
+        var photoBackup = new PhotoBackupService(Path.Combine(paths.Root, "photo-backup.db"), hub, settings, transcoder, PhotosHeicProbe.Check());
+        var transfers = new TransferQueue(hub, store, [.. TransferHandlers.All(transcoder), photoBackup.Handler], new WindowsKeepAwake());
+        transfers.Start();
+        photoBackup.Attach(transfers);
 
         // Before the hub starts, so the first phones to arrive get their battery snapshot.
         var battery = new BatteryRecorder(hub, new BatteryHistoryStore(BatteryHistoryStore.PathIn(paths)));
         battery.RecordFailed += (_, e) => ShellLog.Error($"Battery snapshot for {e.DeviceId} failed.", e.Error);
         var cleanup = new CleanupService(hub, transfers, settings);
-        return new HostServices(paths, devMode, fake, hub, store, transfers, settings, transcoder) { Cleanup = cleanup, Battery = battery };
+        return new HostServices(paths, devMode, fake, hub, store, transfers, settings, transcoder, photoBackup) { Cleanup = cleanup, Battery = battery };
     }
 
     public BridgeServices BridgeServices(IShellServices shell) => new()
@@ -88,6 +95,7 @@ internal sealed class HostServices : IAsyncDisposable
         Screenshots = Screenshots,
         Version = Version,
         DevFake = Fake,
+        PhotoBackup = PhotoBackup,
         Cleanup = Cleanup,
         Battery = Battery,
     };
@@ -130,6 +138,11 @@ internal sealed class HostServices : IAsyncDisposable
         await StepAsync("transfer store", () =>
         {
             Store.Dispose();
+            return Task.CompletedTask;
+        }).ConfigureAwait(false);
+        await StepAsync("photo backup", () =>
+        {
+            PhotoBackup.Dispose();
             return Task.CompletedTask;
         }).ConfigureAwait(false);
         await StepAsync("device providers", async () => await Hub.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);

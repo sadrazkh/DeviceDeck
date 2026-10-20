@@ -96,7 +96,7 @@ public sealed partial class FakeDevice : IDevice
     public Task<IDeviceFileSystem> OpenFileSystemAsync(string rootKey, CancellationToken ct)
     {
         EnsureConnected();
-        if (!Roots.TryGetValue(rootKey, out var root))
+        if (!Roots.TryGetValue(rootKey, out var root) && !TryAppFilesRoot(rootKey, out root))
         {
             throw new DeviceException(DeviceErrorCodes.PathNotFound, "That folder isn't on the phone.", new KeyNotFoundException(rootKey));
         }

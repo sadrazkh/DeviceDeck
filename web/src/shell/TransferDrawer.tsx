@@ -32,6 +32,8 @@ const KIND_ICON: Record<TransferKind, typeof ArrowDownloadRegular> = {
   copyToDevice: ArrowUploadRegular,
   appInstall: AppsRegular,
   appExport: ArrowDownloadRegular,
+  photosBackup: ImageMultipleRegular,
+  photosToApp: ArrowUploadRegular,
 };
 
 const GROUP_LABEL: Record<TransferGroup, 'transfers.group.active' | 'transfers.group.queued' | 'transfers.group.done' | 'transfers.group.failed'> = {

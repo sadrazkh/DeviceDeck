@@ -118,5 +118,6 @@ public static class TransferHandlers
         new CopyToDeviceHandler(),
         new AppInstallHandler(),
         new AppExportHandler(),
+        new PhotosToAppHandler(),
     ];
 }

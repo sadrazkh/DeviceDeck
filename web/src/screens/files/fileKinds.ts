@@ -39,6 +39,25 @@ export function isAndroidBlocked(path: string): boolean {
   return /^\/Android\/(data|obb)(\/|$)/i.test(path);
 }
 
+/** Lower case, Persian and Arabic digits as Latin ones, Arabic yeh and kaf as the Persian letters. */
+function searchForm(text: string): string {
+  return text
+    .toLocaleLowerCase()
+    .replace(/[۰-۹]/g, (d) => String(d.charCodeAt(0) - 0x06f0))
+    .replace(/[٠-٩]/g, (d) => String(d.charCodeAt(0) - 0x0660))
+    .replace(/ي/g, 'ی')
+    .replace(/ك/g, 'ک');
+}
+
+/** Folder search: every word of the query appears somewhere in the name. */
+export function matchesName(name: string, query: string): boolean {
+  const target = searchForm(name);
+  return searchForm(query)
+    .split(/\s+/)
+    .filter(Boolean)
+    .every((word) => target.includes(word));
+}
+
 export type SortKey = 'name' | 'size' | 'kind' | 'modified';
 
 export function sortEntries(entries: readonly FileEntry[], key: SortKey, descending: boolean, collator: Intl.Collator): FileEntry[] {
