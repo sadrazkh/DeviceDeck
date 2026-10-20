@@ -24,11 +24,18 @@ interface Pending {
 }
 
 export interface BridgeClientOptions {
-  /** Default 30 s. Methods that wait for the user (the folder picker) never time out. */
+  /** Default 30 s. Methods that wait for the user (the folder picker) or for copies never time out. */
   timeoutMs?: number;
 }
 
-const NO_TIMEOUT: ReadonlySet<string> = new Set(['shell.pickFolder']);
+// Clean-up deletes may first wait for copies to the PC to finish; a cache trim takes a while on the phone.
+const NO_TIMEOUT: ReadonlySet<string> = new Set([
+  'shell.pickFolder',
+  'cleanup.deleteMedia',
+  'cleanup.deleteFiles',
+  'cleanup.uninstallApps',
+  'cleanup.trimCaches',
+]);
 
 export class BridgeClient {
   private nextId = 1;

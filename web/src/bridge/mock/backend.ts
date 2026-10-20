@@ -10,6 +10,8 @@ import {
 } from '../jsonrpc';
 import type { BridgeEvents, EventName, MethodName, MethodParams, MethodResult } from '../methods';
 import type { AppInfo, DeviceCapability, DeviceSummary, DriverStatus, FolderPattern, Settings } from '../types';
+import { batteryHandlers } from './battery';
+import { cleanupHandlers } from './cleanup';
 import { MockFileSystem, joinPath, normalise } from './files';
 import { appIconUrl, photoUrl, phoneScreenshotUrl, thumbnailUrl } from './images';
 import {
@@ -475,6 +477,28 @@ export class MockBackend {
       this.settings = { ...this.settings, ...pickSettings(patch) };
       return { ...this.settings };
     },
+    // ---------- Clean-up and battery history (round 2) ----------
+    ...cleanupHandlers({
+      requireReady: (deviceId, capability) => this.requireReady(deviceId, capability),
+      library: (deviceId) => this.library(deviceId),
+      apps: (deviceId) => this.appLists.get(deviceId) ?? [],
+      setApps: (deviceId, list) => void this.appLists.set(deviceId, list),
+      fs: (deviceId) => this.fs(deviceId),
+      storage: (deviceId) => storage[deviceId],
+      addJob: (spec) => this.engine.add(spec),
+      emit: (event, params) => this.emit(event, params),
+      after: (ms, run) => this.after(ms, run),
+      now: () => this.now(),
+      fault: (code, message) => fault(code, message),
+      badParams,
+    }),
+    ...batteryHandlers({
+      requireReady: (deviceId, capability) => this.requireReady(deviceId, capability),
+      battery: (deviceId) => battery[deviceId],
+      emit: (event, params) => this.emit(event, params),
+      now: () => this.now(),
+      badParams,
+    }),
   };
 
   // ---------- helpers ----------

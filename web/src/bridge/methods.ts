@@ -20,6 +20,7 @@ import type {
   StorageInfo,
   TransferJob,
 } from './types';
+import type { BatteryDevice, BatterySnapshot, CleanupFileItem, CleanupItem, CleanupResult, CleanupStatus } from './cleanupTypes';
 
 type DeviceParams = { deviceId: string };
 
@@ -82,6 +83,27 @@ export interface BridgeMethods {
   'shell.revealInExplorer': { params: { path: string }; result: Empty };
   'settings.get': { params: Empty; result: Settings };
   'settings.set': { params: Partial<Settings>; result: Settings };
+  // Clean-up and battery history (round 2)
+  'cleanup.status': { params: DeviceParams; result: CleanupStatus };
+  'cleanup.analyze': { params: DeviceParams; result: CleanupStatus };
+  'cleanup.cancel': { params: DeviceParams; result: Empty };
+  'cleanup.deleteMedia': {
+    params: DeviceParams & { items: CleanupItem[]; expectedBytes: number; copyFirstTo?: string | null };
+    result: CleanupResult;
+  };
+  'cleanup.deleteFiles': {
+    params: DeviceParams & { items: CleanupFileItem[]; expectedBytes: number; copyFirstTo?: string | null };
+    result: CleanupResult;
+  };
+  'cleanup.uninstallApps': {
+    params: DeviceParams & { items: CleanupItem[]; expectedBytes: number; copyFirstTo?: string | null };
+    result: CleanupResult;
+  };
+  'cleanup.trimCaches': { params: DeviceParams; result: CleanupResult };
+  'battery.devices': { params: Empty; result: BatteryDevice[] };
+  'battery.history': { params: DeviceParams; result: BatterySnapshot[] };
+  'battery.record': { params: DeviceParams; result: BatterySnapshot };
+  'battery.export': { params: DeviceParams & { destination: string; language?: 'en' | 'fa' }; result: { path: string } };
 }
 
 export type MethodName = keyof BridgeMethods;
@@ -129,6 +151,18 @@ const methodTable = {
   'shell.revealInExplorer': true,
   'settings.get': true,
   'settings.set': true,
+  // Clean-up and battery history (round 2)
+  'cleanup.status': true,
+  'cleanup.analyze': true,
+  'cleanup.cancel': true,
+  'cleanup.deleteMedia': true,
+  'cleanup.deleteFiles': true,
+  'cleanup.uninstallApps': true,
+  'cleanup.trimCaches': true,
+  'battery.devices': true,
+  'battery.history': true,
+  'battery.record': true,
+  'battery.export': true,
 } as const satisfies Record<MethodName, true>;
 
 export const METHOD_NAMES = Object.keys(methodTable) as MethodName[];
@@ -141,6 +175,9 @@ export interface BridgeEvents {
   'drivers.changed': DriverStatus[];
   'transfer.updated': TransferJob;
   'photos.indexProgress': { deviceId: string; done: number; total: number };
+  // Clean-up and battery history (round 2)
+  'cleanup.updated': CleanupStatus;
+  'battery.recorded': BatterySnapshot;
 }
 
 export type EventName = keyof BridgeEvents;
@@ -152,6 +189,9 @@ const eventTable = {
   'drivers.changed': true,
   'transfer.updated': true,
   'photos.indexProgress': true,
+  // Clean-up and battery history (round 2)
+  'cleanup.updated': true,
+  'battery.recorded': true,
 } as const satisfies Record<EventName, true>;
 
 export const EVENT_NAMES = Object.keys(eventTable) as EventName[];
