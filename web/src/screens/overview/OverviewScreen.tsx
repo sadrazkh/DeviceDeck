@@ -41,6 +41,11 @@ function healthTone(health: number | null): 'success' | 'warning' | 'danger' {
   return 'danger';
 }
 
+/** A value on one line; cut with an ellipsis (whole value in the tooltip) when the card is narrow. */
+function Fact({ value }: { value: string }) {
+  return <dd title={value}>{value}</dd>;
+}
+
 function BatteryCard({
   battery,
   loading,
@@ -75,19 +80,22 @@ function BatteryCard({
         </div>
       ) : (
         <div className={styles.battery}>
-          <Ring
-            value={battery.healthPercent === null ? 0 : battery.healthPercent / 100}
-            tone={healthTone(battery.healthPercent)}
-            label={t(estimated ? 'overview.healthEstimatedLabel' : 'overview.healthLabel', {
-              percent: battery.healthPercent === null ? t('common.unknown') : percent(battery.healthPercent / 100),
-            })}
-          >
-            <div className={styles.ringValue}>
+          {/* The caption sits under the ring: "Estimated health" (and Persian) is wider than the ring's hole. */}
+          <div className={styles.health}>
+            <Ring
+              value={battery.healthPercent === null ? 0 : battery.healthPercent / 100}
+              tone={healthTone(battery.healthPercent)}
+              label={t(estimated ? 'overview.healthEstimatedLabel' : 'overview.healthLabel', {
+                percent: battery.healthPercent === null ? t('common.unknown') : percent(battery.healthPercent / 100),
+              })}
+            >
               <span className={styles.ringNumber}>{battery.healthPercent === null ? '—' : percent(battery.healthPercent / 100)}</span>
-              <span className={styles.ringCaption}>{t(estimated ? 'overview.healthEstimated' : 'overview.health')}</span>
-            </div>
-          </Ring>
-          <div>
+            </Ring>
+            <span className={styles.ringCaption} aria-hidden>
+              {t(estimated ? 'overview.healthEstimated' : 'overview.health')}
+            </span>
+          </div>
+          <div className={styles.batteryFacts}>
             {battery.isCharging ? (
               <span className={styles.charging}>
                 <BatteryChargeRegular aria-hidden /> {t('overview.charging')}
@@ -101,25 +109,25 @@ function BatteryCard({
               {battery.levelPercent !== null ? (
                 <>
                   <dt>{t('overview.charge')}</dt>
-                  <dd>{percent(battery.levelPercent / 100)}</dd>
+                  <Fact value={percent(battery.levelPercent / 100)} />
                 </>
               ) : null}
               {battery.cycleCount !== null ? (
                 <>
                   <dt>{t('overview.cycles')}</dt>
-                  <dd>{n(battery.cycleCount)}</dd>
+                  <Fact value={n(battery.cycleCount)} />
                 </>
               ) : null}
               {battery.temperatureCelsius !== null ? (
                 <>
                   <dt>{t('overview.temperature')}</dt>
-                  <dd>{t('overview.temperatureValue', { value: n(battery.temperatureCelsius, { maximumFractionDigits: 1 }) })}</dd>
+                  <Fact value={t('overview.temperatureValue', { value: n(battery.temperatureCelsius, { maximumFractionDigits: 1 }) })} />
                 </>
               ) : null}
               {battery.designCapacityMah !== null && battery.fullChargeCapacityMah !== null ? (
                 <>
                   <dt>{t('overview.capacity')}</dt>
-                  <dd>{t('overview.capacityValue', { current: n(battery.fullChargeCapacityMah), design: n(battery.designCapacityMah) })}</dd>
+                  <Fact value={t('overview.capacityValue', { current: n(battery.fullChargeCapacityMah), design: n(battery.designCapacityMah) })} />
                 </>
               ) : null}
             </dl>
@@ -178,7 +186,9 @@ function DetailsCard({ rows, loading, platform }: { rows: DetailRow[] | undefine
             const hidden = row.sensitive && !revealed.has(row.key);
             return (
               <div key={row.key} className={styles.detailRow}>
-                <dt className={styles.detailLabel}>{detailLabel(row, platform, t)}</dt>
+                <dt className={styles.detailLabel} title={detailLabel(row, platform, t)}>
+                  {detailLabel(row, platform, t)}
+                </dt>
                 <dd className={styles.detailValue} title={hidden ? undefined : row.value}>
                   {hidden ? mask(row.value) : row.value}
                 </dd>
@@ -235,7 +245,9 @@ function ActivityCard({ device }: { device: DeviceSummary }) {
                 tone={job.state === 'done' ? 'success' : job.state === 'failed' ? 'danger' : job.state === 'running' ? 'accent' : 'paused'}
                 label={job.title}
               />
-              <div className={styles.activityMeta}>{progressLine(job, i18n, device)}</div>
+              <div className={styles.activityMeta} title={progressLine(job, i18n, device)}>
+                {progressLine(job, i18n, device)}
+              </div>
             </div>
           ))}
         </div>
