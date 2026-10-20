@@ -18,6 +18,8 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="DeviceDeck.Ios.Tests" />
+    <!-- The probe's timing and protocol diagnostics reach below the public surface. -->
+    <InternalsVisibleTo Include="iosprobe" />
   </ItemGroup>
 
 </Project>

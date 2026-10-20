@@ -44,6 +44,8 @@ internal sealed class Cli
           ioreg <entry-class>                 raw IORegistry properties (e.g. IOPMPowerSource)
           diag <request>                      a diagnostics_relay report (e.g. GasGauge)
           afcinfo                             AFC's view of the Media volume (FSTotalBytes, FSFreeBytes)
+          bench-storage [--browse]            time each source of the storage categories
+          bench-overview                      storage while apps, photo index and icons load, as the host does
 
         Power
           reboot --yes                        restart the phone
@@ -64,7 +66,7 @@ internal sealed class Cli
     public IReadOnlyList<string> Positional { get; }
     public IReadOnlyDictionary<string, string?> Options { get; }
 
-    private static readonly HashSet<string> Flags = ["reveal", "system", "yes", "recursive"];
+    private static readonly HashSet<string> Flags = ["reveal", "system", "yes", "recursive", "browse"];
 
     public static Cli Parse(string[] args)
     {
