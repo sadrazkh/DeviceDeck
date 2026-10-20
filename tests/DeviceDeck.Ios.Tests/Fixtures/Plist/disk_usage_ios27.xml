@@ -1,0 +1,38 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>AmountDataAvailable</key>
+	<integer>4300000000</integer>
+	<key>AmountDataReserved</key>
+	<integer>209715200</integer>
+	<key>AmountRestoreAvailable</key>
+	<integer>13300000000</integer>
+	<key>CalculateDiskUsage</key>
+	<string>OkilyDokily</string>
+	<key>CalendarUsage</key>
+	<integer>2000000</integer>
+	<key>CameraUsage</key>
+	<integer>26000000000</integer>
+	<key>MediaCacheUsage</key>
+	<integer>4096</integer>
+	<key>NotesUsage</key>
+	<integer>0</integer>
+	<key>PhotoUsage</key>
+	<integer>26000000000</integer>
+	<key>TotalDataAvailable</key>
+	<integer>87600000000</integer>
+	<key>TotalDataCapacity</key>
+	<integer>118600000000</integer>
+	<key>TotalDiskCapacity</key>
+	<integer>128000000000</integer>
+	<key>TotalSystemAvailable</key>
+	<integer>0</integer>
+	<key>TotalSystemCapacity</key>
+	<integer>8800000000</integer>
+	<key>VoicemailUsage</key>
+	<integer>0</integer>
+	<key>WebAppCacheUsage</key>
+	<integer>0</integer>
+</dict>
+</plist>
