@@ -8,7 +8,7 @@ internal static class SummaryBuilder
     public const DeviceCapability ReadyCapabilities =
         DeviceCapability.Info | DeviceCapability.Storage | DeviceCapability.Battery
         | DeviceCapability.PhotosRead | DeviceCapability.PhotosDelete | DeviceCapability.PhotosImport
-        | DeviceCapability.Files
+        | DeviceCapability.Files | DeviceCapability.AppDocuments
         | DeviceCapability.AppsList | DeviceCapability.AppsInstall | DeviceCapability.AppsUninstall | DeviceCapability.AppsExport
         | DeviceCapability.Screenshot | DeviceCapability.ScreenMirror | DeviceCapability.Syslog | DeviceCapability.CrashReports
         | DeviceCapability.Reboot | DeviceCapability.Shutdown | DeviceCapability.RebootToRecovery | DeviceCapability.RebootToBootloader;

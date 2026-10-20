@@ -64,6 +64,12 @@ internal static class Commands
             var gone = await fs.StatAsync(c.Positional[1], ct) is null;
             Console.WriteLine(gone ? $"Deleted {c.Positional[0]}:{c.Positional[1]}" : "The phone still lists it after the delete.");
         }, NeedsYes: true),
+        ["appfiles"] = new([], async (d, _, ct) =>
+        {
+            foreach (var entry in (await d.GetAppFilesAsync(ct)).Entries)
+                Console.WriteLine($"  {entry.Name} ({entry.Id}): {string.Join(", ", entry.Folders.Select(f => f.RootKey))}");
+        }),
+        ["appfiles-roundtrip"] = new(["bundleId"], (d, c, ct) => AppFilesRoundTrip.RunAsync(d, c.Positional[0], c.IntOption("size-mb", 64), ct), NeedsYes: true),
         ["apps"] = new([], (d, c, ct) => AppsAsync(d, c.Has("system"), ct)),
         ["icon"] = new(["bundleId", "out.png"], (d, c, ct) => IconAsync(d, c.Positional[0], c.Positional[1], ct)),
         ["install"] = new(["app.ipa"], (d, c, ct) => InstallAsync(d, c.Positional[0], ct)),

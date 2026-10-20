@@ -26,6 +26,19 @@ public sealed record AppSettings
     public string FileCopyFolder { get; init; } = DefaultCopyFolder();
     public ConflictRule ConflictRule { get; init; } = ConflictRule.Ask;
 
+    // Photos backup: the defaults for a phone that has no backup options of its own.
+
+    /// <summary>Each phone backs up into a folder of its own name under this one.</summary>
+    public string PhotoBackupFolder { get; init; } = DefaultBackupFolder();
+
+    /// <summary>Date folders: "" or yyyy, MM and dd joined by / - _ . or a space ("yyyy/MM" → 2026\10).</summary>
+    public string PhotoBackupPattern { get; init; } = PatternYearMonth;
+
+    public bool PhotoBackupConvertHeic { get; init; }
+
+    public static string DefaultBackupFolder() =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "DeviceDeck Backup");
+
     public static string DefaultPhotoFolder() =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "DeviceDeck");
 
@@ -48,6 +61,16 @@ public sealed record AppSettings
         if (string.IsNullOrWhiteSpace(FileCopyFolder))
         {
             throw new ArgumentException("fileCopyFolder must not be empty.", nameof(FileCopyFolder));
+        }
+
+        if (string.IsNullOrWhiteSpace(PhotoBackupFolder))
+        {
+            throw new ArgumentException("photoBackupFolder must not be empty.", nameof(PhotoBackupFolder));
+        }
+
+        if (!Photos.PhotoBackupNaming.IsValidPattern(PhotoBackupPattern))
+        {
+            throw new ArgumentException("photoBackupPattern must be \"\" or yyyy, MM and dd joined by / - _ . or a space.", nameof(PhotoBackupPattern));
         }
 
         if (!Enum.IsDefined(Language) || !Enum.IsDefined(Theme) || !Enum.IsDefined(Density) || !Enum.IsDefined(ConflictRule))

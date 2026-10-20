@@ -26,6 +26,10 @@ internal sealed class Cli
           mkdir <root> <path>                 create a folder
           rm <root> <path> --yes [--recursive]   delete a file (or a folder with --recursive)
           docs <bundleId> [path]              list an app's Documents (house_arrest)
+          appfiles                            the apps that share files, with their root keys
+          appfiles-roundtrip <bundleId> --yes [--size-mb 64]
+                                              copy a test folder into the app and back through the transfer
+                                              queue, compare, delete only that folder, check nothing else changed
 
         Apps
           apps [--system]                     installed apps with sizes and the file-sharing flag

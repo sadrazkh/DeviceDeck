@@ -112,10 +112,14 @@ public sealed class PhotosExportHandler(IImageTranscoder? transcoder = null) : T
                     throw new DeviceException(DeviceErrorCodes.Protocol, "The copy came out the wrong size.", new IOException($"Expected {item.Size} bytes, got {file.Length}."));
                 }
 
+                // The photo's EXIF (date, camera, place) goes into the JPEG; read it first, the transcoder may close the stream.
+                file.Position = 0;
+                var exif = PhotosHeicMetadata.ReadExif(file);
                 file.Position = 0;
                 var jpeg = await transcoder!.ToJpegAsync(file, null, ct).ConfigureAwait(false);
                 if (jpeg is not null)
                 {
+                    jpeg = exif is null ? jpeg : PhotosHeicMetadata.WithExif(jpeg, exif);
                     await WritePcFileAsync(destination, jpeg.Length, async target => await target.WriteAsync(jpeg, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
                     return TransferItemState.Done;
                 }

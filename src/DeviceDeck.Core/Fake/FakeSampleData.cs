@@ -155,7 +155,7 @@ public static class FakeSampleData
             DeviceMode.Full,
             DeviceCapability.Info | DeviceCapability.Storage | DeviceCapability.Battery |
             DeviceCapability.PhotosRead | DeviceCapability.PhotosDelete | DeviceCapability.PhotosImport |
-            DeviceCapability.Files |
+            DeviceCapability.Files | DeviceCapability.AppDocuments |
             DeviceCapability.AppsList | DeviceCapability.AppsInstall | DeviceCapability.AppsUninstall | DeviceCapability.AppsExport |
             DeviceCapability.Backup | DeviceCapability.Screenshot | DeviceCapability.ScreenMirror | DeviceCapability.Syslog | DeviceCapability.CrashReports |
             DeviceCapability.Reboot | DeviceCapability.Shutdown | DeviceCapability.RebootToRecovery | DeviceCapability.RebootToBootloader,
@@ -198,8 +198,13 @@ public static class FakeSampleData
                 Dir("Android",
                     Dir("data", readOnly: true, denied: true),
                     Dir("obb", readOnly: true, denied: true),
-                    Dir("media", Dir("com.whatsapp", Dir("WhatsApp", Dir("Media", Dir("WhatsApp Documents",
-                        File("Invoice-0921.pdf", 211_002, Date(2026, 9, 21)))))))),
+                    Dir("media",
+                        Dir("com.whatsapp", Dir("WhatsApp", Dir("Media", Dir("WhatsApp Documents",
+                            File("Invoice-0921.pdf", 211_002, Date(2026, 9, 21)))))),
+                        Dir("org.telegram.messenger", Dir("Telegram",
+                            Dir("Telegram Documents", File("Lecture 7 slides.pdf", 6_120_400, Date(2026, 10, 14))),
+                            Dir("Telegram Video", File("VID_20261012_211500.mp4", 48_220_118, Date(2026, 10, 12))))),
+                        Dir("com.spotify.music"))),
                 Dir("DCIM",
                     Dir("Camera", Enumerable.Range(0, 30).Select(i =>
                         File($"{Newest.AddHours(-i * 9):yyyyMMdd_HHmmss}.jpg", 3_100_000 + i * 51_000L, Newest.AddHours(-i * 9))).ToArray()),

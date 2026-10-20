@@ -118,10 +118,19 @@ Allow"), `device offline` → `device_disconnected`, unknown device → `device_
 `INSTALL_FAILED_*` → `install_failed` with a plain sentence (Xiaomi's "Install via USB" being off shows as
 `INSTALL_FAILED_USER_RESTRICTED` and says so).
 
+## App folders (round 2)
+
+`IAppFilesSource` lists, in one shell round trip, each package folder under `Android/media` and, when adb may
+read it, `Android/data` (with whether it holds any file), then `Documents` and `Download`. Each is a root of its
+own (`appmedia:<package>`, `appdata:<package>`, `shared:Documents`, `shared:Download`) on the normal sync file
+system. Whether `Android/data` is readable is probed (`ls` must succeed and list something), never assumed;
+when it isn't, the page says so and shows the media folders only. Measuring is one `find … -exec stat` call.
+Not checked on a real phone yet (none this round): fixtures and `FakeSharedStorage` in the tests.
+
 ## Not done / limits
 
-- Contacts, messages, backup/restore, screen mirroring (scrcpy), logcat and app data folders are not
-  implemented (`not_supported` by capability).
+- Contacts, messages, backup/restore, screen mirroring (scrcpy) and logcat are not implemented
+  (`not_supported` by capability).
 - `AppInfo.DataBytes` is 0 until diskstats has cached sizes (an app's data folder isn't readable without root).
 - Body colour, Samsung's extra battery keys and battery sysfs access are guesses until real phones are captured.
 - A file name containing a newline breaks one listing line.

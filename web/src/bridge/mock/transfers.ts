@@ -49,6 +49,8 @@ const SPEED: Record<TransferKind, number> = {
   copyToDevice: 41 * MB,
   appInstall: 24 * MB,
   appExport: 45 * MB,
+  photosBackup: 36 * MB,
+  photosToApp: 32 * MB,
 };
 
 export class TransferEngine {

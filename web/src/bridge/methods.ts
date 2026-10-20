@@ -15,11 +15,14 @@ import type {
   Page,
   PhotoAlbum,
   PhotoAsset,
+  PhotoBackupCount,
+  PhotoBackupStatus,
   RebootTarget,
   Settings,
   StorageInfo,
   TransferJob,
 } from './types';
+import type { AppFilesOverview, FolderUsage } from './appFiles';
 import type {
   CrashReportList,
   LogLevel,
@@ -95,6 +98,25 @@ export interface BridgeMethods {
   'shell.revealInExplorer': { params: { path: string }; result: Empty };
   'settings.get': { params: Empty; result: Settings };
   'settings.set': { params: Partial<Settings>; result: Settings };
+  // App files (round 2)
+  'appFiles.list': { params: DeviceParams; result: AppFilesOverview };
+  'appFiles.measure': { params: DeviceParams & { root: string; paths: string[] }; result: FolderUsage };
+  // Photos backup and adding photos to an iPhone app (round 2).
+  'photos.newCount': { params: DeviceParams; result: PhotoBackupCount };
+  'photos.backupStatus': { params: DeviceParams; result: PhotoBackupStatus };
+  'photos.backupConfigure': {
+    params: DeviceParams & {
+      destination?: string;
+      folderPattern?: string;
+      convertHeic?: boolean;
+      includeHidden?: boolean;
+      useDefaults?: boolean;
+    };
+    result: PhotoBackupStatus;
+  };
+  'photos.backup': { params: DeviceParams; result: JobStarted };
+  'photos.backupForget': { params: DeviceParams; result: { forgotten: number } };
+  'photos.importToApp': { params: DeviceParams & { appId: string; files: string[] }; result: JobStarted };
 
   // ---- Toolbox (round 2) ----
   'toolbox.features': { params: DeviceParams; result: ToolboxFeatures };
@@ -191,6 +213,15 @@ const methodTable = {
   'shell.revealInExplorer': true,
   'settings.get': true,
   'settings.set': true,
+  // App files (round 2)
+  'appFiles.list': true,
+  'appFiles.measure': true,
+  'photos.newCount': true,
+  'photos.backupStatus': true,
+  'photos.backupConfigure': true,
+  'photos.backup': true,
+  'photos.backupForget': true,
+  'photos.importToApp': true,
   // Toolbox (round 2)
   'toolbox.features': true,
   'log.start': true,
