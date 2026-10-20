@@ -46,7 +46,7 @@ public sealed class AndroidDeviceProvider : IDeviceProvider
 
     public int ServerPort => _options.ServerPort;
 
-    internal AdbServerHost Host => _host ??= new AdbServerHost(AdbServerHost.Locate(_options.AdbPath), _options.ServerPort);
+    internal AdbServerHost Host => _host ??= new AdbServerHost(AdbServerHost.Locate(_options.AdbPath), _options.ServerPort, _options.ServerStarter);
 
     /// <summary>
     /// Starts the adb server (if adb is present) and device tracking, and waits up to a few seconds for the first
@@ -58,7 +58,7 @@ public sealed class AndroidDeviceProvider : IDeviceProvider
         {
             return;
         }
-        if (Host.AdbPath == null && await Host.GetServerVersionAsync(ct).ConfigureAwait(false) == null)
+        if (!Host.CanStart && await Host.GetServerVersionAsync(ct).ConfigureAwait(false) == null)
         {
             return; // no adb to start a server with; GetDriverStatusAsync reports Missing
         }
@@ -217,6 +217,20 @@ public sealed class AndroidDeviceProvider : IDeviceProvider
             _devices.Clear();
         }
         await _cache.SaveAsync(CancellationToken.None).ConfigureAwait(false);
-        // The adb server keeps running on its port, like adb's own; another DeviceDeck process may be using it.
+
+        // Stop the server only if we started it; one we found running belongs to whoever started it.
+        // The tracker is already stopped, so nothing here starts it again.
+        if (_options.StopServerOnDispose && _host is { StartedServer: true } host)
+        {
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await host.KillServerAsync(timeout.Token).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is OperationCanceledException or AdbServerUnavailableException or AdbConnectionLostException or AdbFailException)
+            {
+                // Best effort: exiting must not fail because the server was already gone or slow.
+            }
+        }
     }
 }

@@ -12,16 +12,28 @@ namespace DeviceDeck.Android.Adb;
 internal sealed partial class AdbServerHost
 {
     private readonly SemaphoreSlim _startGate = new(1, 1);
+    private readonly Func<CancellationToken, Task>? _starter;
 
-    public AdbServerHost(string? adbPath, int port)
+    /// <param name="starter">Replaces running `adb start-server` (tests start a fake server this way).</param>
+    public AdbServerHost(string? adbPath, int port, Func<CancellationToken, Task>? starter = null)
     {
         AdbPath = adbPath;
         Port = port;
         EndPoint = new IPEndPoint(IPAddress.Loopback, port);
+        _starter = starter;
     }
 
     /// <summary>Null when adb.exe wasn't found.</summary>
     public string? AdbPath { get; }
+
+    /// <summary>Whether <see cref="EnsureStartedAsync"/> can start a server when none answers.</summary>
+    public bool CanStart => AdbPath != null || _starter != null;
+
+    /// <summary>
+    /// True once this host started the server itself, as opposed to finding one already running
+    /// (another DeviceDeck window, a probe run). Only a server we started is ours to stop.
+    /// </summary>
+    public bool StartedServer { get; private set; }
 
     public int Port { get; }
 
@@ -90,6 +102,16 @@ internal sealed partial class AdbServerHost
             {
                 return;
             }
+            if (_starter != null)
+            {
+                await _starter(ct).ConfigureAwait(false);
+                if (await GetServerVersionAsync(ct).ConfigureAwait(false) == null)
+                {
+                    throw new InvalidOperationException($"The adb server on port {Port} didn't come up.");
+                }
+                StartedServer = true;
+                return;
+            }
             if (AdbPath == null)
             {
                 throw new FileNotFoundException("adb.exe wasn't found; run tools/fetch-platform-tools.ps1.");
@@ -100,6 +122,7 @@ internal sealed partial class AdbServerHost
             {
                 throw new InvalidOperationException($"adb didn't start its server on port {Port}: {AdbErrors.FirstLine(output)}");
             }
+            StartedServer = true;
         }
         finally
         {
@@ -107,20 +130,32 @@ internal sealed partial class AdbServerHost
         }
     }
 
+    /// <summary>
+    /// Stops the server on our port through its host:kill service (what `adb kill-server` sends), then waits up to
+    /// two seconds for the port to go quiet.
+    /// </summary>
     public async Task KillServerAsync(CancellationToken ct)
     {
         if (await GetServerVersionAsync(ct).ConfigureAwait(false) == null)
         {
+            StartedServer = false;
             return;
         }
-        await using var connection = await AdbConnection.ConnectAsync(EndPoint, ct).ConfigureAwait(false);
-        try
+        await using (var connection = await AdbConnection.ConnectAsync(EndPoint, ct).ConfigureAwait(false))
         {
-            await connection.SendRequestAsync("host:kill", ct).ConfigureAwait(false);
+            try
+            {
+                await connection.SendRequestAsync("host:kill", ct).ConfigureAwait(false);
+            }
+            catch (AdbConnectionLostException)
+            {
+                // The server closes the socket as it exits.
+            }
         }
-        catch (AdbConnectionLostException)
+        StartedServer = false;
+        for (int i = 0; i < 20 && await GetServerVersionAsync(ct).ConfigureAwait(false) != null; i++)
         {
-            // The server closes the socket as it exits.
+            await Task.Delay(100, ct).ConfigureAwait(false);
         }
     }
 

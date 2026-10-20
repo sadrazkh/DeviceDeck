@@ -14,6 +14,15 @@ public sealed class AndroidProviderOptions
     public int ServerPort { get; init; } = DefaultServerPort;
 
     /// <summary>
+    /// Stop the adb server when the provider is disposed, if this provider started it. A server that was already
+    /// running when the provider started (another DeviceDeck window, a probe) is always left alone.
+    /// </summary>
+    public bool StopServerOnDispose { get; init; } = true;
+
+    /// <summary>Tests: replaces running `adb start-server`.</summary>
+    internal Func<CancellationToken, Task>? ServerStarter { get; init; }
+
+    /// <summary>
     /// Where app labels and icons read from APKs are cached between runs; null turns the disk cache off.
     /// Default: %LOCALAPPDATA%\DeviceDeck\Cache\Android.
     /// </summary>

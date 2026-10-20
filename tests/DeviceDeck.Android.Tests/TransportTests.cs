@@ -213,6 +213,78 @@ public class TransportTests
         Assert.Empty(provider.Devices);
     }
 
+    private static AndroidProviderOptions OwnedServerOptions(FakeAdbServer server, bool stopOnDispose = true) => new()
+    {
+        AdbPath = Path.Combine(Path.GetTempPath(), "no-such-adb.exe"),
+        ServerPort = server.Port,
+        CacheDirectory = null,
+        StopServerOnDispose = stopOnDispose,
+        // Stands in for `adb -P <port> start-server`.
+        ServerStarter = _ =>
+        {
+            server.Running = true;
+            return Task.CompletedTask;
+        },
+    };
+
+    [Fact]
+    public async Task Provider_stops_the_server_it_started_when_disposed()
+    {
+        await using var server = new FakeAdbServer { Running = false };
+        var provider = new AndroidDeviceProvider(OwnedServerOptions(server));
+        await provider.StartAsync(None);
+        Assert.True(server.Running);
+        Assert.True(provider.Host.StartedServer);
+        Assert.Equal(DriverState.Ready, (await provider.GetDriverStatusAsync(None)).State);
+
+        await provider.DisposeAsync();
+        Assert.Contains("host:kill", server.Requests);
+        Assert.False(server.Running);
+        Assert.False(provider.Host.StartedServer);
+        Assert.Null(await new AdbServerHost(null, server.Port).GetServerVersionAsync(None));
+    }
+
+    [Fact]
+    public async Task Provider_leaves_a_server_that_was_already_running()
+    {
+        await using var server = new FakeAdbServer();
+        var provider = new AndroidDeviceProvider(OwnedServerOptions(server));
+        await provider.StartAsync(None);
+        Assert.False(provider.Host.StartedServer);
+
+        await provider.DisposeAsync();
+        Assert.DoesNotContain("host:kill", server.Requests);
+        Assert.True(server.Running);
+        Assert.Equal(41, await new AdbServerHost(null, server.Port).GetServerVersionAsync(None));
+    }
+
+    [Fact]
+    public async Task Provider_keeps_its_server_when_asked_to()
+    {
+        await using var server = new FakeAdbServer { Running = false };
+        var provider = new AndroidDeviceProvider(OwnedServerOptions(server, stopOnDispose: false));
+        await provider.StartAsync(None);
+        Assert.True(provider.Host.StartedServer);
+
+        await provider.DisposeAsync();
+        Assert.DoesNotContain("host:kill", server.Requests);
+        Assert.True(server.Running);
+    }
+
+    [Fact]
+    public async Task Probe_style_start_without_tracking_is_stopped_too()
+    {
+        // `androidprobe doctor` starts the server through the host without StartAsync.
+        await using var server = new FakeAdbServer { Running = false };
+        var provider = new AndroidDeviceProvider(OwnedServerOptions(server));
+        await provider.Host.EnsureStartedAsync(None);
+        Assert.True(server.Running);
+
+        await provider.DisposeAsync();
+        Assert.Contains("host:kill", server.Requests);
+        Assert.False(server.Running);
+    }
+
     [Fact]
     public void Tools_version_from_adb_version_output()
     {

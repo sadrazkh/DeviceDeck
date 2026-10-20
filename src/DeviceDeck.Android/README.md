@@ -12,8 +12,11 @@ The Android provider: `AndroidDeviceProvider` (`IDeviceProvider`, id `"android"`
   `third_party/platform-tools/adb.exe` (or `platform-tools/adb.exe`) next to the app or in any parent folder.
 - DeviceDeck runs **its own adb server on port 5137** (`adb -P 5137 start-server` with
   `ANDROID_ADB_SERVER_PORT=5137`). The default server on 5037 (Android Studio, scrcpy, another tool) is never
-  touched, so the two can't kill each other over a version mismatch. The server keeps running after the app exits,
-  like adb's own; `AdbServerHost.KillServerAsync` stops it.
+  touched, so the two can't kill each other over a version mismatch.
+- When the provider is disposed it stops the server **if it started it** (`host:kill`, what `adb kill-server`
+  sends). A server that was already answering on 5137 when the provider started — another DeviceDeck window, a
+  probe run — is left alone. `AndroidProviderOptions.StopServerOnDispose = false` (probe: `--keep-server`)
+  keeps it running.
 - If adb.exe is missing but something already answers on 5137, the provider uses it.
 
 ### What comes from where
