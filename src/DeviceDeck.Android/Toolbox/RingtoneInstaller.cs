@@ -17,13 +17,16 @@ internal static class RingtoneInstaller
     {
         var name = Path.GetFileName(fileName.Trim());
         var chars = name.Select(ch => char.IsLetterOrDigit(ch) || ch is ' ' or '.' or '_' or '-' or '(' or ')' ? ch : '_').ToArray();
-        var safe = new string(chars).Trim(' ', '.');
-        if (Path.GetFileNameWithoutExtension(safe).Length == 0)
+        var cleaned = new string(chars).Trim();
+        var extension = Path.GetExtension(cleaned);
+        // No leading dot (a hidden file MediaStore skips) and never an empty name.
+        var stem = Path.GetFileNameWithoutExtension(cleaned).Trim(' ', '.');
+        if (stem.Length == 0)
         {
-            safe = "Ringtone" + Path.GetExtension(safe);
+            stem = "Ringtone";
         }
 
-        return safe.Length > 120 ? safe[..(120 - Path.GetExtension(safe).Length)] + Path.GetExtension(safe) : safe;
+        return (stem.Length + extension.Length > 120 ? stem[..(120 - extension.Length)] : stem) + extension;
     }
 
     public static string QueryCommand(string canonicalPath) =>

@@ -223,7 +223,8 @@ public sealed class MirrorBridge : IDisposable
                 }
 
                 onEnded();
-                if (Volatile.Read(ref _disposed) == 0)
+                // Stopped by mirror.stop or a reloaded page: nobody is waiting to hear about it.
+                if (Volatile.Read(ref _disposed) == 0 && !ct.IsCancellationRequested)
                 {
                     publish("mirror.ended", new MirrorEndedEvent(id, error));
                 }
