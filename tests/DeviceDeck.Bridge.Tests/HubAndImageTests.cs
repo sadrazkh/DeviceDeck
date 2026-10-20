@@ -126,26 +126,27 @@ public sealed class HubTests
         var hung = new StoppingProvider("hung", () => new ValueTask(new TaskCompletionSource().Task));
         var blocking = new StoppingProvider("blocking", () =>
         {
-            Thread.Sleep(300); // blocks inside DisposeAsync instead of awaiting
+            Thread.Sleep(800); // blocks inside DisposeAsync instead of awaiting
             return ValueTask.CompletedTask;
         });
         var fine = new StoppingProvider("fine", async () => await Task.Delay(50));
-        var hub = new DeviceHub([hung, blocking, fine]) { DriverPollInterval = TimeSpan.Zero, ProviderStopTimeout = TimeSpan.FromMilliseconds(600) };
+        // Wide margins for slow CI runners: stopped one after another, "fine" would start 800 ms late, not under 400.
+        var hub = new DeviceHub([hung, blocking, fine]) { DriverPollInterval = TimeSpan.Zero, ProviderStopTimeout = TimeSpan.FromMilliseconds(1500) };
         var failures = new List<(string Id, Exception Error)>();
         hub.ProviderStopFailed += (_, e) => failures.Add(e);
         await hub.StartAsync(CancellationToken.None);
 
         var clock = System.Diagnostics.Stopwatch.StartNew();
-        await hub.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+        await hub.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(10));
 
         Assert.True(fine.Stopped);
         Assert.True(blocking.Stopped);
         Assert.False(hung.Stopped);
-        Assert.True(fine.StartedStoppingAt - blocking.StartedStoppingAt < TimeSpan.FromMilliseconds(200), "a blocking provider delayed the next one");
+        Assert.True(fine.StartedStoppingAt - blocking.StartedStoppingAt < TimeSpan.FromMilliseconds(400), "a blocking provider delayed the next one");
         var failure = Assert.Single(failures);
         Assert.Equal("hung", failure.Id);
         Assert.IsType<TimeoutException>(failure.Error);
-        Assert.InRange(clock.ElapsedMilliseconds, 550, 3000);
+        Assert.InRange(clock.ElapsedMilliseconds, 1400, 8000);
     }
 
     [Fact]

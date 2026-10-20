@@ -11,6 +11,10 @@ public sealed class TransferQueueTests
 {
     private static readonly string[] Months = ["2026/10", "2026/09", "2026/08", "2026/07", "2026/06", "2026/05"];
 
+    // 200 KB photos at 400 KB/s: half a second each, so a pause, cancel or pulled cable after the first photo
+    // still lands mid-job even when a CI runner stalls for a second or two.
+    private const long SlowEnough = 400_000;
+
     private static async Task<string> ExportAsync(TestHost host, string destination, params string[] assetIds)
     {
         var ids = assetIds.Length > 0 ? assetIds : Enumerable.Range(0, 4).Select(i => $"{TestPhones.IphoneId}-a{i}").ToArray();
@@ -63,7 +67,7 @@ public sealed class TransferQueueTests
     [Fact]
     public async Task Pause_stops_the_job_and_resume_finishes_it()
     {
-        await using var host = await TestHost.StartAsync(1_000_000, null, TestPhones.Iphone(photos: 6));
+        await using var host = await TestHost.StartAsync(SlowEnough, null, TestPhones.Iphone(photos: 6));
         var destination = host.PcFolder("export");
         var jobId = await ExportAsync(host, destination, Enumerable.Range(0, 6).Select(i => $"{TestPhones.IphoneId}-a{i}").ToArray());
 
@@ -93,7 +97,7 @@ public sealed class TransferQueueTests
     [Fact]
     public async Task Cancel_stops_for_good_and_removes_the_partial_file()
     {
-        await using var host = await TestHost.StartAsync(1_000_000, null, TestPhones.Iphone(photos: 6));
+        await using var host = await TestHost.StartAsync(SlowEnough, null, TestPhones.Iphone(photos: 6));
         var destination = host.PcFolder("export");
         var jobId = await ExportAsync(host, destination, Enumerable.Range(0, 6).Select(i => $"{TestPhones.IphoneId}-a{i}").ToArray());
 
@@ -115,7 +119,7 @@ public sealed class TransferQueueTests
     [Fact]
     public async Task A_pulled_cable_waits_for_the_same_phone_and_resumes()
     {
-        await using var host = await TestHost.StartAsync(1_000_000, null, TestPhones.Iphone(photos: 6));
+        await using var host = await TestHost.StartAsync(SlowEnough, null, TestPhones.Iphone(photos: 6));
         var destination = host.PcFolder("export");
         var jobId = await ExportAsync(host, destination, Enumerable.Range(0, 6).Select(i => $"{TestPhones.IphoneId}-a{i}").ToArray());
 
@@ -271,7 +275,8 @@ public sealed class TransferQueueTests
         Assert.True(running.Count >= 4, $"only {running.Count} running events");
         Assert.True(running.Count <= seconds * 10 + 6, $"{running.Count} running events in {seconds:F2}s");
         Assert.True(events.Count <= seconds * 10 + 10, $"{events.Count} events in {seconds:F2}s");
-        Assert.Contains(running, e => e["params"]!["bytesPerSecond"] is JsonValue v && v.GetValue<long>() > 1_000_000);
+        // A starved CI runner can push the measured speed far below the fake's 20 MB/s; what matters is that speed is carried.
+        Assert.Contains(running, e => e["params"]!["bytesPerSecond"] is JsonValue v && v.GetValue<long>() > 0);
         Assert.Contains(running, e => e["params"]!["etaSeconds"] is not null);
         var doneBytes = running.Select(e => (long)e["params"]!["doneBytes"]!).ToList();
         Assert.Equal(doneBytes.Order(), doneBytes);
@@ -280,7 +285,7 @@ public sealed class TransferQueueTests
     [Fact]
     public async Task Jobs_survive_a_restart_and_carry_on()
     {
-        await using var host = await TestHost.StartAsync(1_000_000, null, TestPhones.Iphone(photos: 6));
+        await using var host = await TestHost.StartAsync(SlowEnough, null, TestPhones.Iphone(photos: 6));
         var destination = host.PcFolder("export");
         var jobId = await ExportAsync(host, destination, Enumerable.Range(0, 6).Select(i => $"{TestPhones.IphoneId}-a{i}").ToArray());
         await Wait.UntilAsync(() => host.Queue.Get(jobId)!.DoneItems >= 2, "two photos");

@@ -225,11 +225,12 @@ public sealed class DispatcherTests
     [Fact]
     public async Task A_slow_failure_reports_its_error_code_and_fast_calls_report_nothing()
     {
-        var (rpc, reports) = Slow(TimeSpan.FromMilliseconds(150));
-        await Call(rpc, """{"jsonrpc":"2.0","id":1,"method":"device.storage","params":{"deviceId":"a","ms":10}}""");
+        // A wide gap between "fast" (0 ms) and the threshold (1 s): a CI runner can stall a 10 ms call past 150 ms.
+        var (rpc, reports) = Slow(TimeSpan.FromSeconds(1));
+        await Call(rpc, """{"jsonrpc":"2.0","id":1,"method":"device.storage","params":{"deviceId":"a","ms":0}}""");
         Assert.Empty(reports);
 
-        var failed = await Call(rpc, """{"jsonrpc":"2.0","id":2,"method":"device.battery","params":{"deviceId":"a","ms":300}}""");
+        var failed = await Call(rpc, """{"jsonrpc":"2.0","id":2,"method":"device.battery","params":{"deviceId":"a","ms":1500}}""");
         Assert.Equal("device_locked", (string?)failed["error"]!["data"]!["code"]);
         Assert.Equal("device_locked", reports.Single(r => r.Finished).Outcome);
 
