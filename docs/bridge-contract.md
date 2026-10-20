@@ -111,3 +111,48 @@ type Settings = {
 | `shot/{deviceId}/{shotId}` | a screenshot taken by `tools.screenshot` |
 
 Ids in paths are URI-encoded. A missing image is a 404; the page shows a placeholder.
+
+## App files (round 2)
+
+The apps that share files with a computer, and their folders. Every folder is a file root: browse it with
+`files.list`, change it with `files.mkdir` / `files.rename` / `files.delete`, copy in with `files.copyToDevice`
+and out with `files.copyToPc`, exactly as any other root. Needs `appDocuments` (iPhone and Android).
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `appFiles.list` | `{ deviceId }` | `AppFilesOverview` |
+| `appFiles.measure` | `{ deviceId, root, paths }` (1–1000 paths) | `FolderUsage`: files, folders and bytes under each path, all the way down |
+
+Root keys of app folders:
+
+| Key | Folder |
+| --- | --- |
+| `app:<bundleId>` | an iPhone app's Documents (house_arrest VendDocuments; File Sharing apps only) |
+| `appmedia:<package>` | Android/media/&lt;package&gt; |
+| `appdata:<package>` | Android/data/&lt;package&gt;, listed only when the phone lets adb read Android/data |
+| `shared:Documents`, `shared:Download` | the shared Documents and Download folders |
+
+- `files.copyToDevice` takes files and whole folders (copied recursively, empty folders included) into any folder
+  of the root. A name that is already there asks once (`needsDecision`); `transfers.resolveConflict` with
+  `applyToAll: true` answers every later clash in the job.
+- `files.copyToPc` with `paths: ["/"]` copies a whole root into a folder named after the app (`VLC`,
+  `com.whatsapp (Media)`), not `_`.
+- `appFiles.measure` on a path that is gone answers zeros; a folder the phone won't list counts what it can read.
+
+```ts
+type AppFilesOverview = {
+  entries: AppFilesEntry[];            // apps by id, then shared folders
+  privateData: "notApplicable" | "allowed" | "blocked";  // can adb read Android/data on this phone?
+};
+type AppFilesEntry = {
+  id: string;                          // bundle id or package name; a shared folder's root key
+  name: string;                        // the app's name when the host knows it (iPhone), else the id (Android: show apps.list labels)
+  kind: "app" | "sharedFolder";
+  appId: string | null;                // for icon/{deviceId}/{appId}; null for a shared folder
+  folders: { rootKey: string; label: string; empty: boolean }[];  // first = where a drop on the card goes
+};
+type FolderUsage = {
+  items: { path: string; files: number; folders: number; bytes: number }[];  // one per path, in order
+  files: number; folders: number; bytes: number;                             // totals
+};
+```
