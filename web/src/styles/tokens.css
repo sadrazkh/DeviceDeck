@@ -1,0 +1,335 @@
+/*
+  DeviceDeck design tokens — direction A "Glass Calm".
+
+  Every colour, radius, spacing step, type size, shadow and motion value lives here.
+  Component CSS reads these variables only, so another direction (B "Midnight Pro",
+  C "Device Stage") is adopted by editing this file plus component CSS, never component code.
+
+  Attributes set on <html> by src/app/applyDocumentState.ts:
+    data-theme="light|dark"        resolved theme (Settings.theme "system" follows Windows)
+    lang="en|fa", dir="ltr|rtl"    language and mirroring
+    data-density="comfortable|compact"
+    data-nav="rail|tabs"           shell layout switch (side rail or top tabs)
+    data-host="webview|browser"    webview: transparent so Mica shows through
+  On the shell element: --device-color, the selected phone's own colour (DeviceSummary.colorHex).
+*/
+
+:root {
+  /* ---------- Primitive palette (direction A) ---------- */
+  --iris-500: #5b5bf6;
+  --iris-600: #4b4be0;
+  --iris-700: #4338ca;
+  --iris-300: #8c8cff;
+  --iris-200: #a5a5ff;
+  --iris-100: #c7c7ff;
+  --ink-900: #111827;
+  --ink-700: #374151;
+  --ink-600: #4b5563;
+  --ink-500: #6b7280;
+  --mist-50: #f3f4f6;
+  --mist-300: #a1a7b3;
+  --mist-400: #8a909c;
+
+  --green-600: #16a34a;
+  --amber-600: #d97706;
+  --red-600: #dc2626;
+  --sky-500: #0ea5e9;
+
+  /* ---------- Typography ---------- */
+  --font-latin: 'Segoe UI Variable Text', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-latin-display: 'Segoe UI Variable Display', 'Segoe UI Variable', 'Segoe UI', system-ui, sans-serif;
+  --font-persian: 'Vazirmatn Variable', 'Vazirmatn', 'Segoe UI', Tahoma, sans-serif;
+  --font-mono: 'Cascadia Mono', 'Cascadia Code', Consolas, monospace;
+  --font-ui: var(--font-latin);
+  --font-display: var(--font-latin-display);
+
+  --type-display-size: 28px;
+  --type-display-line: 36px;
+  --type-display-weight: 600;
+  --type-title-size: 20px;
+  --type-title-line: 28px;
+  --type-title-weight: 600;
+  --type-subtitle-size: 16px;
+  --type-subtitle-line: 22px;
+  --type-subtitle-weight: 600;
+  --type-body-size: 14px;
+  --type-body-line: 20px;
+  --type-body-weight: 400;
+  --type-strong-weight: 600;
+  --type-caption-size: 12px;
+  --type-caption-line: 16px;
+  --type-micro-size: 11px;
+  --type-micro-line: 14px;
+  --type-numeric: tabular-nums;
+
+  /* ---------- Spacing (4 px base) ---------- */
+  --space-0: 0;
+  --space-half: 2px;
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* ---------- Radius ---------- */
+  --radius-input: 4px;
+  --radius-control: 8px;
+  --radius-card: 12px;
+  --radius-dialog: 16px;
+  --radius-full: 9999px;
+  --radius-tile: 6px;
+
+  /* ---------- Motion ---------- */
+  --motion-fast: 120ms; /* hover, press */
+  --motion-medium: 200ms; /* tabs, panels */
+  --motion-slow: 320ms; /* drawers, pages */
+  --ease-enter: cubic-bezier(0.2, 0, 0, 1);
+  --ease-exit: cubic-bezier(0.4, 0, 1, 1);
+  --ease-standard: cubic-bezier(0.2, 0, 0, 1);
+  --motion-shift: 8px; /* how far things travel on enter; 0 under reduced motion */
+
+  /* ---------- Layout ---------- */
+  --titlebar-height: 48px;
+  --caption-reserve: 140px; /* native minimise / maximise / close drawn by the host */
+  --rail-width: 240px;
+  --rail-width-compact: 64px;
+  --tabs-height: 44px;
+  --drawer-width: 420px;
+  --content-padding-x: 28px;
+  --content-padding-y: 20px;
+  --card-padding: 20px;
+  --control-height: 32px;
+  --control-height-large: 36px;
+  --control-padding-x: 12px;
+  --nav-item-height: 38px;
+  --row-height: 40px;
+  --icon-size: 20px;
+  --icon-size-small: 16px;
+  --hit-min: 32px;
+  --photo-tile-gap: 4px;
+  --scrollbar-size: 10px;
+
+  /* ---------- Layers ---------- */
+  --z-content: 1;
+  --z-sticky: 5;
+  --z-titlebar: 20;
+  --z-drawer: 40;
+  --z-overlay: 60;
+  --z-palette: 70;
+  --z-toast: 80;
+
+  /* ---------- Semantic colours: light ---------- */
+  color-scheme: light;
+
+  --color-accent: var(--iris-500);
+  --color-accent-hover: var(--iris-600);
+  --color-accent-pressed: var(--iris-700);
+  --color-on-accent: #ffffff;
+  --color-accent-text: var(--iris-700);
+  --color-accent-subtle: rgba(91, 91, 246, 0.1);
+  --color-accent-subtle-hover: rgba(91, 91, 246, 0.16);
+  --color-accent-stroke: rgba(91, 91, 246, 0.35);
+  --color-accent-track: rgba(91, 91, 246, 0.2);
+
+  --color-success: var(--green-600);
+  --color-success-text: #166534;
+  --color-success-subtle: rgba(22, 163, 74, 0.12);
+  --color-warning: var(--amber-600);
+  --color-warning-text: #92400e;
+  --color-warning-subtle: rgba(217, 119, 6, 0.12);
+  --color-danger: var(--red-600);
+  --color-danger-text: #b91c1c;
+  --color-danger-subtle: rgba(220, 38, 38, 0.1);
+  --color-danger-stroke: rgba(220, 38, 38, 0.35);
+  --color-on-danger: #ffffff;
+  --color-info: var(--sky-500);
+  --color-info-text: #075985;
+  --color-info-subtle: rgba(14, 165, 233, 0.12);
+
+  --color-text-primary: var(--ink-900);
+  --color-text-secondary: var(--ink-600);
+  --color-text-tertiary: var(--ink-500);
+  --color-text-disabled: rgba(17, 24, 39, 0.38);
+  --color-text-on-media: #ffffff;
+
+  /* Three surface levels only: base (Mica), card, overlay. The rest are control states. */
+  --color-backdrop-browser: #e9ecf2;
+  --color-backdrop-browser-glow: rgba(91, 91, 246, 0.07);
+  --color-surface-content: rgba(255, 255, 255, 0.38);
+  --color-surface-card: rgba(255, 255, 255, 0.76);
+  --color-surface-card-hover: rgba(255, 255, 255, 0.9);
+  --color-surface-overlay: rgba(252, 252, 253, 0.94);
+  --color-surface-overlay-solid: #fbfbfc;
+  --color-surface-sticky: rgba(244, 245, 249, 0.94);
+  --color-surface-control: rgba(255, 255, 255, 0.9);
+  --color-surface-control-hover: rgba(249, 250, 251, 1);
+  --color-surface-control-pressed: rgba(243, 244, 246, 1);
+  --color-surface-input: rgba(255, 255, 255, 0.62);
+  --color-surface-subtle: rgba(17, 24, 39, 0.05);
+  --color-surface-subtle-hover: rgba(17, 24, 39, 0.08);
+  --color-surface-selected: rgba(255, 255, 255, 0.86);
+  --color-surface-row-hover: rgba(17, 24, 39, 0.04);
+  --color-surface-row-selected: rgba(91, 91, 246, 0.1);
+  --color-scrim: rgba(17, 24, 39, 0.28);
+  --color-scrim-media: rgba(8, 10, 16, 0.92);
+  --color-media-chip: rgba(0, 0, 0, 0.55);
+  --color-media-chip-light: rgba(255, 255, 255, 0.86);
+  --color-thumb-placeholder: rgba(17, 24, 39, 0.07);
+  --color-skeleton: rgba(17, 24, 39, 0.06);
+  --color-skeleton-shine: rgba(255, 255, 255, 0.55);
+
+  --color-stroke-card: rgba(17, 24, 39, 0.07);
+  --color-stroke-control: rgba(17, 24, 39, 0.12);
+  --color-stroke-control-strong: rgba(17, 24, 39, 0.2);
+  --color-stroke-divider: rgba(17, 24, 39, 0.06);
+  --color-stroke-input-active: var(--color-accent);
+  --color-focus: var(--iris-500);
+  --color-focus-inner: #ffffff;
+
+  /* Storage categories: six hues told apart with colour-blindness (Okabe–Ito based),
+     also differing in lightness; always the same order: photos, videos, apps, media, system, other. */
+  --color-storage-photos: #5b5bf6;
+  --color-storage-videos: #e69f00;
+  --color-storage-apps: #009e73;
+  --color-storage-media: #56b4e9;
+  --color-storage-system: #7b8194;
+  --color-storage-other: #cc79a7;
+  --color-storage-free: rgba(17, 24, 39, 0.08);
+
+  --color-device-screen: #0b0f19;
+  --color-device-island: #000000;
+  --color-device-highlight: rgba(255, 255, 255, 0.35);
+  --device-color: #9aa3b2;
+
+  --shadow-card: 0 2px 8px rgba(15, 23, 42, 0.06);
+  --shadow-control: 0 1px 2px rgba(15, 23, 42, 0.06);
+  --shadow-flyout: 0 8px 24px rgba(15, 23, 42, 0.16);
+  --shadow-overlay: 0 16px 48px rgba(15, 23, 42, 0.24);
+  --shadow-device: 0 18px 40px rgba(15, 23, 42, 0.22);
+  --blur-acrylic: 30px;
+}
+
+/* ---------- Semantic colours: dark ---------- */
+:root[data-theme='dark'] {
+  color-scheme: dark;
+
+  --color-accent: var(--iris-300);
+  --color-accent-hover: var(--iris-200);
+  --color-accent-pressed: var(--iris-100);
+  --color-on-accent: #0b0b2e;
+  --color-accent-text: var(--iris-200);
+  --color-accent-subtle: rgba(140, 140, 255, 0.14);
+  --color-accent-subtle-hover: rgba(140, 140, 255, 0.22);
+  --color-accent-stroke: rgba(140, 140, 255, 0.4);
+  --color-accent-track: rgba(140, 140, 255, 0.22);
+
+  --color-success: #22c55e;
+  --color-success-text: #4ade80;
+  --color-success-subtle: rgba(34, 197, 94, 0.14);
+  --color-warning: #f59e0b;
+  --color-warning-text: #fbbf24;
+  --color-warning-subtle: rgba(245, 158, 11, 0.14);
+  --color-danger: #ef4444;
+  --color-danger-text: #f87171;
+  --color-danger-subtle: rgba(239, 68, 68, 0.14);
+  --color-danger-stroke: rgba(248, 113, 113, 0.4);
+  --color-on-danger: #ffffff;
+  --color-info: #38bdf8;
+  --color-info-text: #7dd3fc;
+  --color-info-subtle: rgba(56, 189, 248, 0.14);
+
+  --color-text-primary: var(--mist-50);
+  --color-text-secondary: var(--mist-300);
+  --color-text-tertiary: var(--mist-400);
+  --color-text-disabled: rgba(243, 244, 246, 0.36);
+
+  --color-backdrop-browser: #1c1d23;
+  --color-backdrop-browser-glow: rgba(140, 140, 255, 0.06);
+  --color-surface-content: rgba(255, 255, 255, 0.025);
+  --color-surface-card: rgba(255, 255, 255, 0.045);
+  --color-surface-card-hover: rgba(255, 255, 255, 0.07);
+  --color-surface-overlay: rgba(40, 41, 49, 0.94);
+  --color-surface-overlay-solid: #2a2b33;
+  --color-surface-sticky: rgba(32, 33, 40, 0.94);
+  --color-surface-control: rgba(255, 255, 255, 0.07);
+  --color-surface-control-hover: rgba(255, 255, 255, 0.1);
+  --color-surface-control-pressed: rgba(255, 255, 255, 0.05);
+  --color-surface-input: rgba(255, 255, 255, 0.05);
+  --color-surface-subtle: rgba(255, 255, 255, 0.06);
+  --color-surface-subtle-hover: rgba(255, 255, 255, 0.09);
+  --color-surface-selected: rgba(255, 255, 255, 0.08);
+  --color-surface-row-hover: rgba(255, 255, 255, 0.04);
+  --color-surface-row-selected: rgba(140, 140, 255, 0.14);
+  --color-scrim: rgba(0, 0, 0, 0.45);
+  --color-thumb-placeholder: rgba(255, 255, 255, 0.06);
+  --color-skeleton: rgba(255, 255, 255, 0.06);
+  --color-skeleton-shine: rgba(255, 255, 255, 0.08);
+
+  /* Dark mode leans on strokes more than shadows. */
+  --color-stroke-card: rgba(255, 255, 255, 0.08);
+  --color-stroke-control: rgba(255, 255, 255, 0.1);
+  --color-stroke-control-strong: rgba(255, 255, 255, 0.18);
+  --color-stroke-divider: rgba(255, 255, 255, 0.06);
+  --color-focus: var(--iris-300);
+  --color-focus-inner: #15161b;
+
+  --color-storage-photos: #8c8cff;
+  --color-storage-videos: #f0b429;
+  --color-storage-apps: #2bbf8e;
+  --color-storage-media: #7cc8f2;
+  --color-storage-system: #9aa1b4;
+  --color-storage-other: #e08fbd;
+  --color-storage-free: rgba(255, 255, 255, 0.1);
+
+  --color-device-highlight: rgba(255, 255, 255, 0.22);
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2);
+  --shadow-control: none;
+  --shadow-flyout: 0 8px 24px rgba(0, 0, 0, 0.4);
+  --shadow-overlay: 0 16px 48px rgba(0, 0, 0, 0.5);
+  --shadow-device: 0 18px 40px rgba(0, 0, 0, 0.5);
+}
+
+/* ---------- Persian: Vazirmatn at the same scale, line height +2 px ---------- */
+:root[lang='fa'] {
+  --font-ui: var(--font-persian);
+  --font-display: var(--font-persian);
+  --type-display-line: 38px;
+  --type-title-line: 30px;
+  --type-subtitle-line: 24px;
+  --type-body-line: 22px;
+  --type-caption-line: 18px;
+  --type-micro-line: 16px;
+}
+
+/* ---------- Right-to-left mirroring ---------- */
+:root {
+  --dir-x: 1; /* multiply horizontal translations by this */
+}
+:root[dir='rtl'] {
+  --dir-x: -1;
+}
+
+/* ---------- Density ---------- */
+:root[data-density='compact'] {
+  --control-height: 28px;
+  --control-height-large: 32px;
+  --nav-item-height: 32px;
+  --row-height: 32px;
+  --card-padding: 16px;
+  --content-padding-x: 20px;
+  --content-padding-y: 16px;
+  --photo-tile-gap: 2px;
+}
+
+/* ---------- Reduced motion: fades only ---------- */
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --motion-shift: 0px;
+  }
+}
