@@ -1,6 +1,7 @@
 using System.Diagnostics;
 using DeviceDeck.Bridge;
 using DeviceDeck.Core.Abstractions;
+using DeviceDeck.Core.Backups;
 using Microsoft.UI;
 using Microsoft.UI.Dispatching;
 using Microsoft.Windows.Storage.Pickers;
@@ -8,8 +9,13 @@ using Microsoft.Windows.Storage.Pickers;
 namespace DeviceDeck.Shell.Hosting;
 
 /// <summary>shell.pickFolder and shell.revealInExplorer, on the window's UI thread.</summary>
-internal sealed class ShellServices(DispatcherQueue dispatcher, WindowId window) : IShellServices
+internal sealed class ShellServices(DispatcherQueue dispatcher, WindowId window) : IShellServices, IPdfPrinter
 {
+    private readonly WebViewPdfPrinter _pdf = new(dispatcher, window);
+
+    /// <summary>messages.export as PDF.</summary>
+    public Task PrintToPdfAsync(string htmlPath, string pdfPath, CancellationToken ct) => _pdf.PrintToPdfAsync(htmlPath, pdfPath, ct);
+
     public Task<string?> PickFolderAsync(string? title, CancellationToken ct)
     {
         var result = new TaskCompletionSource<string?>(TaskCreationOptions.RunContinuationsAsynchronously);

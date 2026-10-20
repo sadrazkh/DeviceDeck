@@ -4,6 +4,7 @@ using DeviceDeck.Bridge;
 using DeviceDeck.Bridge.Images;
 using DeviceDeck.Bridge.Methods;
 using DeviceDeck.Core;
+using DeviceDeck.Core.Backups;
 using DeviceDeck.Core.Fake;
 using DeviceDeck.Core.Hub;
 using DeviceDeck.Core.Settings;
@@ -16,8 +17,9 @@ namespace DeviceDeck.Shell.Hosting;
 internal sealed class HostServices : IAsyncDisposable
 {
     private HostServices(AppPaths paths, bool devMode, FakeDeviceProvider? fake, DeviceHub hub, SqliteTransferStore store,
-        TransferQueue transfers, SettingsStore settings, WicImageTranscoder transcoder)
+        TransferQueue transfers, SettingsStore settings, WicImageTranscoder transcoder, BackupService backups)
     {
+        Backups = backups;
         Paths = paths;
         DevMode = devMode;
         Fake = fake;
@@ -45,6 +47,7 @@ internal sealed class HostServices : IAsyncDisposable
     public ScreenshotStore Screenshots { get; }
     public ThumbnailCache Thumbnails { get; }
     public DeviceImageHandler Images { get; }
+    public BackupService Backups { get; }
 
     public static string Version { get; } =
         typeof(HostServices).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.1.0";
@@ -62,10 +65,14 @@ internal sealed class HostServices : IAsyncDisposable
         hub.ProviderStopFailed += (_, e) => ShellLog.Error($"Provider {e.ProviderId} did not stop cleanly.", e.Error);
         var store = new SqliteTransferStore(paths.TransfersDatabase);
         var transcoder = new WicImageTranscoder();
-        var transfers = new TransferQueue(hub, store, TransferHandlers.All(transcoder), new WindowsKeepAwake());
+        var keepAwake = new WindowsKeepAwake();
+        var transfers = new TransferQueue(hub, store, TransferHandlers.All(transcoder), keepAwake);
         transfers.Start();
         var settings = new SettingsStore(paths.SettingsFile);
-        return new HostServices(paths, devMode, fake, hub, store, transfers, settings, transcoder);
+        var backups = new BackupService(hub, settings, new DeviceDeck.Ios.Backup.Format.IosBackupFormat(),
+            new BackupServiceOptions { KeepAwake = keepAwake, Transcoder = transcoder });
+        backups.Start();
+        return new HostServices(paths, devMode, fake, hub, store, transfers, settings, transcoder, backups);
     }
 
     public BridgeServices BridgeServices(IShellServices shell) => new()
@@ -77,6 +84,7 @@ internal sealed class HostServices : IAsyncDisposable
         Screenshots = Screenshots,
         Version = Version,
         DevFake = Fake,
+        Backups = Backups,
     };
 
     /// <summary>Starts the providers once the window is up, so the first paint isn't waiting on USB.</summary>
@@ -112,6 +120,7 @@ internal sealed class HostServices : IAsyncDisposable
     {
         var clock = Stopwatch.StartNew();
         await StepAsync("transfer queue", async () => await Transfers.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);
+        await StepAsync("backup service", async () => await Backups.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);
         await StepAsync("transfer store", () =>
         {
             Store.Dispose();

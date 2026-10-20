@@ -86,13 +86,15 @@ public sealed class ContractShapeTests
     public void Settings_have_exactly_the_contract_fields_and_values()
     {
         var json = ToJson(new AppSettings { PhotoExportFolder = @"D:\Photos", FileCopyFolder = @"D:\Copies" });
-        Assert.Equal(["language", "theme", "density", "photoExportFolder", "photoFolderPattern", "convertHeic", "fileCopyFolder", "conflictRule"], Keys(json));
+        Assert.Equal(["language", "theme", "density", "photoExportFolder", "photoFolderPattern", "convertHeic", "fileCopyFolder", "conflictRule",
+            "backupFolder", "backupKeep"], Keys(json));
         Assert.Equal("en", (string?)json["language"]);
         Assert.Equal("system", (string?)json["theme"]);
         Assert.Equal("comfortable", (string?)json["density"]);
         Assert.Equal("yyyy/MM", (string?)json["photoFolderPattern"]);
         Assert.False((bool)json["convertHeic"]!);
         Assert.Equal("ask", (string?)json["conflictRule"]);
+        Assert.Equal(3, (int)json["backupKeep"]!);
         Assert.Equal("\"fa\"", JsonSerializer.Serialize(AppLanguage.Fa, DeviceDeckJson.Options));
         Assert.Equal("\"compact\"", JsonSerializer.Serialize(UiDensity.Compact, DeviceDeckJson.Options));
     }
@@ -164,7 +166,7 @@ public sealed class ContractShapeTests
         Assert.Single(apps);
 
         var settings = (await host.ResultAsync("settings.get"))!.AsObject();
-        Assert.Equal(8, settings.Count);
+        Assert.Equal(10, settings.Count);
 
         var shot = (await host.ResultAsync("tools.screenshot", new { deviceId = TestPhones.IphoneId }))!.AsObject();
         Assert.StartsWith("https://device.local/shot/test-iphone/", (string?)shot["url"]);
