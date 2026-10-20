@@ -96,6 +96,18 @@ for (const variant of ['light', 'rtl'] as const) {
   });
 }
 
+test('iPhone battery health is labelled as an estimate; Android is not', async ({ page }) => {
+  await page.goto(query('light', { screen: 'overview' }));
+  const card = page.getByTestId('battery-card');
+  await expect(card).toContainText('Estimated health');
+  await page.getByTestId('health-estimated-info').hover();
+  await expect(page.getByRole('tooltip')).toContainText('iOS Settings');
+  await page.goto(query('light', { screen: 'overview', device: 'android' }));
+  await expect(page.getByTestId('battery-card')).toContainText('health');
+  await expect(page.getByTestId('battery-card')).not.toContainText('Estimated');
+  await expect(page.getByTestId('health-estimated-info')).toHaveCount(0);
+});
+
 test('Persian mirrors the layout and uses Persian digits', async ({ page }) => {
   await page.goto(query('rtl', { screen: 'overview' }));
   await expect(page.getByTestId('screen-overview')).toBeVisible();

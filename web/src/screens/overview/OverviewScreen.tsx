@@ -9,6 +9,7 @@ import {
   CopyRegular,
   EyeOffRegular,
   EyeRegular,
+  InfoRegular,
   PowerRegular,
   ScreenshotRegular,
   ShareScreenStartRegular,
@@ -39,11 +40,29 @@ function healthTone(health: number | null): 'success' | 'warning' | 'danger' {
   return 'danger';
 }
 
-function BatteryCard({ battery, loading, error, onRetry }: { battery: BatteryInfo | undefined; loading: boolean; error: unknown; onRetry(): void }) {
+function BatteryCard({
+  battery,
+  loading,
+  error,
+  onRetry,
+  estimated,
+}: {
+  battery: BatteryInfo | undefined;
+  loading: boolean;
+  error: unknown;
+  onRetry(): void;
+  /** iOS: health is worked out from capacity readings and can differ from Settings › Battery. */
+  estimated: boolean;
+}) {
   const { t, n, percent } = useI18n();
   if (error) return <Card title={t('overview.battery')}><ErrorBanner error={error} onRetry={onRetry} /></Card>;
+  const about = estimated ? (
+    <Tooltip content={t('overview.healthEstimatedHint')}>
+      <Button variant="subtle" size="small" icon={<InfoRegular />} aria-label={t('overview.healthEstimatedAbout')} data-testid="health-estimated-info" />
+    </Tooltip>
+  ) : null;
   return (
-    <Card title={t('overview.battery')} data-testid="battery-card">
+    <Card title={t('overview.battery')} actions={about} data-testid="battery-card">
       {loading || !battery ? (
         <div className={styles.battery}>
           <Skeleton width={112} height={112} radius="50%" />
@@ -58,11 +77,13 @@ function BatteryCard({ battery, loading, error, onRetry }: { battery: BatteryInf
           <Ring
             value={battery.healthPercent === null ? 0 : battery.healthPercent / 100}
             tone={healthTone(battery.healthPercent)}
-            label={t('overview.healthLabel', { percent: battery.healthPercent === null ? t('common.unknown') : percent(battery.healthPercent / 100) })}
+            label={t(estimated ? 'overview.healthEstimatedLabel' : 'overview.healthLabel', {
+              percent: battery.healthPercent === null ? t('common.unknown') : percent(battery.healthPercent / 100),
+            })}
           >
             <div className={styles.ringValue}>
               <span className={styles.ringNumber}>{battery.healthPercent === null ? '—' : percent(battery.healthPercent / 100)}</span>
-              <span className={styles.ringCaption}>{t('overview.health')}</span>
+              <span className={styles.ringCaption}>{t(estimated ? 'overview.healthEstimated' : 'overview.health')}</span>
             </div>
           </Ring>
           <div>
@@ -374,7 +395,13 @@ export function OverviewScreen({ device }: { device: DeviceSummary }) {
         ) : null}
 
         {caps.has('battery') ? (
-          <BatteryCard battery={battery.data} loading={battery.isPending} error={battery.error} onRetry={() => void battery.refetch()} />
+          <BatteryCard
+            battery={battery.data}
+            loading={battery.isPending}
+            error={battery.error}
+            onRetry={() => void battery.refetch()}
+            estimated={device.platform === 'ios'}
+          />
         ) : null}
         <DetailsCard rows={details.data?.rows} loading={details.isPending} platform={device.platform} />
         <ActivityCard device={device} />
