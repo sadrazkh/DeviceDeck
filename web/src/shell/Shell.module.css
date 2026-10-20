@@ -45,6 +45,32 @@
   border-inline-start: 0;
 }
 
+/*
+  Sharp text in the host. Chromium draws ClearType (LCD) text only into a composited layer it knows is
+  opaque; the page root is transparent (Mica), so everything painted there gets grayscale anti-aliasing,
+  which looks soft or haloed on some monitors. In WebView2 the screens therefore sit in .layer: an opaque,
+  square layer of its own (backface-visibility promotes it without a transform, so position: fixed inside
+  still works), clipped by .content's rounded corner. Mica shows only behind the title bar and the rail,
+  whose text is grayscale like every Windows 11 app's on Mica. .content keeps the same opaque colour so a
+  screen fading in never shows Mica through. Checked with a cc trace: lcd_text_disallowed_reason "none".
+  See docs/sharp-text.md.
+*/
+.layer {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+:root[data-host='webview'] .content,
+:root[data-host='webview'] .layer {
+  background: var(--color-surface-content-solid);
+}
+:root[data-host='webview'] .layer {
+  backface-visibility: hidden;
+}
+
 /* ---------- Title bar ---------- */
 .titlebar {
   grid-area: titlebar;

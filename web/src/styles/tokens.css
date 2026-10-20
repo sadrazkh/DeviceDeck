@@ -165,11 +165,14 @@
   --color-backdrop-browser: #e9ecf2;
   --color-backdrop-browser-glow: rgba(91, 91, 246, 0.07);
   --color-surface-content: rgba(255, 255, 255, 0.38);
+  /* The content area in the host: opaque, so Chromium may draw ClearType text there (see Shell.module.css). */
+  --color-surface-content-solid: #f7f8fa;
   --color-surface-card: rgba(255, 255, 255, 0.76);
   --color-surface-card-hover: rgba(255, 255, 255, 0.9);
   --color-surface-overlay: rgba(252, 252, 253, 0.94);
   --color-surface-overlay-solid: #fbfbfc;
   --color-surface-sticky: rgba(244, 245, 249, 0.94);
+  --color-surface-sticky-solid: #f4f5f8;
   --color-surface-control: rgba(255, 255, 255, 0.9);
   --color-surface-control-hover: rgba(249, 250, 251, 1);
   --color-surface-control-pressed: rgba(243, 244, 246, 1);
@@ -268,11 +271,13 @@
   --color-backdrop-browser: #1c1d23;
   --color-backdrop-browser-glow: rgba(140, 140, 255, 0.06);
   --color-surface-content: rgba(255, 255, 255, 0.025);
+  --color-surface-content-solid: #24252b;
   --color-surface-card: rgba(255, 255, 255, 0.045);
   --color-surface-card-hover: rgba(255, 255, 255, 0.07);
   --color-surface-overlay: rgba(40, 41, 49, 0.94);
   --color-surface-overlay-solid: #2a2b33;
   --color-surface-sticky: rgba(32, 33, 40, 0.94);
+  --color-surface-sticky-solid: #212228;
   --color-surface-control: rgba(255, 255, 255, 0.07);
   --color-surface-control-hover: rgba(255, 255, 255, 0.1);
   --color-surface-control-pressed: rgba(255, 255, 255, 0.05);
@@ -322,6 +327,18 @@
   --type-body-line: 22px;
   --type-caption-line: 18px;
   --type-micro-line: 16px;
+}
+
+/*
+  ---------- In the host: surfaces with text are opaque ----------
+  ClearType needs an opaque layer under the text (see .layer in Shell.module.css). Sticky headers and
+  overlays use their solid colours there, and overlays drop the acrylic blur: "none" makes blur(...)
+  invalid, so every backdrop-filter that reads --blur-acrylic computes to none.
+*/
+:root[data-host='webview'] {
+  --color-surface-sticky: var(--color-surface-sticky-solid);
+  --color-surface-overlay: var(--color-surface-overlay-solid);
+  --blur-acrylic: none;
 }
 
 /* ---------- Right-to-left mirroring ---------- */

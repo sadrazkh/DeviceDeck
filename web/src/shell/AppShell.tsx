@@ -64,18 +64,20 @@ export function AppShell() {
           <div className={styles.body}>
             {nav === 'rail' ? <NavRail /> : null}
             <main className={styles.content} id="content" data-testid="content">
-              <AnimatePresence mode="wait" initial={false}>
-                <motion.div
-                  key={screenKey}
-                  className={styles.screen}
-                  initial={{ opacity: 0, y: 6 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
-                >
-                  <Screen />
-                </motion.div>
-              </AnimatePresence>
+              <div className={styles.layer}>
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.div
+                    key={screenKey}
+                    className={styles.screen}
+                    initial={{ opacity: 0, y: 6 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    exit={{ opacity: 0 }}
+                    transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
+                  >
+                    <Screen />
+                  </motion.div>
+                </AnimatePresence>
+              </div>
             </main>
           </div>
           <TransferDrawer />

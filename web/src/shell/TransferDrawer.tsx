@@ -182,29 +182,31 @@ export function TransferDrawer() {
             transition={{ duration: 0.32, ease: [0.2, 0, 0, 1] }}
             data-testid="transfer-drawer"
           >
-            <div className={styles.header}>
-              <h2 className={styles.title}>{t('transfers.title')}</h2>
-              <Button variant="subtle" icon={<DismissRegular />} aria-label={t('common.close')} onClick={() => setOpen(false)} />
-            </div>
-            <div className={styles.list}>
-              {jobs.length === 0 ? (
-                <div className={styles.empty}>
-                  <EmptyState icon={<ArrowDownloadRegular />} title={t('transfers.empty.title')} body={t('transfers.empty.body')} />
-                </div>
-              ) : (
-                GROUP_ORDER.filter((g) => groups[g].length > 0).map((group) => (
-                  <section key={group} className={styles.group} aria-label={t(GROUP_LABEL[group])}>
-                    <h3 className={styles.groupTitle}>
-                      {t(GROUP_LABEL[group])} <span className={`${styles.count} num`}>{n(groups[group].length)}</span>
-                    </h3>
-                    <ul className={styles.jobs}>
-                      {groups[group].map((job) => (
-                        <JobRow key={job.id} job={job} device={devices.find((d) => d.id === job.deviceId)} showDevice={multiDevice} />
-                      ))}
-                    </ul>
-                  </section>
-                ))
-              )}
+            <div className={styles.pane}>
+              <div className={styles.header}>
+                <h2 className={styles.title}>{t('transfers.title')}</h2>
+                <Button variant="subtle" icon={<DismissRegular />} aria-label={t('common.close')} onClick={() => setOpen(false)} />
+              </div>
+              <div className={styles.list}>
+                {jobs.length === 0 ? (
+                  <div className={styles.empty}>
+                    <EmptyState icon={<ArrowDownloadRegular />} title={t('transfers.empty.title')} body={t('transfers.empty.body')} />
+                  </div>
+                ) : (
+                  GROUP_ORDER.filter((g) => groups[g].length > 0).map((group) => (
+                    <section key={group} className={styles.group} aria-label={t(GROUP_LABEL[group])}>
+                      <h3 className={styles.groupTitle}>
+                        {t(GROUP_LABEL[group])} <span className={`${styles.count} num`}>{n(groups[group].length)}</span>
+                      </h3>
+                      <ul className={styles.jobs}>
+                        {groups[group].map((job) => (
+                          <JobRow key={job.id} job={job} device={devices.find((d) => d.id === job.deviceId)} showDevice={multiDevice} />
+                        ))}
+                      </ul>
+                    </section>
+                  ))
+                )}
+              </div>
             </div>
           </motion.aside>
         </>
