@@ -124,6 +124,8 @@ test('Battery: the chart answers the keyboard, iPhone health is labelled estimat
   await expect(page.getByTestId('battery-tile-health')).toContainText('Estimated health');
   await expect(page.getByText('iPhone health is an estimate')).toBeVisible();
   const chart = page.getByTestId('battery-chart');
+  // The readings load after the screen: under a full parallel run, End pressed before the dots exist does nothing.
+  await expect(chart.locator('circle').first()).toBeVisible();
   await chart.focus();
   await page.keyboard.press('End');
   await expect(chart).toContainText('87%');
@@ -150,8 +152,14 @@ test('Battery in Persian: time runs right to left and numbers are Persian', asyn
   const chart = page.getByTestId('battery-chart');
   await expect(chart).toBeVisible();
   const dots = chart.locator('circle');
-  const first = await dots.first().boundingBox();
-  const last = await dots.last().boundingBox();
-  expect(first!.x).toBeGreaterThan(last!.x); // the oldest reading is on the right
+  // Wait for the dots to be drawn: boundingBox() is null for a dot that isn't there yet.
+  await expect.poll(() => dots.count()).toBeGreaterThan(1);
+  await expect
+    .poll(async () => {
+      const first = await dots.first().boundingBox();
+      const last = await dots.last().boundingBox();
+      return first && last ? first.x - last.x : null;
+    })
+    .toBeGreaterThan(0); // the oldest reading is on the right
   await expect(page.getByTestId('battery-tile-health')).toContainText('۸۷٪');
 });
