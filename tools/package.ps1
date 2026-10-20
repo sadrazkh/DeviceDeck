@@ -160,10 +160,11 @@ if ($Installer) {
 
     # The portable zip above is the one we ship; Velopack's own portable build would only confuse.
     Get-ChildItem $velopack -Filter '*-Portable.zip' | Remove-Item -Force
-    $setup = Get-ChildItem $velopack -Filter '*-Setup.exe' | Select-Object -First 1
-    if (-not $setup) { throw 'vpk pack produced no Setup.exe' }
+    # vpk names it <packId>-<channel>-Setup.exe; a Setup.exe left from an earlier run here is replaced.
+    $setup = Join-Path $velopack "$packId-$Runtime-Setup.exe"
+    if (-not (Test-Path $setup)) { throw "vpk pack produced no $packId-$Runtime-Setup.exe" }
     $named = Join-Path $velopack "DeviceDeck-$Version-$Runtime-Setup.exe"
-    if ($setup.FullName -ne $named) { Move-Item -Force $setup.FullName $named }
+    Move-Item -Force $setup $named
     Write-Host "Installer: $named ($([math]::Round((Get-Item $named).Length / 1MB, 1)) MB)"
     Get-ChildItem $velopack | ForEach-Object { Write-Host "  $($_.Name)" }
     Write-Output-Value 'installer' $named
