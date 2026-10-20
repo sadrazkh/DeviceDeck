@@ -110,7 +110,8 @@ function JobRow({ job, device, showDevice }: { job: TransferJob; device: DeviceS
             {t('transfers.decide')}
           </Button>
         ) : null}
-        {job.state === 'failed' || job.state === 'cancelled' ? (
+        {/* A drag to File Explorer can't be retried: nothing waits for its bytes once it ended. */}
+        {(job.state === 'failed' || job.state === 'cancelled') && job.kind !== 'dragOut' ? (
           <Button size="small" icon={<ArrowClockwiseRegular />} onClick={() => void actions.transfer('retry', job.id)} data-testid="transfer-retry">
             {t('transfers.retry')}
           </Button>

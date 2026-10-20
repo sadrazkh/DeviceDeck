@@ -98,7 +98,7 @@ public sealed partial class MainWindow : Window
 
         UpdateTray(host.Settings.Current);
         _notifications = new ShellNotifications("DeviceDeck", Path.Combine(AppContext.BaseDirectory, "Assets", "DeviceDeck.png"),
-            () => DispatcherQueue.TryEnqueue(BringToFront), () => _tray);
+            () => DispatcherQueue.TryEnqueue(BringToFront), action => DispatcherQueue.TryEnqueue(() => action()), () => _tray);
         _notifications.Activated += OnNotificationActivated;
         _deviceNotifier = new DeviceNotifier(host.Hub, host.Settings, _notifications, () => Tray.IsInFront(_hwnd));
         _updates = new UpdateService(HostServices.Version, host.Settings, _notifications, Quit);

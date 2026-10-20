@@ -2,6 +2,7 @@ using DeviceDeck.Bridge.JsonRpc;
 using DeviceDeck.Bridge.Pc;
 using DeviceDeck.Core.Abstractions;
 using DeviceDeck.Core.Notifications;
+using DeviceDeck.Core.Transfers;
 
 namespace DeviceDeck.Bridge.Methods;
 
@@ -49,6 +50,12 @@ public static class DesktopMethods
 
         rpc.Register<JobParams, Empty>("transfers.retry", (p, _) =>
         {
+            // A drag to File Explorer is over once its job ends: nothing waits for those bytes any more.
+            if (s.Transfers.Get(p.JobId) is { Kind: TransferKind.DragOut })
+            {
+                throw new ArgumentException("A drag to File Explorer can't be retried; drag the items again.");
+            }
+
             s.Transfers.Retry(p.JobId);
             return Task.FromResult(Empty.Value);
         });
@@ -79,11 +86,12 @@ public static class DesktopMethods
         });
 
         // This PC
-        rpc.Register("pc.roots", _ => Task.FromResult(PcFolders.Roots()));
+        // Off the bridge's thread: a sleeping disk or a network drive can take seconds to answer.
+        rpc.Register("pc.roots", ct => Task.Run(() => PcFolders.Roots(), ct));
         rpc.Register<PcListParams, IReadOnlyList<PcEntry>>("pc.list", (p, ct) => Task.Run(() => PcFolders.List(p.Path, p.ShowHidden), ct));
-        rpc.Register<PathParams, PcEntry>("pc.mkdir", (p, _) => Task.FromResult(PcFolders.Mkdir(p.Path)));
-        rpc.Register<PcRenameParams, PcEntry>("pc.rename", (p, _) => Task.FromResult(PcFolders.Rename(p.Path, p.Name)));
-        rpc.Register<PathParams, Empty>("shell.openFile", (p, _) =>
+        rpc.Register<PathParams, PcEntry>("pc.mkdir", (p, ct) => Task.Run(() => PcFolders.Mkdir(p.Path), ct));
+        rpc.Register<PcRenameParams, PcEntry>("pc.rename", (p, ct) => Task.Run(() => PcFolders.Rename(p.Path, p.Name), ct));
+        rpc.Register<PathParams, Empty>("shell.openFile", (p, ct) => Task.Run(() =>
         {
             var path = PcFolders.RequireFullPath(p.Path);
             if (!File.Exists(path))
@@ -92,8 +100,8 @@ public static class DesktopMethods
             }
 
             RequireDesktop(s).OpenFile(path);
-            return Task.FromResult(Empty.Value);
-        });
+            return Empty.Value;
+        }, ct));
 
         rpc.Register<DragOutParams, DragOutResult>("shell.dragOut", (p, ct) =>
         {

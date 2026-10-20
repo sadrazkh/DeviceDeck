@@ -55,8 +55,11 @@ internal sealed class DragOutSession
     private readonly DragOutRegistry _registry;
     private readonly Func<IReadOnlyList<DragOutFile>> _resolve;
     private readonly Lazy<IReadOnlyList<DragOutFile>> _files;
+    private readonly List<IDisposable> _streams = [];
     private ItemState[] _items = [];
     private string? _jobId;
+    private bool _jobRunning;
+    private long _lastProgress = Environment.TickCount64;
     private bool _asyncStarted;
     private bool _operationEnded;
     private bool _jobFinished;
@@ -83,11 +86,20 @@ internal sealed class DragOutSession
     public string? Root { get; }
     public string StagingFolder { get; }
 
-    /// <summary>How long a read waits without a single new byte before it gives up (a phone that never came back).</summary>
+    /// <summary>
+    /// How long a read waits, while the job runs, without a single new byte of any file before it gives up (a phone
+    /// that never came back). Time the job spends queued behind other copies or paused doesn't count.
+    /// </summary>
     public TimeSpan IdleLimit { get; init; } = TimeSpan.FromMinutes(10);
 
-    /// <summary>After the job ends, how long to wait for File Explorer's EndOperation before cleaning up anyway.</summary>
+    /// <summary>
+    /// After the job ends, how often to check whether File Explorer is done. A drop that copies on its own thread
+    /// keeps the session (its staged files) until EndOperation, or until <see cref="LingerLimit"/>.
+    /// </summary>
     public TimeSpan LingerAfterJob { get; init; } = TimeSpan.FromMinutes(2);
+
+    /// <summary>The longest File Explorer may go on reading staged files after the job ended (it never said it was done).</summary>
+    public TimeSpan LingerLimit { get; init; } = TimeSpan.FromHours(2);
 
     public string? JobId
     {
@@ -116,6 +128,25 @@ internal sealed class DragOutSession
 
     public string StagingPath(int itemIndex) => Path.Combine(StagingFolder, $"{itemIndex}.part");
 
+    /// <summary>A stream handed to File Explorer: closed with the session, so no staged file stays open.</summary>
+    public void Track(IDisposable stream)
+    {
+        bool closed;
+        lock (_gate)
+        {
+            closed = _closed;
+            if (!closed)
+            {
+                _streams.Add(stream);
+            }
+        }
+
+        if (closed)
+        {
+            stream.Dispose();
+        }
+    }
+
     /// <summary>Puts the copy in the transfer queue, once. Called when File Explorer first asks for a file's contents.</summary>
     public void EnsureJob()
     {
@@ -142,10 +173,10 @@ internal sealed class DragOutSession
                 _jobId = job.Id;
             }
 
-            // A small job can finish before its id is known here; catch up with where it is now.
-            if (_queue.Get(job.Id) is { State: TransferState.Done or TransferState.Failed or TransferState.Cancelled } finished)
+            // The job can start, or even finish, before its id is known here; catch up with where it is now.
+            if (_queue.Get(job.Id) is { } current)
             {
-                OnJobUpdated(finished);
+                OnJobUpdated(current);
             }
         }
     }
@@ -177,6 +208,7 @@ internal sealed class DragOutSession
             if (itemIndex >= 0 && itemIndex < _items.Length)
             {
                 change(_items[itemIndex]);
+                _lastProgress = Environment.TickCount64;
                 Monitor.PulseAll(_gate);
             }
         }
@@ -186,7 +218,8 @@ internal sealed class DragOutSession
 
     /// <summary>
     /// Waits until the item has <paramref name="end"/> bytes or is complete; returns the bytes there are.
-    /// Throws <see cref="IOException"/> when the item failed, the drag ended, or nothing arrived for <see cref="IdleLimit"/>.
+    /// Throws <see cref="IOException"/> when the item failed, the drag ended, or the running job copied nothing for
+    /// <see cref="IdleLimit"/> (File Explorer may ask for a later file while the job still copies an earlier one).
     /// </summary>
     public long WaitFor(int itemIndex, long end)
     {
@@ -199,7 +232,6 @@ internal sealed class DragOutSession
             }
 
             var item = _items[itemIndex];
-            var lastWritten = item.Written;
             var idleSince = Environment.TickCount64;
             while (true)
             {
@@ -218,12 +250,16 @@ internal sealed class DragOutSession
                     throw new IOException("The copy to File Explorer was stopped.");
                 }
 
-                if (item.Written != lastWritten)
+                var now = Environment.TickCount64;
+                if (!_jobRunning)
                 {
-                    lastWritten = item.Written;
-                    idleSince = Environment.TickCount64;
+                    idleSince = now; // queued behind other copies or paused: nothing is late yet
                 }
-                else if (Environment.TickCount64 - idleSince > IdleLimit.TotalMilliseconds)
+                else if (_lastProgress > idleSince)
+                {
+                    idleSince = _lastProgress;
+                }
+                else if (now - idleSince > IdleLimit.TotalMilliseconds)
                 {
                     throw new IOException("The phone stopped sending this file.");
                 }
@@ -268,7 +304,8 @@ internal sealed class DragOutSession
         lock (_gate)
         {
             _dragEnded = true;
-            if (!dropped && _jobId is null)
+            // An async drop reports no effect yet and may ask for the contents only later, on its own thread.
+            if (!dropped && _jobId is null && !_asyncStarted)
             {
                 _operationEnded = true;
             }
@@ -281,12 +318,24 @@ internal sealed class DragOutSession
     {
         lock (_gate)
         {
-            if (job.Id != _jobId || job.State is not (TransferState.Done or TransferState.Failed or TransferState.Cancelled))
+            if (job.Id != _jobId || _jobFinished)
             {
                 return;
             }
 
+            if (job.State is not (TransferState.Done or TransferState.Failed or TransferState.Cancelled))
+            {
+                if (_jobRunning != (job.State == TransferState.Running))
+                {
+                    _jobRunning = job.State == TransferState.Running;
+                    Monitor.PulseAll(_gate);
+                }
+
+                return;
+            }
+
             _jobFinished = true;
+            _jobRunning = false;
             foreach (var item in _items.Where(i => !i.Done && i.Error is null))
             {
                 item.Error = job.State == TransferState.Cancelled ? "The copy was cancelled." : job.Error?.Message ?? "The copy failed.";
@@ -296,8 +345,28 @@ internal sealed class DragOutSession
         }
 
         TryClose();
-        _ = Task.Delay(LingerAfterJob).ContinueWith(_ => Close(), TaskScheduler.Default);
+        LingerThenClose(Environment.TickCount64);
     }
+
+    /// <summary>Closes once File Explorer is done reading, checking every <see cref="LingerAfterJob"/>.</summary>
+    private void LingerThenClose(long since) =>
+        _ = Task.Delay(LingerAfterJob).ContinueWith(_ =>
+        {
+            bool reading;
+            lock (_gate)
+            {
+                reading = _asyncStarted && !_operationEnded && !_closed;
+            }
+
+            if (reading && Environment.TickCount64 - since < LingerLimit.TotalMilliseconds)
+            {
+                LingerThenClose(since);
+            }
+            else
+            {
+                Close();
+            }
+        }, TaskScheduler.Default);
 
     private void TryClose()
     {
@@ -315,9 +384,10 @@ internal sealed class DragOutSession
         }
     }
 
-    /// <summary>Stops readers, removes the staging folder and forgets the session.</summary>
+    /// <summary>Stops readers, closes their staged files, removes the staging folder and forgets the session.</summary>
     public void Close()
     {
+        IDisposable[] streams;
         lock (_gate)
         {
             if (_closed)
@@ -326,7 +396,14 @@ internal sealed class DragOutSession
             }
 
             _closed = true;
+            streams = [.. _streams];
+            _streams.Clear();
             Monitor.PulseAll(_gate);
+        }
+
+        foreach (var stream in streams)
+        {
+            stream.Dispose();
         }
 
         _registry.Remove(this);

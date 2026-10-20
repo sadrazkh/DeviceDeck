@@ -98,6 +98,7 @@ internal sealed class VirtualFileDataObject : ComIDataObject, IDataObjectAsyncCa
 
             _session.EnsureJob();
             var stream = new VirtualFileStream(_session, files[format.lindex]);
+            _session.Track(stream);
             medium.tymed = TYMED.TYMED_ISTREAM;
             medium.unionmember = Marshal.GetComInterfaceForObject(stream, typeof(IStream));
             return;

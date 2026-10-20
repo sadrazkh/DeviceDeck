@@ -123,15 +123,24 @@ jobs:
             $template = "`"$($signtool.FullName)`" sign /v /fd SHA256 /tr http://timestamp.acs.microsoft.com /td SHA256 /dlib `"$client\bin\x64\Azure.CodeSigning.Dlib.dll`" /dmdf `"$metadata`" {{file}}"
             Write-Host 'Signing with Microsoft Artifact Signing.'
           } elseif ($env:SIGNING_PFX_BASE64) {
+            # Into the runner's certificate store, so the password never appears on the command line vpk runs
+            # through cmd (where & % ^ or " in a password would break it); signtool finds it by thumbprint.
             $pfx = Join-Path $env:RUNNER_TEMP 'signing.pfx'
             [IO.File]::WriteAllBytes($pfx, [Convert]::FromBase64String($env:SIGNING_PFX_BASE64))
-            $template = "`"$($signtool.FullName)`" sign /fd SHA256 $timestamp /f `"$pfx`" /p `"$env:SIGNING_PFX_PASSWORD`" {{file}}"
+            $flags = [Security.Cryptography.X509Certificates.X509KeyStorageFlags]'UserKeySet, PersistKeySet'
+            $certificate = [Security.Cryptography.X509Certificates.X509Certificate2]::new($pfx, $env:SIGNING_PFX_PASSWORD, $flags)
+            $store = [Security.Cryptography.X509Certificates.X509Store]::new('My', 'CurrentUser')
+            $store.Open('ReadWrite')
+            $store.Add($certificate)
+            $store.Close()
+            Remove-Item $pfx
+            $template = "`"$($signtool.FullName)`" sign /fd SHA256 $timestamp /s My /sha1 $($certificate.Thumbprint) {{file}}"
             Write-Host 'Signing with the PFX certificate.'
           } else {
             $template = ''
             Write-Host 'No signing secrets are set: this build is unsigned.'
           }
-          # A file, not a step output: the PFX password must not travel in outputs.
+          # A file, not a step output: the template's quotes reach the next step as they are.
           $file = Join-Path $env:RUNNER_TEMP 'sign-template.txt'
           Set-Content $file $template -NoNewline -Encoding utf8
           "templateFile=$file" >> $env:GITHUB_OUTPUT

@@ -507,6 +507,7 @@ export class MockBackend {
       return { ...renamed, capabilities: [...renamed.capabilities] };
     },
     'transfers.retry': ({ jobId }) => {
+      if (this.engine.list().find((j) => j.id === jobId)?.kind === 'dragOut') throw badParams("A drag to File Explorer can't be retried; drag the items again.");
       const outcome = this.engine.retry(jobId);
       if (outcome === 'missing') throw badParams('There is no transfer with that id.');
       if (outcome === 'nothing') throw fault('internal', 'This transfer has nothing to try again.');

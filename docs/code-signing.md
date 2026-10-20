@@ -62,4 +62,7 @@ that would come first.
 ## Signing locally
 
 `tools/package.ps1 -SignTemplate "<command with {{file}}>"` takes the same signing command the workflow builds,
-for example `"C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe" sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /f cert.pfx /p <password> {{file}}`.
+for example `"C:\Program Files (x86)\Windows Kits\10\bin\10.0.26100.0\x64\signtool.exe" sign /fd SHA256 /tr http://timestamp.digicert.com /td SHA256 /s My /sha1 <thumbprint> {{file}}`
+after importing the .pfx into your certificate store (double-click it). Velopack runs the command through cmd,
+so keep the password off it: `&`, `%`, `^` or `"` in a password would break the line (the workflow imports the
+certificate the same way).

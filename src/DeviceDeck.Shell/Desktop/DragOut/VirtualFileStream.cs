@@ -37,6 +37,7 @@ internal sealed class VirtualFileStream(DragOutSession session, DragOutFile file
 
                     if (want <= 0)
                     {
+                        CloseReader(); // end of file; a seek back opens it again
                         break;
                     }
 
@@ -44,7 +45,8 @@ internal sealed class VirtualFileStream(DragOutSession session, DragOutFile file
                     var count = (int)Math.Min(want, available - _position);
                     if (count <= 0)
                     {
-                        break; // the item is complete: end of file
+                        CloseReader(); // the item is complete: end of file
+                        break;
                     }
 
                     ReadStaged(pv.AsSpan(total, count));
@@ -53,6 +55,7 @@ internal sealed class VirtualFileStream(DragOutSession session, DragOutFile file
             }
             catch (IOException ex)
             {
+                CloseReader();
                 throw new COMException(ex.Message, Ole.STG_E_READFAULT);
             }
         }
@@ -176,12 +179,17 @@ internal sealed class VirtualFileStream(DragOutSession session, DragOutFile file
 
     public CustomQueryInterfaceResult GetInterface(ref Guid iid, out nint ppv) => VirtualFileDataObject.RefuseAgility(ref iid, out ppv);
 
+    private void CloseReader()
+    {
+        _reader?.Dispose();
+        _reader = null;
+    }
+
     public void Dispose()
     {
         lock (_gate)
         {
-            _reader?.Dispose();
-            _reader = null;
+            CloseReader();
         }
     }
 }

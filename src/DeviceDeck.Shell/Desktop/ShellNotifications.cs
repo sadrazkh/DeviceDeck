@@ -28,14 +28,16 @@ internal sealed class ShellNotifications : INotificationService, IDisposable
     private const string Group = "devicedeck";
 
     private readonly Action _bringToFront;
+    private readonly Func<Action, bool> _postToUi;
     private readonly Func<TrayIcon?> _tray;
     private readonly string? _appId;
     private readonly ToastNotifier? _notifier;
     private AppNotification? _lastBalloon;
 
-    public ShellNotifications(string displayName, string iconPath, Action bringToFront, Func<TrayIcon?> tray)
+    public ShellNotifications(string displayName, string iconPath, Action bringToFront, Func<Action, bool> postToUi, Func<TrayIcon?> tray)
     {
         _bringToFront = bringToFront;
+        _postToUi = postToUi;
         _tray = tray;
         try
         {
@@ -95,11 +97,15 @@ internal sealed class ShellNotifications : INotificationService, IDisposable
                 return;
             }
 
-            if (_tray() is { IsShown: true } tray)
+            // The tray icon lives on the UI thread; Show is called from whichever thread raised the event.
+            _postToUi(() =>
             {
-                _lastBalloon = notification;
-                tray.ShowBalloon(notification.Title, notification.Body ?? "");
-            }
+                if (_tray() is { IsShown: true } tray)
+                {
+                    _lastBalloon = notification;
+                    tray.ShowBalloon(notification.Title, notification.Body ?? "");
+                }
+            });
         }
         catch (Exception ex)
         {

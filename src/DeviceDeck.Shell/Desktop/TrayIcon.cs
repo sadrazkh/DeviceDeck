@@ -122,7 +122,17 @@ internal sealed unsafe class TrayIcon : IDisposable
     {
         if (message == TaskbarCreated)
         {
+            // Explorer restarted (the icon is gone) or the taskbar's DPI changed (the icon may still be there, and
+            // NIM_ADD would fail): remove it, then add it again with an icon of the size the taskbar wants now.
+            var data = NewData(0);
+            Tray.ShellNotifyIcon(Tray.NIM_DELETE, ref data);
             _added = false;
+            if (_icon != 0)
+            {
+                Tray.DestroyIcon(_icon);
+                _icon = 0;
+            }
+
             Add();
             return 0;
         }
