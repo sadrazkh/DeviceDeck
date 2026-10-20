@@ -63,7 +63,9 @@ test('a card offers its folders while files are dragged over it; a drop on one c
   await shot(page, 'app-documents-drop-chips-light');
   await movies.dispatchEvent('dragenter', { dataTransfer: dt });
   await movies.dispatchEvent('drop', { dataTransfer: dt });
-  await expect(infuse.getByTestId('app-card-copy')).toContainText('Taste of Cherry (1997).mkv into Infuse/Movies');
+  // A 2 KB file may be done before the card is read again; the drawer keeps finished jobs.
+  await page.getByTestId('transfer-pill').click();
+  await expect(page.getByTestId('transfer-drawer')).toContainText('Taste of Cherry (1997).mkv into Infuse/Movies');
   consoleWatch.assertClean();
 });
 
