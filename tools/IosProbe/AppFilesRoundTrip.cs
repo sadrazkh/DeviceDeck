@@ -32,6 +32,21 @@ internal static class AppFilesRoundTrip
             if (overview.Entries.All(e => e.Folders.All(f => f.RootKey != root)))
                 throw new DeviceException(DeviceErrorCodes.NotFound, $"{bundleId} isn't installed or doesn't share files.");
 
+            // What a click in the browser costs: open the root and list it, three times in a row.
+            var listings = new List<long>();
+            for (var i = 0; i < 3; i++)
+            {
+                clock.Restart();
+                await using (var fs = await device.OpenFileSystemAsync(root, ct))
+                {
+                    await foreach (var _ in fs.ListAsync("/", ct))
+                    {
+                    }
+                }
+                listings.Add(clock.ElapsedMilliseconds);
+            }
+            Console.WriteLine($"Listing:  {string.Join(" ms, ", listings)} ms (open + list of the top folder, 3 times)");
+
             var before = await SnapshotAsync(device, root, ct);
             clock.Restart();
             var usage = await device.MeasureAsync(root, ["/"], ct);

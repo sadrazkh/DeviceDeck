@@ -138,10 +138,14 @@ Root keys of app folders:
 - `files.copyToPc` with `paths: ["/"]` copies a whole root into a folder named after the app (`VLC`,
   `com.whatsapp (Media)`), not `_`.
 - `appFiles.measure` on a path that is gone answers zeros; a folder the phone won't list counts what it can read.
+- Dragging rows out to File Explorer uses the desktop feature's `shell.dragOut { source: "files", deviceId, root, paths }`
+  on these roots; the copy is a `copyToPc` job.
+- iPhone: opening house_arrest takes about a second, so the host keeps one connection per app for listings and
+  small changes; file contents use a connection of their own per job.
 
 ```ts
 type AppFilesOverview = {
-  entries: AppFilesEntry[];            // apps by id, then shared folders
+  entries: AppFilesEntry[];            // apps, then shared folders (Android: Documents, Download)
   privateData: "notApplicable" | "allowed" | "blocked";  // can adb read Android/data on this phone?
 };
 type AppFilesEntry = {
