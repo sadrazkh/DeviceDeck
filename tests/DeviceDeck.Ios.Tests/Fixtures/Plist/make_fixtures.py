@@ -73,3 +73,53 @@ for name, value in [("mixed", mixed), ("lockdown_getvalue_all", lockdown_all)]:
 # NSKeyedArchiver-style UIDs only exist in binary plists.
 with open("uid.bplist", "wb") as f:
     plistlib.dump({"$top": {"root": plistlib.UID(1)}, "$objects": ["$null", "value"]}, f, fmt=plistlib.FMT_BINARY)
+
+# lockdown GetValue Domain=com.apple.disk_usage (keys as lockdown names them; values for a 256 GB phone).
+disk_usage = {
+    "AmountDataAvailable": 98_000_000_000,
+    "AmountDataReserved": 209_715_200,
+    "CalculateDiskUsage": "OkilyDokily",
+    "CameraUsage": 41_000_000_000,
+    "MediaCacheUsage": 1_500_000_000,
+    "MobileApplicationUsage": 62_000_000_000,
+    "PhotoUsage": 3_000_000_000,
+    "TotalDataAvailable": 98_209_715_200,
+    "TotalDataCapacity": 245_000_000_000,
+    "TotalDiskCapacity": 256_000_000_000,
+    "TotalSystemAvailable": 1_000_000_000,
+    "TotalSystemCapacity": 11_000_000_000,
+    "VoicemailUsage": 0,
+    "WebAppCacheUsage": 0,
+}
+
+# lockdown GetValue Domain=com.apple.mobile.battery.
+battery_domain = {
+    "BatteryCurrentCapacity": 76,
+    "BatteryIsCharging": True,
+    "ExternalChargeCapable": True,
+    "ExternalConnected": True,
+    "FullyCharged": False,
+    "GasGaugeCapability": True,
+    "HasBattery": True,
+}
+
+# diagnostics_relay IORegistry EntryClass=IOPMPowerSource, the "IORegistry" dictionary.
+ioreg_powersource = {
+    "AppleRawCurrentCapacity": 2650,
+    "AppleRawMaxCapacity": 3279,
+    "BatteryData": {"CycleCount": 412, "DesignCapacity": 3561},
+    "CurrentCapacity": 76,
+    "CycleCount": 412,
+    "DesignCapacity": 3561,
+    "ExternalConnected": True,
+    "FullyCharged": False,
+    "IsCharging": True,
+    "MaxCapacity": 100,
+    "NominalChargeCapacity": 3301,
+    "Temperature": 3050,
+    "Voltage": 4012,
+}
+
+for name, value in [("disk_usage", disk_usage), ("battery_domain", battery_domain), ("ioreg_powersource", ioreg_powersource)]:
+    with open(name + ".xml", "wb") as f:
+        plistlib.dump(value, f, fmt=plistlib.FMT_XML, sort_keys=True)
