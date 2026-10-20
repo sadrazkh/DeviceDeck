@@ -1,6 +1,8 @@
 // English strings. Every key here must also be in fa.ts (the compiler checks).
 // Plurals use "{count, plural, one {…} other {…}}"; "#" is the formatted number.
 
+import { backupEn } from './backup';
+
 export const en = {
   'app.name': 'DeviceDeck',
 
@@ -463,6 +465,9 @@ export const en = {
   'settings.navigation.tabs': 'Top tabs',
   'settings.more': 'Devices, photo and file defaults, backups, drivers and updates come next.',
   'settings.about': 'Version {version}',
+
+  // Backup, contacts and messages (round 2)
+  ...backupEn,
 } as const;
 
 export type MessageKey = keyof typeof en;

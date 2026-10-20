@@ -1,6 +1,7 @@
 // Persian strings. Nouns stay singular after numbers, so most plurals collapse to "{count} …".
 // ‌ is the zero-width non-joiner (نیم‌فاصله).
 
+import { backupFa } from './backup';
 import type { MessageKey } from './en';
 
 export const fa: Record<MessageKey, string> = {
@@ -449,4 +450,7 @@ export const fa: Record<MessageKey, string> = {
   'settings.navigation.tabs': 'زبانه‌های بالا',
   'settings.more': 'دستگاه‌ها، پیش‌فرض‌های عکس و فایل، پشتیبان، درایورها و به‌روزرسانی در ادامه می‌آیند.',
   'settings.about': 'نسخهٔ {version}',
+
+  // Backup, contacts and messages (round 2)
+  ...backupFa,
 };

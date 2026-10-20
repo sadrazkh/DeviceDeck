@@ -39,7 +39,8 @@ export const NAV: NavEntry[] = [
   { section: 'files', label: 'nav.files', icon: FolderRegular, iconSelected: FolderFilled, needs: 'files' },
   { section: 'appDocuments', label: 'nav.appDocuments', icon: DocumentFolderRegular, iconSelected: DocumentFolderFilled, needs: 'appDocuments' },
   { section: 'apps', label: 'nav.apps', icon: AppsRegular, iconSelected: AppsFilled, needs: 'appsList' },
-  { section: 'contacts', label: 'nav.contacts', icon: PeopleChatRegular, iconSelected: PeopleChatFilled, needs: 'contacts' },
+  // Open on every ready phone: iPhones read contacts and messages from backups on this PC, Android explains the helper app.
+  { section: 'contacts', label: 'nav.contacts', icon: PeopleChatRegular, iconSelected: PeopleChatFilled },
   { section: 'backup', label: 'nav.backup', icon: ArchiveRegular, iconSelected: ArchiveFilled, needs: 'backup' },
   { section: 'toolbox', label: 'nav.toolbox', icon: ToolboxRegular, iconSelected: ToolboxFilled },
 ];

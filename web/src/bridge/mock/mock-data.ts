@@ -321,6 +321,8 @@ export const defaultSettings: Settings = {
   convertHeic: false,
   fileCopyFolder: 'D:\\Phone files',
   conflictRule: 'ask',
+  backupFolder: 'C:\\Users\\Nima\\DeviceDeck\\Backups',
+  backupKeep: 3,
 };
 
 /** Folders shell.pickFolder hands back in turn (the mock has no real picker). */

@@ -6,7 +6,9 @@ import { usePrefs } from '../state/prefs';
 import { useSection, useUi } from '../state/ui';
 import { AppDocumentsScreen } from '../screens/appDocuments/AppDocumentsScreen';
 import { AppsScreen } from '../screens/apps/AppsScreen';
+import { BackupScreen } from '../screens/backup/BackupScreen';
 import { ComingNextScreen } from '../screens/ComingNextScreen';
+import { ContactsScreen } from '../screens/contacts/ContactsScreen';
 import { FilesScreen } from '../screens/files/FilesScreen';
 import { OverviewScreen } from '../screens/overview/OverviewScreen';
 import { PhotosScreen } from '../screens/photos/PhotosScreen';
@@ -42,6 +44,10 @@ function Screen() {
       return <AppDocumentsScreen device={device} />;
     case 'apps':
       return <AppsScreen device={device} />;
+    case 'backup':
+      return <BackupScreen device={device} />;
+    case 'contacts':
+      return <ContactsScreen device={device} />;
     default:
       return <ComingNextScreen section={section} />;
   }

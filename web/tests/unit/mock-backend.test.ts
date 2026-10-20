@@ -34,7 +34,7 @@ describe('mock backend', () => {
     for (const method of METHOD_NAMES) {
       expect(typeof backend.handlers[method], method).toBe('function');
     }
-    expect(METHOD_NAMES).toHaveLength(34);
+    expect(METHOD_NAMES).toHaveLength(54);
   });
 
   it('serves the sample devices', async () => {

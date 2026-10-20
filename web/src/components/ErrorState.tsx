@@ -19,6 +19,14 @@ const NEXT_STEPS = new Set([
   'protocol_error',
   'internal',
   'timeout',
+  // Backup (round 2)
+  'wrong_password',
+  'password_required',
+  'busy',
+  'backup_missing',
+  'backup_corrupt',
+  'no_space',
+  'refused',
 ]);
 
 /** One sentence on what happened, one on what to do, and the technical code for Details. */

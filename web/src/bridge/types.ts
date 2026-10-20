@@ -245,6 +245,10 @@ export interface Settings {
   convertHeic: boolean;
   fileCopyFolder: string;
   conflictRule: 'ask' | ConflictChoice;
+  /** Where backups go (round 2, backup). */
+  backupFolder: string;
+  /** Backups of each phone to keep; older ones are offered for deletion. */
+  backupKeep: number;
 }
 
 export interface HelloResult {
@@ -279,3 +283,6 @@ export const DEVICE_ERROR_CODES = [
   'internal',
 ] as const;
 export type DeviceErrorCode = (typeof DEVICE_ERROR_CODES)[number];
+
+// Backup, contacts and messages (round 2).
+export * from './backupTypes';

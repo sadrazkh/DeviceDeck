@@ -1,6 +1,19 @@
 import type {
   AppInfo,
+  BackupDeleteResult,
+  BackupDeviceInfo,
+  BackupDomain,
+  BackupEntry,
+  BackupInfo,
+  BackupItemRef,
+  BackupJob,
   BatteryInfo,
+  Contact,
+  ContactsFormat,
+  Conversation,
+  Message,
+  MessagesFormat,
+  PrunePlan,
   ConflictChoice,
   DeletedCount,
   DeviceDetails,
@@ -82,6 +95,36 @@ export interface BridgeMethods {
   'shell.revealInExplorer': { params: { path: string }; result: Empty };
   'settings.get': { params: Empty; result: Settings };
   'settings.set': { params: Partial<Settings>; result: Settings };
+  // Backup, contacts and messages (round 2)
+  'backup.list': { params: { deviceId?: string }; result: BackupInfo[] };
+  'backup.device': { params: DeviceParams; result: BackupDeviceInfo };
+  'backup.start': { params: DeviceParams & { full?: boolean }; result: BackupJob };
+  'backup.restore': {
+    params: DeviceParams & { backupId: string; confirmName: string; password?: string; restoreSettings?: boolean };
+    result: BackupJob;
+  };
+  'backup.setEncryption': { params: DeviceParams & { enable: boolean; password?: string; oldPassword?: string }; result: BackupJob };
+  'backup.jobs': { params: Empty; result: BackupJob[] };
+  'backup.cancel': { params: { jobId: string }; result: Empty };
+  'backup.prunePlan': { params: DeviceParams; result: PrunePlan };
+  'backup.deletePlan': { params: { backupIds: string[] }; result: PrunePlan };
+  'backup.delete': { params: { backupIds: string[] }; result: BackupDeleteResult };
+  'backup.unlock': { params: { backupId: string; password: string }; result: Empty };
+  'backup.lock': { params: { backupId: string }; result: Empty };
+  'backup.domains': { params: { backupId: string }; result: BackupDomain[] };
+  'backup.files': { params: { backupId: string; domain: string; path: string }; result: BackupEntry[] };
+  'backup.extract': { params: { backupId: string; items: BackupItemRef[]; destination: string }; result: BackupJob };
+  'contacts.list': { params: { backupId: string }; result: Contact[] };
+  'contacts.export': {
+    params: { backupId: string; format: ContactsFormat; destination: string; contactIds?: string[] };
+    result: BackupJob;
+  };
+  'messages.conversations': { params: { backupId: string }; result: Conversation[] };
+  'messages.list': { params: { backupId: string; conversationId: string; offset: number; limit: number }; result: Page<Message> };
+  'messages.export': {
+    params: { backupId: string; conversationIds: string[]; format: MessagesFormat; destination: string };
+    result: BackupJob;
+  };
 }
 
 export type MethodName = keyof BridgeMethods;
@@ -129,6 +172,26 @@ const methodTable = {
   'shell.revealInExplorer': true,
   'settings.get': true,
   'settings.set': true,
+  'backup.list': true,
+  'backup.device': true,
+  'backup.start': true,
+  'backup.restore': true,
+  'backup.setEncryption': true,
+  'backup.jobs': true,
+  'backup.cancel': true,
+  'backup.prunePlan': true,
+  'backup.deletePlan': true,
+  'backup.delete': true,
+  'backup.unlock': true,
+  'backup.lock': true,
+  'backup.domains': true,
+  'backup.files': true,
+  'backup.extract': true,
+  'contacts.list': true,
+  'contacts.export': true,
+  'messages.conversations': true,
+  'messages.list': true,
+  'messages.export': true,
 } as const satisfies Record<MethodName, true>;
 
 export const METHOD_NAMES = Object.keys(methodTable) as MethodName[];
@@ -141,6 +204,7 @@ export interface BridgeEvents {
   'drivers.changed': DriverStatus[];
   'transfer.updated': TransferJob;
   'photos.indexProgress': { deviceId: string; done: number; total: number };
+  'backup.updated': BackupJob;
 }
 
 export type EventName = keyof BridgeEvents;
@@ -152,6 +216,7 @@ const eventTable = {
   'drivers.changed': true,
   'transfer.updated': true,
   'photos.indexProgress': true,
+  'backup.updated': true,
 } as const satisfies Record<EventName, true>;
 
 export const EVENT_NAMES = Object.keys(eventTable) as EventName[];
