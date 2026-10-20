@@ -13,6 +13,12 @@ The Android provider: `AndroidDeviceProvider` (`IDeviceProvider`, id `"android"`
 - DeviceDeck runs **its own adb server on port 5137** (`adb -P 5137 start-server` with
   `ANDROID_ADB_SERVER_PORT=5137`). The default server on 5037 (Android Studio, scrcpy, another tool) is never
   touched, so the two can't kill each other over a version mismatch.
+- **No network listeners.** The server is started with `ADB_MDNS=0` (adb's switch in
+  `client/mdns_utils.cpp`), and `ADB_SERVER_SOCKET` / `ANDROID_ADB_SERVER_ADDRESS` are removed from its
+  environment, so it listens on `tcp:5137` = 127.0.0.1 only. Measured with platform-tools 37.0.1: default →
+  only `TCP 127.0.0.1:5137`; with mDNS on, adb also binds `UDP :::5353`, which is what makes Windows Firewall ask
+  about adb.exe. USB and `adb connect ip:port` work without mDNS; `AndroidProviderOptions.EnableMdns = true`
+  (probe: `--mdns`) turns discovery of Wireless-debugging phones back on. `androidprobe doctor` shows the state.
 - When the provider is disposed it stops the server **if it started it** (`host:kill`, what `adb kill-server`
   sends). A server that was already answering on 5137 when the provider started — another DeviceDeck window, a
   probe run — is left alone. `AndroidProviderOptions.StopServerOnDispose = false` (probe: `--keep-server`)

@@ -46,6 +46,9 @@ internal sealed partial class FakeAdbServer : IAsyncDisposable
     /// </summary>
     public volatile bool Running = true;
 
+    /// <summary>What host:mdns:check answers (adb's text when the server runs with ADB_MDNS=0).</summary>
+    public string MdnsCheck { get; set; } = "ERROR: mdns discovery disabled";
+
     public ConcurrentDictionary<string, byte[]> Files { get; } = new(StringComparer.Ordinal);
 
     public Func<string, FakeShellReply> Shell { get; set; } = command => FakeShellReply.Text("", 127, $"sh: {command}: not found");
@@ -205,6 +208,12 @@ internal sealed partial class FakeAdbServer : IAsyncDisposable
                 {
                     await OkayAsync(stream, ct);
                     await SyncAsync(stream, ct);
+                    return;
+                }
+                if (request == "host:mdns:check")
+                {
+                    await OkayAsync(stream, ct);
+                    await WriteHexStringAsync(stream, MdnsCheck, ct);
                     return;
                 }
                 if (request == "host:kill")

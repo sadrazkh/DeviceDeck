@@ -13,14 +13,57 @@ internal sealed partial class AdbServerHost
 {
     private readonly SemaphoreSlim _startGate = new(1, 1);
     private readonly Func<CancellationToken, Task>? _starter;
+    private readonly bool _enableMdns;
 
     /// <param name="starter">Replaces running `adb start-server` (tests start a fake server this way).</param>
-    public AdbServerHost(string? adbPath, int port, Func<CancellationToken, Task>? starter = null)
+    /// <param name="enableMdns">Let the server run adb's mDNS discovery (off: see <see cref="ServerEnvironment"/>).</param>
+    public AdbServerHost(string? adbPath, int port, Func<CancellationToken, Task>? starter = null, bool enableMdns = false)
     {
         AdbPath = adbPath;
         Port = port;
         EndPoint = new IPEndPoint(IPAddress.Loopback, port);
         _starter = starter;
+        _enableMdns = enableMdns;
+    }
+
+    /// <summary>
+    /// The environment adb.exe runs with; null removes an inherited variable. The server forked by
+    /// `adb start-server` inherits it.
+    /// <list type="bullet">
+    /// <item>ANDROID_ADB_SERVER_PORT: our private port.</item>
+    /// <item>ADB_MDNS=0 turns off mDNS discovery (packages/modules/adb client/mdns_utils.cpp: any other value or
+    /// unset means on). Its backend opens network sockets, which is what made Windows Firewall ask about adb.exe.
+    /// `adb connect ip:port` and `adb pair ip:port` work without it; only discovery and auto-connect of
+    /// Wireless debugging phones need it.</item>
+    /// <item>ADB_SERVER_SOCKET and ANDROID_ADB_SERVER_ADDRESS are dropped: the first would replace our port, the
+    /// second is read even with -P and puts a host into the listen spec. Without them the server listens on
+    /// "tcp:PORT", which adb binds to loopback only.</item>
+    /// </list>
+    /// </summary>
+    internal static IReadOnlyDictionary<string, string?> ServerEnvironment(int port, bool enableMdns) => new Dictionary<string, string?>
+    {
+        ["ANDROID_ADB_SERVER_PORT"] = port.ToString(System.Globalization.CultureInfo.InvariantCulture),
+        ["ADB_MDNS"] = enableMdns ? "1" : "0",
+        ["ADB_SERVER_SOCKET"] = null,
+        ["ANDROID_ADB_SERVER_ADDRESS"] = null,
+    };
+
+    /// <summary>
+    /// adb's answer to `adb mdns check` ("ERROR: mdns discovery disabled" when off), or null when no server
+    /// answers on our port.
+    /// </summary>
+    public async Task<string?> GetMdnsCheckAsync(CancellationToken ct)
+    {
+        try
+        {
+            await using var connection = await AdbConnection.ConnectAsync(EndPoint, ct).ConfigureAwait(false);
+            await connection.SendRequestAsync("host:mdns:check", ct).ConfigureAwait(false);
+            return (await connection.ReadLengthPrefixedStringAsync(ct).ConfigureAwait(false))?.Trim();
+        }
+        catch (Exception ex) when (ex is AdbServerUnavailableException or AdbConnectionLostException or AdbFailException)
+        {
+            return null;
+        }
     }
 
     /// <summary>Null when adb.exe wasn't found.</summary>
@@ -208,7 +251,17 @@ internal sealed partial class AdbServerHost
         {
             info.ArgumentList.Add(argument);
         }
-        info.Environment["ANDROID_ADB_SERVER_PORT"] = Port.ToString();
+        foreach (var (name, value) in ServerEnvironment(Port, _enableMdns))
+        {
+            if (value == null)
+            {
+                info.Environment.Remove(name);
+            }
+            else
+            {
+                info.Environment[name] = value;
+            }
+        }
 
         var output = new StringBuilder();
         using var process = new Process { StartInfo = info };

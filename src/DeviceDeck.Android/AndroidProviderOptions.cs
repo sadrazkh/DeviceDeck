@@ -19,6 +19,14 @@ public sealed class AndroidProviderOptions
     /// </summary>
     public bool StopServerOnDispose { get; init; } = true;
 
+    /// <summary>
+    /// Run adb's mDNS discovery in the server we start, so phones with Wireless debugging are found (and paired
+    /// ones auto-connected) on the local network. Off by default: its backend opens network sockets, which makes
+    /// Windows Firewall ask about adb.exe, and USB plus `adb connect ip:port` work without it. Applies to a server
+    /// this provider starts; one already running keeps the setting it was started with.
+    /// </summary>
+    public bool EnableMdns { get; init; }
+
     /// <summary>Tests: replaces running `adb start-server`.</summary>
     internal Func<CancellationToken, Task>? ServerStarter { get; init; }
 

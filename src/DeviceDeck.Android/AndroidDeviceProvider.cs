@@ -46,7 +46,8 @@ public sealed class AndroidDeviceProvider : IDeviceProvider
 
     public int ServerPort => _options.ServerPort;
 
-    internal AdbServerHost Host => _host ??= new AdbServerHost(AdbServerHost.Locate(_options.AdbPath), _options.ServerPort, _options.ServerStarter);
+    internal AdbServerHost Host => _host ??= new AdbServerHost(
+        AdbServerHost.Locate(_options.AdbPath), _options.ServerPort, _options.ServerStarter, _options.EnableMdns);
 
     /// <summary>
     /// Starts the adb server (if adb is present) and device tracking, and waits up to a few seconds for the first
