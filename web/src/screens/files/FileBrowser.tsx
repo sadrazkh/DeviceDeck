@@ -37,6 +37,7 @@ import { describeError, ErrorBanner } from '../../components/ErrorState';
 import { ContextMenu, type MenuEntry } from '../../components/Menu';
 import { Banner, EmptyState, Skeleton, TextField, Tooltip } from '../../components/ui';
 import { useI18n, type MessageKey } from '../../i18n';
+import { dragOutProps, fileEntry } from '../../shell/dragOut';
 import { usePrefs } from '../../state/prefs';
 import { clickSelect, emptySelection, selectAll, type ClickModifiers, type Selection } from '../../state/selection';
 import { KIND_LABEL, extensionOf, isAndroidBlocked, joinPath, kindOf, parentPath, sortEntries, type FileKind, type SortKey } from './fileKinds';
@@ -94,6 +95,7 @@ function FileTable({
   readOnly: boolean;
 }) {
   const { t, bytes, date, lang } = useI18n();
+  const client = useClient();
   const density = usePrefs((s) => s.density);
   const rowHeight = density === 'compact' ? 32 : 40;
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'name', desc: false });
@@ -226,6 +228,11 @@ function FileTable({
                 onContextMenu={() => {
                   if (!selection.ids.has(entry.path)) click(item.index, {});
                 }}
+                {...dragOutProps(client, () => {
+                  // To File Explorer (or the PC pane): the selection when this row is in it, else this row.
+                  const chosen = (selection.ids.has(entry.path) ? sorted.filter((e) => selection.ids.has(e.path)) : [entry]).filter((e) => !blocked(e));
+                  return chosen.length > 0 ? { source: 'files', deviceId: device.id, root, items: chosen.map(fileEntry) } : null;
+                })}
               >
                 <span className={styles.nameCell} role="gridcell">
                   <span className={styles.fileIcon} data-kind={kind} aria-hidden>

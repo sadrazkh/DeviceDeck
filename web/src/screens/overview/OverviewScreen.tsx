@@ -31,6 +31,7 @@ import { useI18n, type MessageKey } from '../../i18n';
 import { jobFraction } from '../../state/transfers';
 import { useUi } from '../../state/ui';
 import { progressLine } from '../../shell/TransferDrawer';
+import { DeviceName } from '../../shell/DeviceName';
 import { ScreenLayout } from '../ScreenLayout';
 import styles from './Overview.module.css';
 
@@ -343,7 +344,7 @@ export function OverviewScreen({ device }: { device: DeviceSummary }) {
         <Card className={styles.device}>
           <DeviceArt platform={device.platform} colorHex={device.colorHex} label={modelName(device)} />
           <div className={styles.deviceName}>
-            <span className="t-title">{device.name}</span>
+            <DeviceName device={device} />
             <span className="t-secondary">{modelName(device)}</span>
           </div>
           <div className={styles.badges}>

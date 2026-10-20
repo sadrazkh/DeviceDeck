@@ -28,6 +28,7 @@ import { useDevicePlace, useUi } from '../../state/ui';
 import { ScreenLayout } from '../ScreenLayout';
 import { ExportDialog } from './ExportDialog';
 import { groupByMonth } from './grouping';
+import { usePhotoDragOut } from '../../shell/dragOut';
 import { Lightbox } from './Lightbox';
 import { PhotoGrid, type PhotoGridHandle } from './PhotoGrid';
 import styles from './Photos.module.css';
@@ -174,6 +175,7 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
 
   const selectedAssets = useMemo(() => [...selection.ids].map((id) => byId.get(id)).filter((a): a is PhotoAsset => !!a), [selection, byId]);
   const selectedSize = selectedAssets.reduce((sum, a) => sum + a.size, 0);
+  const dragOutTile = usePhotoDragOut(device, assets, selection, selectedAssets);
 
   const onClickTile = useCallback(
     (index: number, mods: ClickModifiers) => {
@@ -348,6 +350,7 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
               onDelete={() => selection.ids.size > 0 && device.capabilities.includes('photosDelete') && setConfirmDelete(true)}
               onExport={() => startExport(selectedAssets)}
               onVisibleGroup={setVisibleGroup}
+              onDragOut={dragOutTile}
             />
           )}
           {loadingMore ? (
@@ -394,7 +397,7 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
           index={viewer}
           onIndex={setViewer}
           onClose={() => setViewer(null)}
-          photoUrl={(a) => client.images.photo(device.id, a.id)}
+          photoUrl={(a) => (a.kind === 'video' ? client.images.video(device.id, a.id, a.size) : client.images.photo(device.id, a.id))}
           thumbUrl={(a) => client.images.thumb(device.id, a.id, 256)}
           onExport={(a) => startExport([a])}
           isWebView={client.kind === 'webview'}

@@ -170,6 +170,11 @@ function DeviceStateCard({ device }: { device: DeviceSummary }) {
       <div className={styles.stateText}>
         <h2 className="t-title">{title}</h2>
         <p className="t-secondary">{body}</p>
+        {device.stateDetail ? (
+          <p className={styles.detail} data-testid="state-detail">
+            {device.stateDetail}
+          </p>
+        ) : null}
         {prompt ? (
           <div className={styles.prompt} aria-hidden>
             <div className={styles.promptTitle}>{prompt}</div>

@@ -9,7 +9,7 @@ import {
   type JsonRpcErrorObject,
 } from '../jsonrpc';
 import type { BridgeEvents, EventName, MethodName, MethodParams, MethodResult } from '../methods';
-import type { AppInfo, DeviceCapability, DeviceSummary, DriverStatus, FolderPattern, Settings } from '../types';
+import type { AppInfo, DeviceCapability, DeviceSummary, DriverStatus, FolderPattern, NotificationShowParams, Settings, UpdateStatus } from '../types';
 import { MockFileSystem, joinPath, normalise } from './files';
 import { appIconUrl, photoUrl, phoneScreenshotUrl, thumbnailUrl } from './images';
 import {
@@ -31,6 +31,7 @@ import {
   seedTransfers,
   storage,
 } from './mock-data';
+import { MockPc, PcError } from './pc';
 import { assetsInAlbum, generateLibrary, toContractAsset, type MockAsset, type MockLibrary } from './photos';
 import { hashString } from './random';
 import { TransferEngine, type JobItem } from './transfers';
@@ -99,6 +100,11 @@ export class MockBackend {
   private readonly fileSizes = new Map<string, number>();
   private readonly indexing: boolean;
   private readonly now: () => number;
+  // Desktop (round 2)
+  private readonly pc = new MockPc();
+  /** What notifications.show was asked to show, for tests. */
+  readonly notifications: NotificationShowParams[] = [];
+  private update: UpdateStatus = { state: 'idle', currentVersion: '0.1.0-mock', newVersion: null, percent: null, error: null, lastChecked: null };
 
   constructor(
     private readonly emit: <E extends EventName>(event: E, params: BridgeEvents[E]) => void,
@@ -475,7 +481,57 @@ export class MockBackend {
       this.settings = { ...this.settings, ...pickSettings(patch) };
       return { ...this.settings };
     },
+    // Desktop (round 2)
+    'device.rename': ({ deviceId, name }) => {
+      const device = this.requireReady(deviceId, 'rename');
+      const trimmed = typeof name === 'string' ? name.trim() : '';
+      if (!trimmed || trimmed.length > 64) throw badParams('Invalid params: The name must be 1 to 64 characters.');
+      const renamed = { ...device, name: trimmed };
+      this.setDevice(renamed);
+      return { ...renamed, capabilities: [...renamed.capabilities] };
+    },
+    'transfers.retry': ({ jobId }) => {
+      const outcome = this.engine.retry(jobId);
+      if (outcome === 'missing') throw badParams('There is no transfer with that id.');
+      if (outcome === 'nothing') throw fault('internal', 'This transfer has nothing to try again.');
+      return {};
+    },
+    'transfers.clear': ({ jobIds }) => ({ cleared: this.engine.clear(jobIds) }),
+    'notifications.show': (params) => {
+      if (!params || typeof params.title !== 'string' || !params.title.trim()) throw badParams('Invalid params: title is required.');
+      this.notifications.push({ ...params });
+      return {};
+    },
+    'pc.roots': () => this.pc.roots(),
+    'pc.list': ({ path, showHidden }) => this.pcCall(() => this.pc.list(path, showHidden ?? false)),
+    'pc.mkdir': ({ path }) => this.pcCall(() => this.pc.mkdir(path)),
+    'pc.rename': ({ path, name }) => this.pcCall(() => this.pc.rename(path, name)),
+    'shell.openFile': ({ path }) => this.pcCall(() => {
+      this.pc.requireFile(path);
+      return {};
+    }),
+    // A plain browser can't start a native drag; the page falls back to its own drop handling.
+    'shell.dragOut': () => ({ effect: 'none', droppedInside: null }),
+    'app.updateStatus': () => ({ ...this.update }),
+    'app.checkForUpdates': () => {
+      this.update = { ...this.update, state: 'upToDate', error: null, percent: null, lastChecked: new Date(this.now()).toISOString() };
+      this.emit('app.updateChanged', { ...this.update });
+      return { ...this.update };
+    },
+    'app.applyUpdate': () => {
+      throw fault('internal', 'No update has been downloaded yet.');
+    },
   };
+
+  private pcCall<T>(run: () => T): T {
+    if (typeof run !== 'function') throw badParams('Invalid params.');
+    try {
+      return run();
+    } catch (error) {
+      if (error instanceof PcError) throw error.code === 'invalid_params' ? badParams(`Invalid params: ${error.message}`) : fault(error.code, error.message);
+      throw error;
+    }
+  }
 
   // ---------- helpers ----------
 
@@ -645,6 +701,9 @@ const SETTINGS_KEYS: (keyof Settings)[] = [
   'convertHeic',
   'fileCopyFolder',
   'conflictRule',
+  'closeToTray',
+  'notifyOnConnect',
+  'autoUpdate',
 ];
 
 function pickSettings(patch: Partial<Settings>): Partial<Settings> {

@@ -28,7 +28,8 @@ export interface BridgeClientOptions {
   timeoutMs?: number;
 }
 
-const NO_TIMEOUT: ReadonlySet<string> = new Set(['shell.pickFolder']);
+// The folder picker waits for the user; a drag out lasts as long as the pointer is down; an update check may download.
+const NO_TIMEOUT: ReadonlySet<string> = new Set(['shell.pickFolder', 'shell.dragOut', 'app.checkForUpdates']);
 
 export class BridgeClient {
   private nextId = 1;

@@ -146,7 +146,7 @@ export function useActions() {
         }
       },
 
-      async transfer(action: 'pause' | 'resume' | 'cancel', jobId: string) {
+      async transfer(action: 'pause' | 'resume' | 'cancel' | 'retry', jobId: string) {
         try {
           await client.call(`transfers.${action}`, { jobId });
         } catch (error) {

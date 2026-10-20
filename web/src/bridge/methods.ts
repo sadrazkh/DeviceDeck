@@ -3,6 +3,13 @@ import type {
   BatteryInfo,
   ConflictChoice,
   DeletedCount,
+  DragOutParams,
+  DragOutResult,
+  NotificationActivation,
+  NotificationShowParams,
+  PcEntry,
+  PcRoot,
+  UpdateStatus,
   DeviceDetails,
   DeviceSummary,
   DriverStatus,
@@ -82,6 +89,20 @@ export interface BridgeMethods {
   'shell.revealInExplorer': { params: { path: string }; result: Empty };
   'settings.get': { params: Empty; result: Settings };
   'settings.set': { params: Partial<Settings>; result: Settings };
+  // Desktop (round 2)
+  'device.rename': { params: DeviceParams & { name: string }; result: DeviceSummary };
+  'transfers.retry': { params: { jobId: string }; result: Empty };
+  'transfers.clear': { params: { jobIds?: string[] }; result: { cleared: number } };
+  'notifications.show': { params: NotificationShowParams; result: Empty };
+  'pc.roots': { params: Empty; result: PcRoot[] };
+  'pc.list': { params: { path: string; showHidden?: boolean }; result: PcEntry[] };
+  'pc.mkdir': { params: { path: string }; result: PcEntry };
+  'pc.rename': { params: { path: string; name: string }; result: PcEntry };
+  'shell.openFile': { params: { path: string }; result: Empty };
+  'shell.dragOut': { params: DragOutParams; result: DragOutResult };
+  'app.updateStatus': { params: Empty; result: UpdateStatus };
+  'app.checkForUpdates': { params: Empty; result: UpdateStatus };
+  'app.applyUpdate': { params: Empty; result: Empty };
 }
 
 export type MethodName = keyof BridgeMethods;
@@ -129,6 +150,20 @@ const methodTable = {
   'shell.revealInExplorer': true,
   'settings.get': true,
   'settings.set': true,
+  // Desktop (round 2)
+  'device.rename': true,
+  'transfers.retry': true,
+  'transfers.clear': true,
+  'notifications.show': true,
+  'pc.roots': true,
+  'pc.list': true,
+  'pc.mkdir': true,
+  'pc.rename': true,
+  'shell.openFile': true,
+  'shell.dragOut': true,
+  'app.updateStatus': true,
+  'app.checkForUpdates': true,
+  'app.applyUpdate': true,
 } as const satisfies Record<MethodName, true>;
 
 export const METHOD_NAMES = Object.keys(methodTable) as MethodName[];
@@ -141,6 +176,9 @@ export interface BridgeEvents {
   'drivers.changed': DriverStatus[];
   'transfer.updated': TransferJob;
   'photos.indexProgress': { deviceId: string; done: number; total: number };
+  // Desktop (round 2)
+  'notification.activated': NotificationActivation;
+  'app.updateChanged': UpdateStatus;
 }
 
 export type EventName = keyof BridgeEvents;
@@ -152,6 +190,9 @@ const eventTable = {
   'drivers.changed': true,
   'transfer.updated': true,
   'photos.indexProgress': true,
+  // Desktop (round 2)
+  'notification.activated': true,
+  'app.updateChanged': true,
 } as const satisfies Record<EventName, true>;
 
 export const EVENT_NAMES = Object.keys(eventTable) as EventName[];

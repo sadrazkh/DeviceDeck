@@ -34,7 +34,8 @@ describe('mock backend', () => {
     for (const method of METHOD_NAMES) {
       expect(typeof backend.handlers[method], method).toBe('function');
     }
-    expect(METHOD_NAMES).toHaveLength(34);
+    // Round 1 had 34; each round-2 feature adds a block of its own (checked in that feature's tests).
+    expect(METHOD_NAMES.length).toBeGreaterThanOrEqual(34);
   });
 
   it('serves the sample devices', async () => {
@@ -298,7 +299,7 @@ describe('mock backend', () => {
   it('answers unknown methods with -32601', async () => {
     const { client } = setup();
     // @ts-expect-error not a contract method
-    await expect(client.call('device.rename', { deviceId: IPHONE_ID })).rejects.toMatchObject({ rpcCode: -32601, code: 'method_not_found' });
+    await expect(client.call('device.teleport', { deviceId: IPHONE_ID })).rejects.toMatchObject({ rpcCode: -32601, code: 'method_not_found' });
   });
 });
 

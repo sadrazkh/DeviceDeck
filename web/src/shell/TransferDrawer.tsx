@@ -2,7 +2,9 @@ import {
   AppsRegular,
   ArrowClockwiseRegular,
   ArrowDownloadRegular,
+  ArrowExportRegular,
   ArrowUploadRegular,
+  BroomRegular,
   CheckmarkRegular,
   DismissRegular,
   ErrorCircleRegular,
@@ -12,11 +14,13 @@ import {
   PlayRegular,
   QuestionCircleRegular,
 } from '@fluentui/react-icons';
+import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useRef } from 'react';
 import type { DeviceSummary, TransferJob, TransferKind } from '../bridge/types';
 import { useActions } from '../app/actions';
-import { useDevices, useTransfers } from '../app/queries';
+import { useClient } from '../app/bridgeContext';
+import { keys, useDevices, useTransfers } from '../app/queries';
 import { Button } from '../components/Button';
 import { EmptyState, LinearProgress, Tooltip } from '../components/ui';
 import { useI18n, type I18n } from '../i18n';
@@ -32,6 +36,7 @@ const KIND_ICON: Record<TransferKind, typeof ArrowDownloadRegular> = {
   copyToDevice: ArrowUploadRegular,
   appInstall: AppsRegular,
   appExport: ArrowDownloadRegular,
+  dragOut: ArrowExportRegular,
 };
 
 const GROUP_LABEL: Record<TransferGroup, 'transfers.group.active' | 'transfers.group.queued' | 'transfers.group.done' | 'transfers.group.failed'> = {
@@ -103,8 +108,8 @@ function JobRow({ job, device, showDevice }: { job: TransferJob; device: DeviceS
             {t('transfers.decide')}
           </Button>
         ) : null}
-        {job.state === 'failed' ? (
-          <Button size="small" icon={<ArrowClockwiseRegular />} onClick={() => void actions.transfer('resume', job.id)}>
+        {job.state === 'failed' || job.state === 'cancelled' ? (
+          <Button size="small" icon={<ArrowClockwiseRegular />} onClick={() => void actions.transfer('retry', job.id)} data-testid="transfer-retry">
             {t('transfers.retry')}
           </Button>
         ) : null}
@@ -151,6 +156,19 @@ export function TransferDrawer() {
   const groups = groupTransfers(jobs);
   const multiDevice = new Set(jobs.map((j) => j.deviceId)).size > 1;
   const panel = useRef<HTMLElement>(null);
+  const client = useClient();
+  const queryClient = useQueryClient();
+  const actions = useActions();
+  const finished = jobs.filter((j) => j.state === 'done' || j.state === 'failed' || j.state === 'cancelled');
+  const clearFinished = async () => {
+    try {
+      await client.call('transfers.clear', { jobIds: finished.map((j) => j.id) });
+      const gone = new Set(finished.map((j) => j.id));
+      queryClient.setQueryData<TransferJob[]>(keys.transfers, (list) => list?.filter((j) => !gone.has(j.id)));
+    } catch (error) {
+      actions.fail(error);
+    }
+  };
 
   useEffect(() => {
     if (!open) return;
@@ -185,6 +203,11 @@ export function TransferDrawer() {
             <div className={styles.pane}>
               <div className={styles.header}>
                 <h2 className={styles.title}>{t('transfers.title')}</h2>
+                {finished.length > 0 ? (
+                  <Tooltip content={t('transfers.clearFinished')}>
+                    <Button variant="subtle" icon={<BroomRegular />} aria-label={t('transfers.clearFinished')} onClick={() => void clearFinished()} data-testid="transfers-clear" />
+                  </Tooltip>
+                ) : null}
                 <Button variant="subtle" icon={<DismissRegular />} aria-label={t('common.close')} onClick={() => setOpen(false)} />
               </div>
               <div className={styles.list}>

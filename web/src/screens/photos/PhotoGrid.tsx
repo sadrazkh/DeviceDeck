@@ -23,9 +23,11 @@ interface TileProps {
   onClick(index: number, mods: ClickModifiers): void;
   onToggle(index: number): void;
   onOpen(index: number): void;
+  /** Dragging the tile out of the window (to File Explorer); absent outside WebView2. */
+  onDragOut?(index: number): void;
 }
 
-const Tile = memo(function Tile({ asset, index, src, selected, selecting, active, onClick, onToggle, onOpen }: TileProps) {
+const Tile = memo(function Tile({ asset, index, src, selected, selecting, active, onClick, onToggle, onOpen, onDragOut }: TileProps) {
   const { t, date, duration } = useI18n();
   const [loaded, setLoaded] = useState(false);
   return (
@@ -41,6 +43,15 @@ const Tile = memo(function Tile({ asset, index, src, selected, selecting, active
       data-cloud={asset.inCloudOnly || undefined}
       onClick={(e) => onClick(index, { ctrl: e.ctrlKey || e.metaKey, shift: e.shiftKey })}
       onDoubleClick={() => onOpen(index)}
+      draggable={onDragOut ? true : undefined}
+      onDragStart={
+        onDragOut
+          ? (e) => {
+              e.preventDefault();
+              onDragOut(index);
+            }
+          : undefined
+      }
     >
       <img src={src} alt="" loading="lazy" decoding="async" draggable={false} data-loaded={loaded || undefined} onLoad={() => setLoaded(true)} />
       <span
@@ -89,6 +100,7 @@ export function PhotoGrid({
   onDelete,
   onExport,
   onVisibleGroup,
+  onDragOut,
   handleRef,
 }: {
   assets: readonly PhotoAsset[];
@@ -105,6 +117,7 @@ export function PhotoGrid({
   onDelete(): void;
   onExport(): void;
   onVisibleGroup(group: number): void;
+  onDragOut?(index: number): void;
   handleRef?: Ref<PhotoGridHandle>;
 }) {
   const { t, month, n } = useI18n();
@@ -297,6 +310,7 @@ export function PhotoGrid({
                     onClick={clickTile}
                     onToggle={onToggleTile}
                     onOpen={onOpen}
+                    onDragOut={onDragOut}
                   />
                 );
               })}

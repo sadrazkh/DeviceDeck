@@ -49,6 +49,7 @@ const SPEED: Record<TransferKind, number> = {
   copyToDevice: 41 * MB,
   appInstall: 24 * MB,
   appExport: 45 * MB,
+  dragOut: 36 * MB,
 };
 
 export class TransferEngine {
@@ -322,6 +323,39 @@ export class TransferEngine {
       running.set(j.job.deviceId, count + 1);
       this.update(j, { state: j.job.conflict ? 'needsDecision' : 'running' });
     }
+  }
+
+  // ---------- Desktop (round 2): transfers.retry and transfers.clear ----------
+
+  /** A failed or cancelled job (or one done with failures) runs again from the item it stopped at. */
+  retry(jobId: string): 'ok' | 'missing' | 'nothing' {
+    const j = this.jobs.get(jobId);
+    if (!j) return 'missing';
+    const s = j.job.state;
+    if (!(s === 'failed' || s === 'cancelled' || (s === 'done' && j.job.failedItems > 0))) return 'nothing';
+    j.index = j.job.doneItems;
+    j.itemDoneBytes = 0;
+    j.failWith = undefined;
+    this.update(j, {
+      state: this.offline.has(j.job.deviceId) ? 'waitingForDevice' : 'queued',
+      failedItems: 0,
+      error: null,
+      finishedAt: null,
+    });
+    this.schedule();
+    return 'ok';
+  }
+
+  /** Removes finished jobs (all, or those in jobIds); returns how many went. */
+  clear(jobIds?: string[]): number {
+    let cleared = 0;
+    for (const [id, j] of this.jobs) {
+      if (isFinished(j.job.state) && (!jobIds || jobIds.includes(id))) {
+        this.jobs.delete(id);
+        cleared++;
+      }
+    }
+    return cleared;
   }
 
   private update(j: Internal, patch: Partial<TransferJob>): void {

@@ -13,6 +13,7 @@ import { PhotosScreen } from '../screens/photos/PhotosScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
 import { WelcomeScreen } from '../screens/welcome/WelcomeScreen';
 import { CommandPalette } from './CommandPalette';
+import { useDesktopEvents } from './desktop';
 import { ConflictDialog } from './ConflictDialog';
 import { NAV, navEnabled } from './nav';
 import { NavRail, TopTabs } from './Navigation';
@@ -48,6 +49,7 @@ function Screen() {
 }
 
 export function AppShell() {
+  useDesktopEvents();
   const nav = usePrefs((s) => s.navLayout);
   const dir = usePrefs((s) => (s.language === 'fa' ? 'rtl' : 'ltr'));
   const device = useSelectedDevice();
