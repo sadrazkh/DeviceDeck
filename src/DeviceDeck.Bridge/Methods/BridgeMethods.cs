@@ -3,6 +3,8 @@ using System.Text.Json.Nodes;
 using DeviceDeck.Bridge.Images;
 using DeviceDeck.Bridge.JsonRpc;
 using DeviceDeck.Core.Abstractions;
+using DeviceDeck.Core.Battery;
+using DeviceDeck.Core.Cleanup;
 using DeviceDeck.Core.Fake;
 using DeviceDeck.Core.Hub;
 using DeviceDeck.Core.Photos;
@@ -26,6 +28,10 @@ public sealed class BridgeServices
 
     /// <summary>Photos backup (photos.newCount, photos.backup*); without it those methods answer not_supported.</summary>
     public PhotoBackupService? PhotoBackup { get; init; }
+
+    // Clean-up and battery history (round 2): cleanup.* and battery.* are registered only when set.
+    public CleanupService? Cleanup { get; init; }
+    public BatteryRecorder? Battery { get; init; }
 }
 
 /// <summary>Registers every method of docs/bridge-contract.md on a dispatcher.</summary>
@@ -212,6 +218,10 @@ public static class BridgeMethods
 
         // Photos backup and adding photos to an iPhone app (round 2).
         PhotosBackupMethods.Register(rpc, s);
+
+        // Clean-up and battery history (round 2).
+        CleanupMethods.Register(rpc, s);
+        BatteryMethods.Register(rpc, s);
 
         if (s.DevFake is { } fake)
         {

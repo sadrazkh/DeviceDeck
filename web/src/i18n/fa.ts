@@ -1,6 +1,8 @@
 // Persian strings. Nouns stay singular after numbers, so most plurals collapse to "{count} …".
 // ‌ is the zero-width non-joiner (نیم‌فاصله).
 
+import { batteryFa } from '../screens/battery/strings';
+import { cleanupFa } from '../screens/cleanup/strings';
 import type { MessageKey } from './en';
 
 export const fa: Record<MessageKey, string> = {
@@ -554,4 +556,6 @@ export const fa: Record<MessageKey, string> = {
   'settings.photoBackup.folder': 'پشتیبان گوشی‌ها در',
   'settings.photoBackup.format': 'قالب',
   'settings.photoBackup.note': 'هر گوشی این‌جا پوشه‌ای به نام خودش می‌گیرد. این‌ها پیش‌فرض‌اند؛ پنل پشتیبان هر گوشی می‌تواند آن‌ها را برای همان گوشی عوض کند.',
+  ...cleanupFa,
+  ...batteryFa,
 };

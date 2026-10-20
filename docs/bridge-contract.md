@@ -262,3 +262,81 @@ type PhotoBackupStatus = {
 `TransferJob.kind` gains `"photosBackup"` and `"photosToApp"`. `Settings` gains
 `photoBackupFolder: string` (default `Pictures\DeviceDeck Backup`), `photoBackupPattern: string`
 (default `"yyyy/MM"`) and `photoBackupConvertHeic: boolean` (default `false`).
+
+## Clean-up (round 2)
+
+Storage analysis per phone and the clean-up actions. The analysis only reads. Nothing is deleted unless the page
+sends the exact items the user confirmed, each with the size the page showed, and their total as `expectedBytes`.
+The host deletes an item only when the last analysis listed it at that size and it is still the same on the phone;
+anything that changed is skipped and counted. With `copyFirstTo` (a PC folder) the items are copied first through the
+transfer queue (`keepBoth`, originals unconverted), and nothing is deleted unless every copy finished.
+Deletes wait while an analysis runs. A report is dropped when its phone disconnects.
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `cleanup.status` | `{ deviceId }` | `CleanupStatus` |
+| `cleanup.analyze` | `{ deviceId }` | `CleanupStatus` (starts one, or returns the one running) |
+| `cleanup.cancel` | `{ deviceId }` | `{}` |
+| `cleanup.deleteMedia` | `{ deviceId, items: { id, size }[], expectedBytes, copyFirstTo? }` | `CleanupResult` — Android only (MediaStore); an iPhone answers `not_supported`: copy to the PC, then delete in the Photos app |
+| `cleanup.deleteFiles` | `{ deviceId, items: { root, path, size }[], expectedBytes, copyFirstTo? }` | `CleanupResult` |
+| `cleanup.uninstallApps` | `{ deviceId, items: { id, size }[], expectedBytes, copyFirstTo? }` | `CleanupResult` — `size` is appBytes + dataBytes; copy first saves the APK (Android), not the app's data |
+| `cleanup.trimCaches` | `{ deviceId }` | `CleanupResult` — Android `pm trim-caches`: every app's cache; `freedBytes` is free space after minus before |
+
+| Event | Params |
+| --- | --- |
+| `cleanup.updated` | `CleanupStatus` (progress at most 4/s, every state change) |
+
+```ts
+type CleanupSection = "storage" | "apps" | "media" | "caches" | "appFiles" | "duplicates";
+type CleanupStatus = {
+  deviceId: string; state: "idle" | "running" | "done" | "failed" | "cancelled";
+  progress: { section: CleanupSection; done: number; total: number } | null;   // bytes for duplicates, items otherwise
+  report: CleanupReport | null;        // partial while running
+  error: { code: string; message: string } | null; finishedAt: string | null;
+};
+type CleanupReport = {
+  deviceId: string; platform: "ios" | "android"; startedAt: string;
+  totalBytes: number | null; freeBytes: number | null;
+  apps: { largest: AppInfo[]; count: number; totalBytes: number; canUninstall: boolean; canCopyFirst: boolean } | null;
+  media: { largestVideos: PhotoAsset[]; largestPhotos: PhotoAsset[]; videoCount: number; videoBytes: number;
+           photoCount: number; photoBytes: number; cloudOnlyCount: number; canDelete: boolean } | null;
+  caches: { totalBytes: number | null; apps: { appId: string; name: string | null; bytes: number }[];
+            trimmedBytes: number | null; trimmedAt: string | null } | null;          // Android: as the phone last counted (about daily)
+  appFiles: { files: { root: string; path: string; name: string; size: number; modified: string | null;
+                       appId: string | null; folder: string | null }[];
+              totalBytes: number; minBytes: number; appNames: Record<string, string>; canDelete: boolean } | null;
+  duplicates: { groups: { hash: string; size: number; assets: PhotoAsset[]; reclaimableBytes: number }[];  // oldest asset first
+                reclaimableBytes: number; hashedCount: number; hashedBytes: number; canDelete: boolean } | null;
+  notes: { section: CleanupSection; code: string; message: string }[];
+};
+type CleanupResult = { deleted: number; skipped: number; freedBytes: number; copyJobIds: string[]; copyIncomplete: boolean };
+```
+
+Duplicates are exact: same size and same whole-file hash (md5 on an Android phone, SHA-256 of the file read over AFC
+on an iPhone, after a first pass over the opening 64 KiB). iCloud-only originals are left out.
+
+## Battery history (round 2)
+
+A snapshot is stored in `battery.db` each time a phone becomes ready (at most once per 30 minutes per phone).
+`healthEstimated` is true for an iPhone: full-charge over design capacity, which differs from iOS Settings.
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `battery.devices` | — | `BatteryDevice[]` (every phone with history, connected or not, most recent first) |
+| `battery.history` | `{ deviceId }` | `BatterySnapshot[]` (oldest first) |
+| `battery.record` | `{ deviceId }` | `BatterySnapshot` (now, whatever the interval) |
+| `battery.export` | `{ deviceId, destination, language?: "en" \| "fa" }` | `{ path }` — a self-contained HTML report (prints to PDF) in the folder |
+
+| Event | Params |
+| --- | --- |
+| `battery.recorded` | `BatterySnapshot` |
+
+```ts
+type BatterySnapshot = {
+  id: number; deviceId: string; deviceName: string; platform: "ios" | "android"; model: string; osVersion: string;
+  at: string; levelPercent: number | null; isCharging: boolean; healthPercent: number | null; healthEstimated: boolean;
+  cycleCount: number | null; designCapacityMah: number | null; fullChargeCapacityMah: number | null; temperatureCelsius: number | null;
+};
+type BatteryDevice = { deviceId: string; name: string; platform: "ios" | "android"; model: string; count: number;
+                       firstAt: string; lastAt: string; latest: BatterySnapshot };
+```

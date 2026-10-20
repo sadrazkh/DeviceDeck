@@ -4,6 +4,8 @@ using DeviceDeck.Bridge;
 using DeviceDeck.Bridge.Images;
 using DeviceDeck.Bridge.Methods;
 using DeviceDeck.Core;
+using DeviceDeck.Core.Battery;
+using DeviceDeck.Core.Cleanup;
 using DeviceDeck.Core.Fake;
 using DeviceDeck.Core.Hub;
 using DeviceDeck.Core.Photos;
@@ -51,6 +53,10 @@ internal sealed class HostServices : IAsyncDisposable
     /// <summary>Photos backup; <c>CountNewAsync(deviceId, ct)</c> gives the "N new photos" count for a notification.</summary>
     public PhotoBackupService PhotoBackup { get; }
 
+    // Clean-up and battery history (round 2).
+    public CleanupService Cleanup { get; private init; } = null!;
+    public BatteryRecorder Battery { get; private init; } = null!;
+
     public static string Version { get; } =
         typeof(HostServices).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.1.0";
 
@@ -72,7 +78,12 @@ internal sealed class HostServices : IAsyncDisposable
         var transfers = new TransferQueue(hub, store, [.. TransferHandlers.All(transcoder), photoBackup.Handler], new WindowsKeepAwake());
         transfers.Start();
         photoBackup.Attach(transfers);
-        return new HostServices(paths, devMode, fake, hub, store, transfers, settings, transcoder, photoBackup);
+
+        // Before the hub starts, so the first phones to arrive get their battery snapshot.
+        var battery = new BatteryRecorder(hub, new BatteryHistoryStore(BatteryHistoryStore.PathIn(paths)));
+        battery.RecordFailed += (_, e) => ShellLog.Error($"Battery snapshot for {e.DeviceId} failed.", e.Error);
+        var cleanup = new CleanupService(hub, transfers, settings);
+        return new HostServices(paths, devMode, fake, hub, store, transfers, settings, transcoder, photoBackup) { Cleanup = cleanup, Battery = battery };
     }
 
     public BridgeServices BridgeServices(IShellServices shell) => new()
@@ -85,6 +96,8 @@ internal sealed class HostServices : IAsyncDisposable
         Version = Version,
         DevFake = Fake,
         PhotoBackup = PhotoBackup,
+        Cleanup = Cleanup,
+        Battery = Battery,
     };
 
     /// <summary>Starts the providers once the window is up, so the first paint isn't waiting on USB.</summary>
@@ -119,6 +132,8 @@ internal sealed class HostServices : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         var clock = Stopwatch.StartNew();
+        await StepAsync("clean-up", async () => await Cleanup.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);
+        await StepAsync("battery history", async () => await Battery.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);
         await StepAsync("transfer queue", async () => await Transfers.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);
         await StepAsync("transfer store", () =>
         {
