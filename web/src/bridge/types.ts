@@ -254,6 +254,10 @@ export interface Settings {
   /** "" or yyyy, MM and dd joined by / - _ . or a space ("yyyy/MM"). */
   photoBackupPattern: string;
   photoBackupConvertHeic: boolean;
+  /** Where backups go (round 2, backup). */
+  backupFolder: string;
+  /** Backups of each phone to keep; older ones are offered for deletion. */
+  backupKeep: number;
 }
 
 export interface HelloResult {
@@ -343,3 +347,6 @@ export interface PhotoBackupStatus {
   activeJobId: string | null;
   heicConversion: HeicConversion;
 }
+
+// Backup, contacts and messages (round 2).
+export * from './backupTypes';

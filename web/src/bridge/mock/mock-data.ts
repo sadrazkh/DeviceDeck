@@ -325,6 +325,8 @@ export const defaultSettings: Settings = {
   photoBackupFolder: 'D:\\Phone backups',
   photoBackupPattern: 'yyyy/MM',
   photoBackupConvertHeic: false,
+  backupFolder: 'C:\\Users\\Nima\\DeviceDeck\\Backups',
+  backupKeep: 3,
 };
 
 /** Folders shell.pickFolder hands back in turn (the mock has no real picker). */

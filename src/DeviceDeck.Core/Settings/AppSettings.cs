@@ -39,6 +39,18 @@ public sealed record AppSettings
     public static string DefaultBackupFolder() =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "DeviceDeck Backup");
 
+    // Backup (round 2, backup session)
+    public const int MaxBackupKeep = 20;
+
+    /// <summary>Where backups go: per iPhone Apple's layout plus dated copies, per Android backup one folder.</summary>
+    public string BackupFolder { get; init; } = DefaultDeviceBackupFolder();
+
+    /// <summary>Backups of each phone to keep; older ones are offered for deletion (never deleted unasked).</summary>
+    public int BackupKeep { get; init; } = 3;
+
+    public static string DefaultDeviceBackupFolder() =>
+        Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "DeviceDeck", "Backups");
+
     public static string DefaultPhotoFolder() =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "DeviceDeck");
 
@@ -71,6 +83,16 @@ public sealed record AppSettings
         if (!Photos.PhotoBackupNaming.IsValidPattern(PhotoBackupPattern))
         {
             throw new ArgumentException("photoBackupPattern must be \"\" or yyyy, MM and dd joined by / - _ . or a space.", nameof(PhotoBackupPattern));
+        }
+
+        if (string.IsNullOrWhiteSpace(BackupFolder) || !Path.IsPathFullyQualified(BackupFolder))
+        {
+            throw new ArgumentException("backupFolder must be a full path on this PC.", nameof(BackupFolder));
+        }
+
+        if (BackupKeep is < 1 or > MaxBackupKeep)
+        {
+            throw new ArgumentException($"backupKeep must be between 1 and {MaxBackupKeep}.", nameof(BackupKeep));
         }
 
         if (!Enum.IsDefined(Language) || !Enum.IsDefined(Theme) || !Enum.IsDefined(Density) || !Enum.IsDefined(ConflictRule))

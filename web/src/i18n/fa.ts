@@ -3,6 +3,7 @@
 
 import { batteryFa } from '../screens/battery/strings';
 import { cleanupFa } from '../screens/cleanup/strings';
+import { backupFa } from './backup';
 import type { MessageKey } from './en';
 
 export const fa: Record<MessageKey, string> = {
@@ -558,4 +559,6 @@ export const fa: Record<MessageKey, string> = {
   'settings.photoBackup.note': 'هر گوشی این‌جا پوشه‌ای به نام خودش می‌گیرد. این‌ها پیش‌فرض‌اند؛ پنل پشتیبان هر گوشی می‌تواند آن‌ها را برای همان گوشی عوض کند.',
   ...cleanupFa,
   ...batteryFa,
+  // Backup, contacts and messages (round 2)
+  ...backupFa,
 };

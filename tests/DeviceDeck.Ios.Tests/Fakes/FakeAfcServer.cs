@@ -25,6 +25,9 @@ internal sealed class FakeAfcServer
     /// <summary>Hang up (once) on the first FileRead of this path, like a connection dropping mid-copy.</summary>
     public string? HangUpWhileReading { get; set; }
 
+    /// <summary>What FileLock (0x1B, the sync lock) answers; null = not supported, as before.</summary>
+    public AfcStatus? LockReply { get; set; }
+
     public FakeAfcServer AddFile(string path, byte[] content, DateTimeOffset? modified = null)
     {
         lock (_gate)
@@ -214,6 +217,8 @@ internal sealed class FakeAfcServer
             case AfcOperation.FileClose:
                 _open.Remove(BinaryPrimitives.ReadUInt64LittleEndian(h));
                 return Status(AfcStatus.Success);
+            case (AfcOperation)0x1B when LockReply is { } lockReply:
+                return Status(lockReply);
             default:
                 return Status(AfcStatus.OpNotSupported);
         }

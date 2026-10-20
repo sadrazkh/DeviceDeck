@@ -26,7 +26,7 @@ const SCREENS: ScreenCase[] = [
   { name: 'app-documents-android', params: { screen: 'appDocuments', device: 'android' }, ready: '[data-testid=app-card-appmedia\\:org\\.telegram\\.messenger]' },
   { name: 'apps', params: { screen: 'apps' }, ready: '[data-testid=app-row]' },
   { name: 'apps-android', params: { screen: 'apps', device: 'android' }, ready: '[data-testid=app-row]' },
-  { name: 'coming-next', params: { screen: 'backup' }, ready: '[data-testid=screen-backup]' },
+  { name: 'coming-next', params: { screen: 'toolbox' }, ready: '[data-testid=screen-toolbox]' },
   { name: 'settings', params: { screen: 'settings' }, ready: '[data-testid=screen-settings]' },
 ];
 

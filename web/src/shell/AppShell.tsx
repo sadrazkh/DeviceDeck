@@ -6,9 +6,11 @@ import { usePrefs } from '../state/prefs';
 import { useSection, useUi } from '../state/ui';
 import { AppDocumentsScreen } from '../screens/appDocuments/AppDocumentsScreen';
 import { AppsScreen } from '../screens/apps/AppsScreen';
+import { BackupScreen } from '../screens/backup/BackupScreen';
 import { BatteryScreen } from '../screens/battery/BatteryScreen';
 import { CleanupScreen } from '../screens/cleanup/CleanupScreen';
 import { ComingNextScreen } from '../screens/ComingNextScreen';
+import { ContactsScreen } from '../screens/contacts/ContactsScreen';
 import { FilesScreen } from '../screens/files/FilesScreen';
 import { OverviewScreen } from '../screens/overview/OverviewScreen';
 import { PhotosScreen } from '../screens/photos/PhotosScreen';
@@ -51,6 +53,10 @@ function Screen() {
       return <BatteryScreen device={device} />;
     case 'toolbox':
       return <ToolboxScreen device={device} />;
+    case 'backup':
+      return <BackupScreen device={device} />;
+    case 'contacts':
+      return <ContactsScreen device={device} />;
     default:
       return <ComingNextScreen section={section} />;
   }

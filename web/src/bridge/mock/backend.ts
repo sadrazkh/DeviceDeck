@@ -34,6 +34,7 @@ import {
   seedTransfers,
   storage,
 } from './mock-data';
+import { MockBackups } from './backup';
 import { assetsInAlbum, generateLibrary, toContractAsset, type MockAsset, type MockLibrary } from './photos';
 import { MockPhotoBackup } from './photosBackup';
 import { hashString } from './random';
@@ -224,6 +225,7 @@ export class MockBackend {
       for (const step of due) step.run();
     }
     this.engine.tick(ms);
+    this.backups.tick(ms);
   }
 
   // ---------- Images (the mock's stand-in for https://device.local/) ----------
@@ -292,7 +294,23 @@ export class MockBackend {
     badParams: (message) => badParams(message),
   });
 
+  /** Backups, contacts and messages (round 2); its handlers are part of the table below. */
+  readonly backups = new MockBackups({
+    emit: (event, params) => this.emit(event, params),
+    now: () => this.now(),
+    device: (id) => this.devices.get(id),
+    requireReady: (id, capability) => this.requireReady(id, capability),
+    settings: () => this.settings,
+    fault: (code, message) => fault(code, message),
+    badParams: (message) => badParams(message),
+    restart: (id) => {
+      this.unplug(id);
+      this.after(2500, () => this.plugBack(id));
+    },
+  });
+
   readonly handlers: { [M in MethodName]: Handler<M> } = {
+    ...this.backups.handlers,
     'app.hello': () => ({ version: '0.1.0-mock', isWebView: false }),
     'drivers.status': () => this.driverList.map((d) => ({ ...d })),
     'device.list': () => [...this.devices.values()].map((d) => ({ ...d, capabilities: [...d.capabilities] })),
@@ -719,6 +737,8 @@ const SETTINGS_KEYS: (keyof Settings)[] = [
   'photoBackupFolder',
   'photoBackupPattern',
   'photoBackupConvertHeic',
+  'backupFolder',
+  'backupKeep',
 ];
 
 function pickSettings(patch: Partial<Settings>): Partial<Settings> {

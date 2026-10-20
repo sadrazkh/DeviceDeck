@@ -4,6 +4,7 @@ using System.Text.Json.Nodes;
 using DeviceDeck.Bridge.Images;
 using DeviceDeck.Bridge.Methods;
 using DeviceDeck.Core;
+using DeviceDeck.Core.Backups;
 using DeviceDeck.Core.Battery;
 using DeviceDeck.Core.Cleanup;
 using DeviceDeck.Core.Fake;
@@ -29,6 +30,16 @@ internal sealed class TestHost : IAsyncDisposable
         Queue = queue;
         KeepAwake = awake;
         Settings = new SettingsStore(Paths.SettingsFile);
+        // Never the user's own backup folder, nor iTunes' backups.
+        Settings.Update(new JsonObject { ["backupFolder"] = Path.Combine(root, "backups") });
+        Backups = new BackupService(hub, Settings, new DeviceDeck.Ios.Backup.Format.IosBackupFormat(), new BackupServiceOptions
+        {
+            AppleBackupFolders = [],
+            KeepAwake = awake,
+            RetryDelay = TimeSpan.FromMilliseconds(100),
+            ProgressInterval = TimeSpan.FromMilliseconds(50),
+        });
+        Backups.Start();
         Shell = new FakeShell();
         Transport = new MemoryTransport();
         Cleanup = new CleanupService(hub, queue, Settings, CleanupOptions) { ProgressInterval = TimeSpan.Zero };
@@ -46,6 +57,7 @@ internal sealed class TestHost : IAsyncDisposable
             Cleanup = Cleanup,
             Battery = Battery,
             Toolbox = Toolbox.Services,
+            Backups = Backups,
         };
         Bridge = new BridgeHost(Transport, Services);
     }
@@ -58,6 +70,7 @@ internal sealed class TestHost : IAsyncDisposable
     public TransferQueue Queue { get; }
     public CountingKeepAwake KeepAwake { get; }
     public SettingsStore Settings { get; }
+    public BackupService Backups { get; }
     public FakeShell Shell { get; }
     public MemoryTransport Transport { get; }
     public BridgeServices Services { get; }
@@ -79,7 +92,11 @@ internal sealed class TestHost : IAsyncDisposable
     public static Task<TestHost> StartAsync(params FakeDeviceSpec[] phones) =>
         StartAsync(null, null, phones);
 
-    public static async Task<TestHost> StartAsync(long? bytesPerSecond, TransferQueueOptions? options, params FakeDeviceSpec[] phones)
+    public static Task<TestHost> StartAsync(long? bytesPerSecond, TransferQueueOptions? options, params FakeDeviceSpec[] phones) =>
+        StartAsync(bytesPerSecond, options, TimeSpan.Zero, phones);
+
+    /// <param name="backupDuration">How long a fake iPhone's backup takes (long enough to pull the cable part-way).</param>
+    public static async Task<TestHost> StartAsync(long? bytesPerSecond, TransferQueueOptions? options, TimeSpan backupDuration, params FakeDeviceSpec[] phones)
     {
         var root = Path.Combine(Path.GetTempPath(), "DeviceDeckTests", Guid.NewGuid().ToString("N"));
         Directory.CreateDirectory(root);
@@ -89,6 +106,7 @@ internal sealed class TestHost : IAsyncDisposable
             BytesPerSecond = bytesPerSecond,
             RebootDelay = TimeSpan.FromMilliseconds(50),
             IndexDuration = TimeSpan.Zero,
+            BackupDuration = backupDuration,
             Devices = phones.Length == 0 ? [TestPhones.Iphone(), TestPhones.Android()] : phones,
         };
         var fake = new FakeDeviceProvider(fakeOptions);
@@ -134,6 +152,7 @@ internal sealed class TestHost : IAsyncDisposable
         Bridge.Dispose();
         await Cleanup.DisposeAsync();
         await Battery.DisposeAsync();
+        await Backups.DisposeAsync();
         await Queue.DisposeAsync();
         Store.Dispose();
         await Hub.DisposeAsync();

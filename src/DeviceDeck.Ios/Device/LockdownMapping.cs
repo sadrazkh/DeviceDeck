@@ -11,7 +11,8 @@ public static class LockdownMapping
         DeviceCapability.PhotosRead | DeviceCapability.Files | DeviceCapability.AppDocuments |
         DeviceCapability.AppsList | DeviceCapability.AppsInstall | DeviceCapability.AppsUninstall |
         DeviceCapability.Syslog | DeviceCapability.CrashReports |
-        DeviceCapability.Reboot | DeviceCapability.Shutdown;
+        DeviceCapability.Reboot | DeviceCapability.Shutdown |
+        DeviceCapability.Backup | DeviceCapability.Restore | DeviceCapability.Contacts | DeviceCapability.Messages;
 
     public static DeviceCapability CapabilitiesFor(DeviceState state) => state switch
     {

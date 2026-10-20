@@ -30,6 +30,8 @@ public sealed class BridgeHost : IDisposable
         services.Hub.DeviceChanged += OnDeviceChanged;
         services.Hub.DriversChanged += OnDriversChanged;
         services.Transfers.JobUpdated += OnJobUpdated;
+        if (services.Backups is { } backups)
+            backups.JobUpdated += OnBackupUpdated;
         _featureEvents = [CleanupMethods.PublishEvents(services, Publish), BatteryMethods.PublishEvents(services, Publish)];
         foreach (var summary in services.Hub.ListDevices())
         {
@@ -98,6 +100,8 @@ public sealed class BridgeHost : IDisposable
 
     private void OnJobUpdated(object? sender, TransferJob job) => Publish("transfer.updated", job);
 
+    private void OnBackupUpdated(object? sender, Core.Backups.BackupJob job) => Publish("backup.updated", job);
+
     private void WatchIndexing(string deviceId)
     {
         if (!_services.Hub.TryGetDevice(deviceId, out var device) || device.Photos is not IPhotoIndexProgressSource source)
@@ -122,6 +126,8 @@ public sealed class BridgeHost : IDisposable
         _services.Hub.DeviceChanged -= OnDeviceChanged;
         _services.Hub.DriversChanged -= OnDriversChanged;
         _services.Transfers.JobUpdated -= OnJobUpdated;
+        if (_services.Backups is { } backups)
+            backups.JobUpdated -= OnBackupUpdated;
         foreach (var subscription in _featureEvents)
         {
             subscription.Dispose();

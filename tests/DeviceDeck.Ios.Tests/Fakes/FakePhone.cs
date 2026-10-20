@@ -61,6 +61,8 @@ internal sealed class FakePhone
 
     /// <summary>Toolbox tests: serves services this fake doesn't know (syslog_relay, crash reports); true = handled.</summary>
     public Func<string, Stream, CancellationToken, Task<bool>>? ExtraService { get; set; }
+    /// <summary>More services by name, served by the test (mobilebackup2 and notification_proxy in the backup tests).</summary>
+    public Dictionary<string, Func<Stream, CancellationToken, Task>> ExtraServices { get; } = new(StringComparer.Ordinal);
 
     public bool HasPort(int port) => port == LockdownPort || _servicePorts.ContainsKey(port);
 
@@ -228,6 +230,10 @@ internal sealed class FakePhone
                     };
                     await Wire.WritePlistAsync(s, reply, ct);
                 }
+                return;
+            default:
+                if (ExtraServices.TryGetValue(service, out var serve))
+                    await serve(s, ct);
                 return;
         }
     }
