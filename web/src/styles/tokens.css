@@ -163,7 +163,6 @@
 
   /* Three surface levels only: base (Mica), card, overlay. The rest are control states. */
   --color-backdrop-browser: #e9ecf2;
-  --color-backdrop-browser-glow: rgba(91, 91, 246, 0.07);
   --color-surface-content: rgba(255, 255, 255, 0.38);
   /* The content area in the host: opaque, so Chromium may draw ClearType text there (see Shell.module.css). */
   --color-surface-content-solid: #f7f8fa;
@@ -228,9 +227,11 @@
   --shadow-card: 0 2px 8px rgba(15, 23, 42, 0.06);
   --shadow-control: 0 1px 2px rgba(15, 23, 42, 0.06);
   --shadow-flyout: 0 8px 24px rgba(15, 23, 42, 0.16);
-  --shadow-overlay: 0 16px 48px rgba(15, 23, 42, 0.24);
-  --shadow-device: 0 18px 40px rgba(15, 23, 42, 0.22);
-  --shadow-media: 0 16px 48px rgba(0, 0, 0, 0.5);
+  /* Overlay, device and media shadows stay short: a wide soft shadow is a long, faint gradient that shows steps
+     (banding) on some screens, as the glow behind the phone did. */
+  --shadow-overlay: 0 12px 28px rgba(15, 23, 42, 0.22);
+  --shadow-device: 0 6px 14px rgba(15, 23, 42, 0.18);
+  --shadow-media: 0 12px 28px rgba(0, 0, 0, 0.45);
   --blur-acrylic: 30px;
 }
 
@@ -269,7 +270,6 @@
   --color-text-disabled: rgba(243, 244, 246, 0.36);
 
   --color-backdrop-browser: #1c1d23;
-  --color-backdrop-browser-glow: rgba(140, 140, 255, 0.06);
   --color-surface-content: rgba(255, 255, 255, 0.025);
   --color-surface-content-solid: #24252b;
   --color-surface-card: rgba(255, 255, 255, 0.045);
@@ -313,8 +313,8 @@
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2);
   --shadow-control: none;
   --shadow-flyout: 0 8px 24px rgba(0, 0, 0, 0.4);
-  --shadow-overlay: 0 16px 48px rgba(0, 0, 0, 0.5);
-  --shadow-device: 0 18px 40px rgba(0, 0, 0, 0.5);
+  --shadow-overlay: 0 12px 28px rgba(0, 0, 0, 0.45);
+  --shadow-device: 0 6px 14px rgba(0, 0, 0, 0.4);
 }
 
 /* ---------- Persian: Vazirmatn at the same scale, line height +2 px ---------- */
