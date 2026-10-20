@@ -46,10 +46,12 @@ Backup. Those members return `DeviceException(not_supported)`.
   with id `hidden` (kind User until `AlbumKind.Hidden` exists). **Privacy default for the host and UI:** keep the
   Hidden album collapsed and its thumbnails blurred until the user reveals it, as iOS asks for Face ID.
 - `StartAsync` returns with the phones already plugged in listed (seeded from ListDevices), not empty.
-- Storage: iOS 27 has no app-usage key, so `apps` is summed from installation_proxy sizes (fetched in the
-  background once the phone is Ready; about 7–12 s on a phone with 300+ apps); `videos` is split from `photos`
-  once the photo index exists. Free space is `AmountDataAvailable` (writable now); Settings → iPhone Storage
-  shows ~2.5 GB more free because it counts purgeable data, which no lockdown or AFC value reports.
+- Storage answers in ~1 s and needs no photo index: iOS 27 leaves `MobileApplicationUsage` out of the
+  disk-usage dump but answers it by name (1 ms); the camera roll's size is `CameraUsage` from the `.factory`
+  domain, asked for by name (~0.7 s; dumping that whole domain costs ~1.5 s). `videos` is split from `photos` by
+  stat-ing the camera roll's stand-alone videos (Live Photo motion halves stay in photos) on up to four AFC
+  connections in parallel, cached for two minutes. Free space is `AmountDataAvailable` (writable now); Settings →
+  iPhone Storage shows ~2.5 GB more free because it counts purgeable data, which no lockdown or AFC value reports.
 - Battery: health is NominalChargeCapacity / DesignCapacity (92% on an iPhone 16 whose Settings shows 88%; no
   percentage key is exposed on iOS 27). Battery temperature is not exposed on iOS 27 and stays null there.
 - Colour: recent iPhones report a numeric DeviceEnclosureColor code; `DeviceColors` maps (model, code) to hex,
@@ -67,7 +69,9 @@ Backup. Those members return `DeviceException(not_supported)`.
 | Pull (phone → PC), Media or app Documents | 33–35 MB/s |
 | Push (PC → phone), Media root | 25.8 MB/s |
 | Push (PC → phone), an app's Documents (VLC) | 16–17.5 MB/s (the phone's limit: 256 KiB–4 MiB writes all land here) |
-| App list with sizes (115 user apps) | 6.7 s |
+| App list with sizes (115 user apps) | 6.7–12.5 s (the phone computes sizes on request) |
+| Storage with categories, idle | 0.8–1.0 s |
+| Storage while apps, photo index and icons load (`iosprobe bench-overview`) | 1.0–1.3 s |
 
 ## Probe
 
