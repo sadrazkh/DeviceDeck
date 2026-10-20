@@ -72,6 +72,9 @@ Backup. Those members return `DeviceException(not_supported)`.
 | App list with sizes (115 user apps) | 6.7–12.5 s (the phone computes sizes on request) |
 | Storage with categories, idle | 0.8–1.0 s |
 | Storage while apps, photo index and icons load (`iosprobe bench-overview`) | 1.0–1.3 s |
+| App files: the 14 file-sharing apps (`iosprobe appfiles`) | 80–135 ms once connected |
+| App files: open + list an app's Documents | 1.1 s the first time (house_arrest), then 2–3 ms: one connection per app is kept |
+| App files: VLC round trip through the transfer queue, 300 MB (`iosprobe appfiles-roundtrip`) | in 16.4 MB/s, out 26.5 MB/s, byte-identical |
 
 ## Probe
 
