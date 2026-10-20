@@ -1,0 +1,54 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 10.0.x
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: web/package-lock.json
+
+      - name: .NET build
+        run: dotnet build DeviceDeck.slnx -c Release -nologo
+
+      - name: .NET tests
+        run: dotnet test DeviceDeck.slnx -c Release --no-build -nologo
+
+      - name: Web install
+        working-directory: web
+        run: npm ci --no-audit --no-fund
+
+      - name: Web build (type check + bundle)
+        working-directory: web
+        run: npm run build
+
+      - name: Web tests (Vitest + Playwright on the runner's Edge)
+        working-directory: web
+        run: npm test
+
+      - name: Upload screenshots when web tests fail
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-test-results
+          path: web/test-results
+          if-no-files-found: ignore
