@@ -127,6 +127,7 @@ public sealed partial class IosDevice : IDevice, IAsyncDisposable
         {
         }
         await _mediaAfc.DisposeAsync().ConfigureAwait(false);
+        await DisposeAppDocumentsAsync().ConfigureAwait(false);
         if (Apps is IosAppManager apps)
             await apps.DisposeAsync().ConfigureAwait(false);
         _pairRecord?.Dispose();
@@ -476,20 +477,7 @@ public sealed partial class IosDevice : IDevice, IAsyncDisposable
         if (rootKey == MediaRoot)
             return new IosFileSystem(await c.StartAfcAsync(ct).ConfigureAwait(false));
         if (rootKey.StartsWith(AppRootPrefix, StringComparison.Ordinal) && rootKey.Length > AppRootPrefix.Length)
-        {
-            var bundleId = rootKey[AppRootPrefix.Length..];
-            var connection = await c.StartServiceAsync(ServiceNames.HouseArrest, ct).ConfigureAwait(false);
-            try
-            {
-                var afc = await HouseArrestClient.VendDocumentsAsync(connection, bundleId, ct).ConfigureAwait(false);
-                return new IosFileSystem(afc, "/Documents");
-            }
-            catch
-            {
-                await connection.DisposeAsync().ConfigureAwait(false);
-                throw;
-            }
-        }
+            return await OpenAppDocumentsAsync(rootKey[AppRootPrefix.Length..], ct).ConfigureAwait(false);
         throw new DeviceException(DeviceErrorCodes.PathNotFound, $"No file root '{rootKey}' on this iPhone.");
     });
 

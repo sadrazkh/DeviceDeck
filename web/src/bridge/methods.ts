@@ -28,11 +28,15 @@ import type {
   Page,
   PhotoAlbum,
   PhotoAsset,
+  PhotoBackupCount,
+  PhotoBackupStatus,
   RebootTarget,
   Settings,
   StorageInfo,
   TransferJob,
 } from './types';
+import type { AppFilesOverview, FolderUsage } from './appFiles';
+import type { BatteryDevice, BatterySnapshot, CleanupFileItem, CleanupItem, CleanupResult, CleanupStatus } from './cleanupTypes';
 
 type DeviceParams = { deviceId: string };
 
@@ -95,6 +99,46 @@ export interface BridgeMethods {
   'shell.revealInExplorer': { params: { path: string }; result: Empty };
   'settings.get': { params: Empty; result: Settings };
   'settings.set': { params: Partial<Settings>; result: Settings };
+  // App files (round 2)
+  'appFiles.list': { params: DeviceParams; result: AppFilesOverview };
+  'appFiles.measure': { params: DeviceParams & { root: string; paths: string[] }; result: FolderUsage };
+  // Photos backup and adding photos to an iPhone app (round 2).
+  'photos.newCount': { params: DeviceParams; result: PhotoBackupCount };
+  'photos.backupStatus': { params: DeviceParams; result: PhotoBackupStatus };
+  'photos.backupConfigure': {
+    params: DeviceParams & {
+      destination?: string;
+      folderPattern?: string;
+      convertHeic?: boolean;
+      includeHidden?: boolean;
+      useDefaults?: boolean;
+    };
+    result: PhotoBackupStatus;
+  };
+  'photos.backup': { params: DeviceParams; result: JobStarted };
+  'photos.backupForget': { params: DeviceParams; result: { forgotten: number } };
+  'photos.importToApp': { params: DeviceParams & { appId: string; files: string[] }; result: JobStarted };
+  // Clean-up and battery history (round 2)
+  'cleanup.status': { params: DeviceParams; result: CleanupStatus };
+  'cleanup.analyze': { params: DeviceParams; result: CleanupStatus };
+  'cleanup.cancel': { params: DeviceParams; result: Empty };
+  'cleanup.deleteMedia': {
+    params: DeviceParams & { items: CleanupItem[]; expectedBytes: number; copyFirstTo?: string | null };
+    result: CleanupResult;
+  };
+  'cleanup.deleteFiles': {
+    params: DeviceParams & { items: CleanupFileItem[]; expectedBytes: number; copyFirstTo?: string | null };
+    result: CleanupResult;
+  };
+  'cleanup.uninstallApps': {
+    params: DeviceParams & { items: CleanupItem[]; expectedBytes: number; copyFirstTo?: string | null };
+    result: CleanupResult;
+  };
+  'cleanup.trimCaches': { params: DeviceParams; result: CleanupResult };
+  'battery.devices': { params: Empty; result: BatteryDevice[] };
+  'battery.history': { params: DeviceParams; result: BatterySnapshot[] };
+  'battery.record': { params: DeviceParams; result: BatterySnapshot };
+  'battery.export': { params: DeviceParams & { destination: string; language?: 'en' | 'fa' }; result: { path: string } };
   // Backup, contacts and messages (round 2)
   'backup.list': { params: { deviceId?: string }; result: BackupInfo[] };
   'backup.device': { params: DeviceParams; result: BackupDeviceInfo };
@@ -172,6 +216,28 @@ const methodTable = {
   'shell.revealInExplorer': true,
   'settings.get': true,
   'settings.set': true,
+  // App files (round 2)
+  'appFiles.list': true,
+  'appFiles.measure': true,
+  'photos.newCount': true,
+  'photos.backupStatus': true,
+  'photos.backupConfigure': true,
+  'photos.backup': true,
+  'photos.backupForget': true,
+  'photos.importToApp': true,
+  // Clean-up and battery history (round 2)
+  'cleanup.status': true,
+  'cleanup.analyze': true,
+  'cleanup.cancel': true,
+  'cleanup.deleteMedia': true,
+  'cleanup.deleteFiles': true,
+  'cleanup.uninstallApps': true,
+  'cleanup.trimCaches': true,
+  'battery.devices': true,
+  'battery.history': true,
+  'battery.record': true,
+  'battery.export': true,
+  // Backup, contacts and messages (round 2)
   'backup.list': true,
   'backup.device': true,
   'backup.start': true,
@@ -204,6 +270,10 @@ export interface BridgeEvents {
   'drivers.changed': DriverStatus[];
   'transfer.updated': TransferJob;
   'photos.indexProgress': { deviceId: string; done: number; total: number };
+  // Clean-up and battery history (round 2)
+  'cleanup.updated': CleanupStatus;
+  'battery.recorded': BatterySnapshot;
+  // Backup, contacts and messages (round 2)
   'backup.updated': BackupJob;
 }
 
@@ -216,6 +286,10 @@ const eventTable = {
   'drivers.changed': true,
   'transfer.updated': true,
   'photos.indexProgress': true,
+  // Clean-up and battery history (round 2)
+  'cleanup.updated': true,
+  'battery.recorded': true,
+  // Backup, contacts and messages (round 2)
   'backup.updated': true,
 } as const satisfies Record<EventName, true>;
 

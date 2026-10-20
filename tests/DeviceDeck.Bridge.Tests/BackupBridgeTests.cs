@@ -1,8 +1,11 @@
+using System.Text.Json;
 using System.Text.Json.Nodes;
 using DeviceDeck.Bridge.Tests.Support;
 using DeviceDeck.Core.Abstractions;
 using DeviceDeck.Core.Backups;
 using DeviceDeck.Core.Fake;
+using DeviceDeck.Core.Serialization;
+using DeviceDeck.Core.Settings;
 using static DeviceDeck.Core.Fake.FakeFileNode;
 
 namespace DeviceDeck.Bridge.Tests;
@@ -13,6 +16,20 @@ public sealed class BackupBridgeTests
     private const DeviceCapability BackupCaps = DeviceCapability.Backup | DeviceCapability.Restore | DeviceCapability.Contacts | DeviceCapability.Messages;
 
     private static string[] Keys(JsonNode? node) => node!.AsObject().Select(p => p.Key).ToArray();
+
+    [Fact]
+    public void Settings_carry_the_backup_folder_and_keep_count_after_round_ones_fields()
+    {
+        var json = JsonSerializer.SerializeToNode(new AppSettings(), DeviceDeckJson.Options)!.AsObject();
+        var keys = Keys(json);
+        Assert.True(Array.IndexOf(keys, "backupFolder") >= 8);
+        Assert.Equal(["backupFolder", "backupKeep"], keys.SkipWhile(k => k != "backupFolder").Take(2));
+        Assert.Equal(AppSettings.DefaultDeviceBackupFolder(), (string?)json["backupFolder"]);
+        Assert.Equal(3, (int)json["backupKeep"]!);
+        Assert.Throws<ArgumentException>(() => new AppSettings { BackupKeep = 0 }.Validate());
+        Assert.Throws<ArgumentException>(() => new AppSettings { BackupKeep = AppSettings.MaxBackupKeep + 1 }.Validate());
+        Assert.Throws<ArgumentException>(() => new AppSettings { BackupFolder = @"relative\folder" }.Validate());
+    }
 
     private static FakeDeviceSpec Iphone() => With(TestPhones.Iphone(), BackupCaps);
 

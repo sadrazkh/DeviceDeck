@@ -2,7 +2,9 @@ import {
   ArrowExportRegular,
   ArrowImportRegular,
   DeleteRegular,
+  DesktopArrowDownRegular,
   DismissRegular,
+  ImageAddRegular,
   EyeRegular,
   ImageMultipleRegular,
   ImageRegular,
@@ -26,7 +28,12 @@ import { useI18n, type MessageKey } from '../../i18n';
 import { clickSelect, emptySelection, pruneSelection, selectAll, toggleGroup, toggleSelect, type ClickModifiers, type Selection } from '../../state/selection';
 import { useDevicePlace, useUi } from '../../state/ui';
 import { ScreenLayout } from '../ScreenLayout';
+import { BackupPanel } from './BackupPanel';
+import { addsPhotosThroughApps, canBackUp, useBackupStatus } from './backupQueries';
+import backupStyles from './Backup.module.css';
 import { ExportDialog } from './ExportDialog';
+import { ImportToAppDialog } from './ImportToAppDialog';
+import { PhotoJobBanner, useActivePhotoJob } from './PhotoJobBanner';
 import { groupByMonth } from './grouping';
 import { Lightbox } from './Lightbox';
 import { PhotoGrid, type PhotoGridHandle } from './PhotoGrid';
@@ -162,6 +169,13 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
   const [visibleGroup, setVisibleGroup] = useState(0);
   const grid = useRef<PhotoGridHandle>(null);
   const importInput = useRef<HTMLInputElement>(null);
+  // Photos backup and adding photos to an iPhone app (round 2).
+  const [backupOpen, setBackupOpen] = useState(false);
+  const [toAppFiles, setToAppFiles] = useState<File[] | null>(null);
+  const backupStatus = useBackupStatus(device);
+  const newCount = backupStatus.data?.count.newCount ?? 0;
+  const photoJob = useActivePhotoJob(device.id);
+  const throughApps = addsPhotosThroughApps(device);
 
   const assets = useMemo(() => (filter === 'all' ? library.assets : library.assets.filter(FILTERS[filter])), [library.assets, filter]);
   const groups = useMemo(() => groupByMonth(assets, i18n.monthKey), [assets, i18n.monthKey]);
@@ -213,9 +227,14 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
   }, [groups, i18n]);
 
   const canImport = device.capabilities.includes('photosImport');
+  const dropVerdict = canImport
+    ? { ok: true, message: t('photos.dropAdd') }
+    : throughApps
+      ? { ok: true, message: t('photos.toApp.drop') }
+      : { ok: false, message: t('photos.dropIphone') };
   const drop = useFileDrop({
-    verdict: () => (canImport ? { ok: true, message: t('photos.dropAdd') } : { ok: false, message: t('photos.dropIphone') }),
-    onDrop: (files) => void actions.importPhotos(device, files),
+    verdict: () => dropVerdict,
+    onDrop: (files) => (canImport ? void actions.importPhotos(device, files) : throughApps ? setToAppFiles(files) : undefined),
   });
 
   const albumList = albums.data ?? [];
@@ -268,6 +287,21 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
             </Slider.Root>
             <ImageMultipleRegular aria-hidden />
           </label>
+          {canBackUp(device) ? (
+            <Button icon={<DesktopArrowDownRegular />} onClick={() => setBackupOpen(true)} data-testid="backup-open">
+              {t('photos.backup.button')}
+              {newCount > 0 ? (
+                <span className={backupStyles.badge} aria-label={t('photos.backup.badge', { count: newCount })} data-testid="backup-badge">
+                  {n(newCount)}
+                </span>
+              ) : null}
+            </Button>
+          ) : null}
+          {throughApps ? (
+            <Button icon={<ImageAddRegular />} onClick={() => setToAppFiles([])} data-testid="to-app-open">
+              {t('photos.toApp.button')}
+            </Button>
+          ) : null}
           {canImport ? (
             <>
               <Button icon={<ArrowImportRegular />} onClick={() => importInput.current?.click()}>
@@ -299,6 +333,8 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
           </Banner>
         ) : library.error ? (
           <ErrorBanner error={library.error} onRetry={() => void library.refetch()} />
+        ) : photoJob ? (
+          <PhotoJobBanner job={photoJob} device={device} />
         ) : null
       }
       fill
@@ -383,7 +419,7 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
               </motion.div>
             ) : null}
           </AnimatePresence>
-          <DropOverlay visible={drop.over} verdict={canImport ? { ok: true, message: t('photos.dropAdd') } : { ok: false, message: t('photos.dropIphone') }} />
+          <DropOverlay visible={drop.over} verdict={dropVerdict} />
         </div>
         {groups.length > 1 ? <Scrubber labels={scrubLabels} current={visibleGroup} onJump={(g) => grid.current?.scrollToGroup(g)} /> : null}
       </div>
@@ -411,6 +447,10 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
             setSelection(emptySelection);
           }}
         />
+      ) : null}
+      {backupOpen ? <BackupPanel device={device} open onOpenChange={setBackupOpen} /> : null}
+      {toAppFiles ? (
+        <ImportToAppDialog device={device} open initialFiles={toAppFiles} onOpenChange={(open) => (open ? undefined : setToAppFiles(null))} />
       ) : null}
       <ConfirmDialog
         open={confirmDelete}

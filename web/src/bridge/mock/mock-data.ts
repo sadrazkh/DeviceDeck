@@ -53,6 +53,7 @@ export const ANDROID_CAPABILITIES: DeviceCapability[] = [
   'photosDelete',
   'photosImport',
   'files',
+  'appDocuments',
   'appsList',
   'appsInstall',
   'appsUninstall',
@@ -321,6 +322,9 @@ export const defaultSettings: Settings = {
   convertHeic: false,
   fileCopyFolder: 'D:\\Phone files',
   conflictRule: 'ask',
+  photoBackupFolder: 'D:\\Phone backups',
+  photoBackupPattern: 'yyyy/MM',
+  photoBackupConvertHeic: false,
   backupFolder: 'C:\\Users\\Nima\\DeviceDeck\\Backups',
   backupKeep: 3,
 };

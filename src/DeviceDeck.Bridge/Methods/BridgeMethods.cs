@@ -4,8 +4,11 @@ using DeviceDeck.Bridge.Images;
 using DeviceDeck.Bridge.JsonRpc;
 using DeviceDeck.Core.Abstractions;
 using DeviceDeck.Core.Backups;
+using DeviceDeck.Core.Battery;
+using DeviceDeck.Core.Cleanup;
 using DeviceDeck.Core.Fake;
 using DeviceDeck.Core.Hub;
+using DeviceDeck.Core.Photos;
 using DeviceDeck.Core.Settings;
 using DeviceDeck.Core.Transfers;
 
@@ -23,6 +26,13 @@ public sealed class BridgeServices
 
     /// <summary>When set, dev.* methods simulate a pulled cable on the fake phones.</summary>
     public FakeDeviceProvider? DevFake { get; init; }
+
+    /// <summary>Photos backup (photos.newCount, photos.backup*); without it those methods answer not_supported.</summary>
+    public PhotoBackupService? PhotoBackup { get; init; }
+
+    // Clean-up and battery history (round 2): cleanup.* and battery.* are registered only when set.
+    public CleanupService? Cleanup { get; init; }
+    public BatteryRecorder? Battery { get; init; }
 
     /// <summary>Backups, contacts and messages (round 2); null answers those methods with not_supported.</summary>
     public BackupService? Backups { get; init; }
@@ -210,6 +220,14 @@ public static class BridgeMethods
             return Task.FromResult(s.Settings.Update(patch));
         });
 
+        // Photos backup and adding photos to an iPhone app (round 2).
+        PhotosBackupMethods.Register(rpc, s);
+
+        // Clean-up and battery history (round 2).
+        CleanupMethods.Register(rpc, s);
+        BatteryMethods.Register(rpc, s);
+
+        // Backups, contacts and messages (round 2).
         BackupMethods.Register(rpc, s);
 
         if (s.DevFake is { } fake)
@@ -219,6 +237,9 @@ public static class BridgeMethods
             rpc.Register<DeviceParams, Empty>("dev.reconnect", (p, _) => Done(() => fake.Reconnect(p.DeviceId)));
             rpc.Register<DevStateParams, Empty>("dev.setState", (p, _) => Done(() => fake.SetState(p.DeviceId, p.State)));
         }
+
+        // Round 2 features, one line each.
+        AppFilesMethods.Register(rpc, s);
 
         return rpc;
     }

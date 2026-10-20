@@ -16,6 +16,7 @@ public sealed class BridgeHost : IDisposable
     private readonly BridgeServices _services;
     private readonly HashSet<IPhotoIndexProgressSource> _indexSources = [];
     private readonly Lock _gate = new();
+    private readonly IDisposable[] _featureEvents;
     private CancellationTokenSource _page = new();
 
     public BridgeHost(IBridgeTransport transport, BridgeServices services)
@@ -30,6 +31,7 @@ public sealed class BridgeHost : IDisposable
         services.Transfers.JobUpdated += OnJobUpdated;
         if (services.Backups is { } backups)
             backups.JobUpdated += OnBackupUpdated;
+        _featureEvents = [CleanupMethods.PublishEvents(services, Publish), BatteryMethods.PublishEvents(services, Publish)];
         foreach (var summary in services.Hub.ListDevices())
         {
             WatchIndexing(summary.Id);
@@ -125,6 +127,11 @@ public sealed class BridgeHost : IDisposable
         _services.Transfers.JobUpdated -= OnJobUpdated;
         if (_services.Backups is { } backups)
             backups.JobUpdated -= OnBackupUpdated;
+        foreach (var subscription in _featureEvents)
+        {
+            subscription.Dispose();
+        }
+
         lock (_gate)
         {
             _page.Cancel();

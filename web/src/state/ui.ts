@@ -10,6 +10,9 @@ export const SECTIONS = [
   'backup',
   'toolbox',
   'settings',
+  // Round 2
+  'cleanup',
+  'battery',
 ] as const;
 export type Section = (typeof SECTIONS)[number];
 

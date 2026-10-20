@@ -10,6 +10,9 @@ import {
 } from '../jsonrpc';
 import type { BridgeEvents, EventName, MethodName, MethodParams, MethodResult } from '../methods';
 import type { AppInfo, DeviceCapability, DeviceSummary, DriverStatus, FolderPattern, Settings } from '../types';
+import { mockAppFiles, mockMeasure } from './appFiles';
+import { batteryHandlers } from './battery';
+import { cleanupHandlers } from './cleanup';
 import { MockFileSystem, joinPath, normalise } from './files';
 import { appIconUrl, photoUrl, phoneScreenshotUrl, thumbnailUrl } from './images';
 import {
@@ -33,6 +36,7 @@ import {
 } from './mock-data';
 import { MockBackups } from './backup';
 import { assetsInAlbum, generateLibrary, toContractAsset, type MockAsset, type MockLibrary } from './photos';
+import { MockPhotoBackup } from './photosBackup';
 import { hashString } from './random';
 import { TransferEngine, type JobItem } from './transfers';
 
@@ -264,6 +268,20 @@ export class MockBackend {
     return handler((params ?? {}) as never);
   }
 
+  // Photos backup and adding photos to an iPhone app (round 2): see ./photosBackup.ts.
+  private readonly photoBackup = new MockPhotoBackup({
+    requireReady: (deviceId, capability) => this.requireReady(deviceId, capability),
+    library: (deviceId) => this.library(deviceId),
+    engine: () => this.engine,
+    settings: () => this.settings,
+    apps: (deviceId) => this.appLists.get(deviceId) ?? [],
+    fs: (deviceId) => this.fs(deviceId),
+    sizeOfLocal: (path) => this.sizeOfLocal(path),
+    now: () => this.now(),
+    fault,
+    badParams,
+  });
+
   /** Backups, contacts and messages (round 2); its handlers are part of the table below. */
   readonly backups = new MockBackups({
     emit: (event, params) => this.emit(event, params),
@@ -371,7 +389,7 @@ export class MockBackend {
     'files.copyToPc': ({ deviceId, root, paths, destination }) => {
       this.requireReady(deviceId, 'files');
       const fs = this.fs(deviceId);
-      const items = paths.map<JobItem>((p) => ({ name: basename(p), size: Math.max(1, fs.sizeOf(root, p)) }));
+      const items = paths.map<JobItem>((p) => ({ name: normalise(p) === '/' ? this.rootLabel(deviceId, root, '/') : basename(p), size: Math.max(1, fs.sizeOf(root, p)) }));
       if (items.length === 0) throw badParams('Nothing to copy.');
       const what = items.length === 1 ? items[0]!.name : `${en.format(items.length)} items`;
       const job = this.engine.add({ deviceId, kind: 'copyToPc', title: `Copying ${what} to ${destination}`, items });
@@ -493,6 +511,42 @@ export class MockBackend {
       this.settings = { ...this.settings, ...pickSettings(patch) };
       return { ...this.settings };
     },
+    // App files (round 2)
+    'appFiles.list': ({ deviceId }) => {
+      const device = this.requireReady(deviceId, 'appDocuments');
+      return mockAppFiles(device.platform, this.fs(deviceId), this.appLists.get(deviceId) ?? []);
+    },
+    'appFiles.measure': ({ deviceId, root, paths }) => {
+      const device = this.requireReady(deviceId, root.startsWith('app:') ? 'appDocuments' : 'files');
+      if (!root || !Array.isArray(paths) || paths.length === 0) throw badParams('root and at least one path are required.');
+      // The host opens app folders as roots of their own; listing them once mounts them here.
+      if (!this.fs(deviceId).hasRoot(root)) mockAppFiles(device.platform, this.fs(deviceId), this.appLists.get(deviceId) ?? []);
+      if (!this.fs(deviceId).hasRoot(root)) throw fault('path_not_found');
+      return mockMeasure(this.fs(deviceId), root, paths);
+    },
+    ...this.photoBackup.handlers,
+    // ---------- Clean-up and battery history (round 2) ----------
+    ...cleanupHandlers({
+      requireReady: (deviceId, capability) => this.requireReady(deviceId, capability),
+      library: (deviceId) => this.library(deviceId),
+      apps: (deviceId) => this.appLists.get(deviceId) ?? [],
+      setApps: (deviceId, list) => void this.appLists.set(deviceId, list),
+      fs: (deviceId) => this.fs(deviceId),
+      storage: (deviceId) => storage[deviceId],
+      addJob: (spec) => this.engine.add(spec),
+      emit: (event, params) => this.emit(event, params),
+      after: (ms, run) => this.after(ms, run),
+      now: () => this.now(),
+      fault: (code, message) => fault(code, message),
+      badParams,
+    }),
+    ...batteryHandlers({
+      requireReady: (deviceId, capability) => this.requireReady(deviceId, capability),
+      battery: (deviceId) => battery[deviceId],
+      emit: (event, params) => this.emit(event, params),
+      now: () => this.now(),
+      badParams,
+    }),
   };
 
   // ---------- helpers ----------
@@ -557,6 +611,9 @@ export class MockBackend {
     if (!fs) {
       fs = new MockFileSystem(deviceId);
       this.fileSystems.set(deviceId, fs);
+      // App folders are roots of their own, as the host opens them.
+      const platform = this.devices.get(deviceId)?.platform;
+      if (platform) mockAppFiles(platform, fs, this.appLists.get(deviceId) ?? []);
     }
     return fs;
   }
@@ -578,7 +635,8 @@ export class MockBackend {
 
   private rootLabel(deviceId: string, root: string, path: string): string {
     const sharing = (this.appLists.get(deviceId) ?? []).find((a) => `app:${a.id}` === root);
-    const base = sharing?.name ?? (root === 'internal' ? 'Internal storage' : root === 'media' ? 'Media folder' : root);
+    const appFolder = /^(appmedia|appdata|shared):(.+)$/.exec(root);
+    const base = sharing?.name ?? appFolder?.[2] ?? (root === 'internal' ? 'Internal storage' : root === 'media' ? 'Media folder' : root);
     const folder = normalise(path);
     return folder === '/' ? base : `${base}${folder}`;
   }
@@ -663,6 +721,9 @@ const SETTINGS_KEYS: (keyof Settings)[] = [
   'convertHeic',
   'fileCopyFolder',
   'conflictRule',
+  'photoBackupFolder',
+  'photoBackupPattern',
+  'photoBackupConvertHeic',
   'backupFolder',
   'backupKeep',
 ];

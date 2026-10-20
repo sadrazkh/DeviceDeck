@@ -112,7 +112,17 @@ const androidRoots: Record<string, Spec[]> = {
     ['Android', [
       ['data', [], { denied: true }],
       ['obb', [], { denied: true }],
-      ['media', [['com.whatsapp', [['WhatsApp', [['Media', []]]]]]]],
+      ['media', [
+        ['com.whatsapp', [['WhatsApp', [['Media', [
+          ['WhatsApp Documents', [['Invoice-0921.pdf', Math.round(211 * KB)]]],
+          ['WhatsApp Voice Notes', [['PTT-20261012-WA0003.opus', Math.round(48 * KB)]]],
+        ]]]]]],
+        ['org.telegram.messenger', [['Telegram', [
+          ['Telegram Documents', [['Lecture 7 slides.pdf', Math.round(6.1 * MB), { daysAgo: 6 }]]],
+          ['Telegram Video', [['VID_20261012_211500.mp4', Math.round(48 * MB), { daysAgo: 8 }]]],
+        ]]]],
+        ['com.spotify.music', []],
+      ]],
     ]],
     ['DCIM', [
       ['Camera', [], { lazy: cameraFolder(20_000) }],
@@ -231,6 +241,30 @@ export class MockFileSystem {
       modified: new Date().toISOString(),
       readOnly: false,
     });
+  }
+
+  /** Opens a folder of another root as a root of its own (Android app folders); false when it isn't there. */
+  mount(key: string, root: string, path: string): boolean {
+    const node = this.find(root, path);
+    if (!node || !node.isDirectory || node.denied) return false;
+    this.roots.set(key, this.childrenOf(node));
+    return true;
+  }
+
+  /** Files, folders (not counting the path itself) and bytes under a path; zeros when it is gone. */
+  usage(root: string, path: string): { files: number; folders: number; bytes: number } {
+    const node = this.find(root, path);
+    if (!node) return { files: 0, folders: 0, bytes: 0 };
+    if (!node.isDirectory) return { files: 1, folders: 0, bytes: node.size };
+    const total = { files: 0, folders: 0, bytes: 0 };
+    if (node.denied) return total;
+    for (const child of this.childrenOf(node).values()) {
+      const inner = this.usage(root, joinPath(path, child.name));
+      total.files += inner.files;
+      total.folders += inner.folders + (child.isDirectory ? 1 : 0);
+      total.bytes += inner.bytes;
+    }
+    return total;
   }
 
   /** The total size of the files under a path (for copyToPc jobs). */

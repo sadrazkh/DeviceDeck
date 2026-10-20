@@ -23,6 +23,7 @@ const SCREENS: ScreenCase[] = [
   { name: 'files', params: { screen: 'files' }, ready: '[data-testid=app-card-app\\:org\\.videolan\\.vlc-ios]' },
   { name: 'files-android', params: { screen: 'files', device: 'android' }, ready: '[data-testid=file-table] [role=row][aria-selected]' },
   { name: 'app-documents', params: { screen: 'appDocuments' }, ready: '[data-testid=app-card-app\\:org\\.videolan\\.vlc-ios]' },
+  { name: 'app-documents-android', params: { screen: 'appDocuments', device: 'android' }, ready: '[data-testid=app-card-appmedia\\:org\\.telegram\\.messenger]' },
   { name: 'apps', params: { screen: 'apps' }, ready: '[data-testid=app-row]' },
   { name: 'apps-android', params: { screen: 'apps', device: 'android' }, ready: '[data-testid=app-row]' },
   { name: 'coming-next', params: { screen: 'toolbox' }, ready: '[data-testid=screen-toolbox]' },
