@@ -19,12 +19,9 @@ body {
   background: transparent;
 }
 
-/* In a plain browser there is no Mica: paint a neutral backdrop instead. */
+/* In a plain browser there is no Mica: paint a flat neutral backdrop instead (faint wide glows band into steps). */
 html[data-host='browser'] body {
-  background:
-    radial-gradient(1200px 700px at 12% -10%, var(--color-backdrop-browser-glow), transparent 70%),
-    radial-gradient(900px 600px at 100% 110%, var(--color-backdrop-browser-glow), transparent 70%),
-    var(--color-backdrop-browser);
+  background: var(--color-backdrop-browser);
 }
 
 body {

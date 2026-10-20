@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { contrastProblems } from './contrast';
 import { query, settle, shot, watchConsole, type Variant } from './helpers';
 
 // Clean-up and battery history, against the mock backend: each screen in light, dark and right-to-left Persian,
@@ -20,10 +21,14 @@ for (const variant of VARIANTS) {
       await expect(page.locator('html')).toHaveAttribute('dir', variant === 'rtl' ? 'rtl' : 'ltr');
       await settle(page);
       await shot(page, `cleanup-${device}-idle-${variant}`);
+      // Text contrast (WCAG AA) in both themes; Persian uses the light colours (desktop session's check).
+      if (variant !== 'rtl') expect(await contrastProblems(page)).toEqual([]);
       await analyse(page);
       await expect(page.getByTestId('cleanup-duplicate-group').first()).toBeVisible();
       await settle(page);
       await shot(page, `cleanup-${device}-${variant}`);
+      // Text contrast (WCAG AA) in both themes; Persian uses the light colours (desktop session's check).
+      if (variant !== 'rtl') expect(await contrastProblems(page)).toEqual([]);
       consoleWatch.assertClean();
     });
 
@@ -34,6 +39,8 @@ for (const variant of VARIANTS) {
       await expect(page.locator('html')).toHaveAttribute('data-theme', variant === 'dark' ? 'dark' : 'light');
       await settle(page);
       await shot(page, `battery-${device}-${variant}`);
+      // Text contrast (WCAG AA) in both themes; Persian uses the light colours (desktop session's check).
+      if (variant !== 'rtl') expect(await contrastProblems(page)).toEqual([]);
       consoleWatch.assertClean();
     });
   }

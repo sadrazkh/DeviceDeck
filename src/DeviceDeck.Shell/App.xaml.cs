@@ -27,8 +27,19 @@ public partial class App : Application
         var host = HostServices.Create();
         Host = host;
         _window = new MainWindow(host);
-        Program.Reactivated += (_, _) => _window.DispatcherQueue.TryEnqueue(_window.BringToFront);
+        Program.Reactivated += (_, activation) =>
+        {
+            if (Program.IsQuit(activation))
+            {
+                _window.Quit();
+            }
+            else
+            {
+                _window.DispatcherQueue.TryEnqueue(_window.BringToFront);
+            }
+        };
         _window.Activate();
         await host.StartAsync();
+        _window.ArmNotifications();
     }
 }

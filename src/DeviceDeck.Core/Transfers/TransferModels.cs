@@ -8,6 +8,9 @@ public enum TransferKind
 
     // Photos, round 2: incremental backup to the PC, and photos into an iPhone app's Documents.
     PhotosBackup, PhotosToApp,
+
+    /// <summary>Photos or files dragged into File Explorer: the queue copies them while Explorer reads them (virtual files).</summary>
+    DragOut,
 }
 
 public enum TransferState { Queued, Running, Paused, WaitingForDevice, NeedsDecision, Done, Failed, Cancelled }

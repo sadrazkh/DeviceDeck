@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { Direction, Tooltip as RadixTooltip } from 'radix-ui';
 import type { CSSProperties } from 'react';
 import { useSelectedDevice } from '../app/queries';
@@ -18,6 +18,7 @@ import { SettingsScreen } from '../screens/SettingsScreen';
 import { ToolboxScreen } from '../screens/toolbox/ToolboxScreen';
 import { WelcomeScreen } from '../screens/welcome/WelcomeScreen';
 import { CommandPalette } from './CommandPalette';
+import { useDesktopEvents } from './desktop';
 import { ConflictDialog } from './ConflictDialog';
 import { NAV, navEnabled } from './nav';
 import { NavRail, TopTabs } from './Navigation';
@@ -63,6 +64,7 @@ function Screen() {
 }
 
 export function AppShell() {
+  useDesktopEvents();
   const nav = usePrefs((s) => s.navLayout);
   const dir = usePrefs((s) => (s.language === 'fa' ? 'rtl' : 'ltr'));
   const device = useSelectedDevice();
@@ -79,18 +81,22 @@ export function AppShell() {
           <div className={styles.body}>
             {nav === 'rail' ? <NavRail /> : null}
             <main className={styles.content} id="content" data-testid="content">
-              <AnimatePresence mode="wait" initial={false}>
+              <div className={styles.layer}>
+                {/*
+                  A screen fades in when it opens; the one it replaces goes at once. (AnimatePresence's "wait" mounted the
+                  new screen right away and again once the old one had faded out, which dropped whatever the user had
+                  started in between: an open rename, a typed search.)
+                */}
                 <motion.div
                   key={screenKey}
                   className={styles.screen}
                   initial={{ opacity: 0, y: 6 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0 }}
                   transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
                 >
                   <Screen />
                 </motion.div>
-              </AnimatePresence>
+              </div>
             </main>
           </div>
           <TransferDrawer />

@@ -10,6 +10,7 @@
     <Project Path="tests/DeviceDeck.Android.Tests/DeviceDeck.Android.Tests.csproj" />
     <Project Path="tests/DeviceDeck.Bridge.Tests/DeviceDeck.Bridge.Tests.csproj" />
     <Project Path="tests/DeviceDeck.Ios.Tests/DeviceDeck.Ios.Tests.csproj" />
+    <Project Path="tests/DeviceDeck.Shell.Tests/DeviceDeck.Shell.Tests.csproj" />
   </Folder>
   <Folder Name="/tools/">
     <Project Path="tools/AndroidProbe/AndroidProbe.csproj" />

@@ -24,11 +24,12 @@
   --iris-100: #c7c7ff;
   --ink-900: #111827;
   --ink-700: #374151;
+  /* Text greys keep WCAG AA (4.5:1) on every surface they sit on, hovered and selected rows too (tests/e2e/contrast.ts). */
   --ink-600: #4b5563;
-  --ink-500: #6b7280;
+  --ink-500: #5f6673;
   --mist-50: #f3f4f6;
-  --mist-300: #a1a7b3;
-  --mist-400: #8a909c;
+  --mist-300: #aab0bb;
+  --mist-400: #9aa0ab;
 
   --green-600: #16a34a;
   --amber-600: #d97706;
@@ -163,13 +164,15 @@
 
   /* Three surface levels only: base (Mica), card, overlay. The rest are control states. */
   --color-backdrop-browser: #e9ecf2;
-  --color-backdrop-browser-glow: rgba(91, 91, 246, 0.07);
   --color-surface-content: rgba(255, 255, 255, 0.38);
+  /* The content area in the host: opaque, so Chromium may draw ClearType text there (see Shell.module.css). */
+  --color-surface-content-solid: #f7f8fa;
   --color-surface-card: rgba(255, 255, 255, 0.76);
   --color-surface-card-hover: rgba(255, 255, 255, 0.9);
   --color-surface-overlay: rgba(252, 252, 253, 0.94);
   --color-surface-overlay-solid: #fbfbfc;
   --color-surface-sticky: rgba(244, 245, 249, 0.94);
+  --color-surface-sticky-solid: #f4f5f8;
   --color-surface-control: rgba(255, 255, 255, 0.9);
   --color-surface-control-hover: rgba(249, 250, 251, 1);
   --color-surface-control-pressed: rgba(243, 244, 246, 1);
@@ -225,9 +228,11 @@
   --shadow-card: 0 2px 8px rgba(15, 23, 42, 0.06);
   --shadow-control: 0 1px 2px rgba(15, 23, 42, 0.06);
   --shadow-flyout: 0 8px 24px rgba(15, 23, 42, 0.16);
-  --shadow-overlay: 0 16px 48px rgba(15, 23, 42, 0.24);
-  --shadow-device: 0 18px 40px rgba(15, 23, 42, 0.22);
-  --shadow-media: 0 16px 48px rgba(0, 0, 0, 0.5);
+  /* Overlay, device and media shadows stay short: a wide soft shadow is a long, faint gradient that shows steps
+     (banding) on some screens, as the glow behind the phone did. */
+  --shadow-overlay: 0 12px 28px rgba(15, 23, 42, 0.22);
+  --shadow-device: 0 6px 14px rgba(15, 23, 42, 0.18);
+  --shadow-media: 0 12px 28px rgba(0, 0, 0, 0.45);
   --blur-acrylic: 30px;
 }
 
@@ -239,7 +244,8 @@
   --color-accent-hover: var(--iris-200);
   --color-accent-pressed: var(--iris-100);
   --color-on-accent: #0b0b2e;
-  --color-accent-text: var(--iris-200);
+  /* Lighter than iris-200 so it keeps 4.5:1 on accent fills over selected rows. */
+  --color-accent-text: #b4b4ff;
   --color-accent-subtle: rgba(140, 140, 255, 0.14);
   --color-accent-subtle-hover: rgba(140, 140, 255, 0.22);
   --color-accent-stroke: rgba(140, 140, 255, 0.4);
@@ -252,7 +258,7 @@
   --color-warning-text: #fbbf24;
   --color-warning-subtle: rgba(245, 158, 11, 0.14);
   --color-danger: #ef4444;
-  --color-danger-text: #f87171;
+  --color-danger-text: #fa8e8e;
   --color-danger-subtle: rgba(239, 68, 68, 0.14);
   --color-danger-stroke: rgba(248, 113, 113, 0.4);
   --color-on-danger: #ffffff;
@@ -266,13 +272,14 @@
   --color-text-disabled: rgba(243, 244, 246, 0.36);
 
   --color-backdrop-browser: #1c1d23;
-  --color-backdrop-browser-glow: rgba(140, 140, 255, 0.06);
   --color-surface-content: rgba(255, 255, 255, 0.025);
+  --color-surface-content-solid: #24252b;
   --color-surface-card: rgba(255, 255, 255, 0.045);
   --color-surface-card-hover: rgba(255, 255, 255, 0.07);
   --color-surface-overlay: rgba(40, 41, 49, 0.94);
   --color-surface-overlay-solid: #2a2b33;
   --color-surface-sticky: rgba(32, 33, 40, 0.94);
+  --color-surface-sticky-solid: #212228;
   --color-surface-control: rgba(255, 255, 255, 0.07);
   --color-surface-control-hover: rgba(255, 255, 255, 0.1);
   --color-surface-control-pressed: rgba(255, 255, 255, 0.05);
@@ -308,8 +315,8 @@
   --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.2);
   --shadow-control: none;
   --shadow-flyout: 0 8px 24px rgba(0, 0, 0, 0.4);
-  --shadow-overlay: 0 16px 48px rgba(0, 0, 0, 0.5);
-  --shadow-device: 0 18px 40px rgba(0, 0, 0, 0.5);
+  --shadow-overlay: 0 12px 28px rgba(0, 0, 0, 0.45);
+  --shadow-device: 0 6px 14px rgba(0, 0, 0, 0.4);
 }
 
 /* ---------- Persian: Vazirmatn at the same scale, line height +2 px ---------- */
@@ -322,6 +329,18 @@
   --type-body-line: 22px;
   --type-caption-line: 18px;
   --type-micro-line: 16px;
+}
+
+/*
+  ---------- In the host: surfaces with text are opaque ----------
+  ClearType needs an opaque layer under the text (see .layer in Shell.module.css). Sticky headers and
+  overlays use their solid colours there, and overlays drop the acrylic blur: "none" makes blur(...)
+  invalid, so every backdrop-filter that reads --blur-acrylic computes to none.
+*/
+:root[data-host='webview'] {
+  --color-surface-sticky: var(--color-surface-sticky-solid);
+  --color-surface-overlay: var(--color-surface-overlay-solid);
+  --blur-acrylic: none;
 }
 
 /* ---------- Right-to-left mirroring ---------- */

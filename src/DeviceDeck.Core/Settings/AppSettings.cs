@@ -51,6 +51,17 @@ public sealed record AppSettings
     public static string DefaultDeviceBackupFolder() =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "DeviceDeck", "Backups");
 
+    // Desktop (round 2)
+
+    /// <summary>Closing the window keeps DeviceDeck running in the notification area; Quit is in the tray menu.</summary>
+    public bool CloseToTray { get; init; } = true;
+
+    /// <summary>A Windows notification when a phone connects while the window isn't in front.</summary>
+    public bool NotifyOnConnect { get; init; } = true;
+
+    /// <summary>Look for a new version on GitHub Releases in the background and download it (installed copies only).</summary>
+    public bool AutoUpdate { get; init; } = true;
+
     public static string DefaultPhotoFolder() =>
         Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.MyPictures), "DeviceDeck");
 

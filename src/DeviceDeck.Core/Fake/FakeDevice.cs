@@ -14,7 +14,7 @@ public sealed partial class FakeDevice : IDevice
         _provider = provider;
         Spec = spec;
         Options = options;
-        _summary = spec.Summary;
+        _summary = WithRename(spec.Summary);
         Photos = new FakePhotoLibrary(this);
         Apps = new FakeAppManager(this);
         Actions = new FakeDeviceActions(this);

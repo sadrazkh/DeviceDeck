@@ -80,6 +80,7 @@ export function createMockTransport(options: MockTransportOptions = {}): MockHan
       thumb: (deviceId, assetId) => backend.thumbUrl(deviceId, assetId),
       photo: (deviceId, assetId) => backend.photoUrl(deviceId, assetId),
       icon: (deviceId, appId) => backend.iconUrl(deviceId, appId),
+      video: (deviceId, assetId) => backend.photoUrl(deviceId, assetId),
     },
   };
 

@@ -1,8 +1,9 @@
 // Dragging phone files out to File Explorer. The host owns the drag (the desktop feature's shell.dragOut): the page
 // cancels the browser's own drag on dragstart and asks the host to start a native one while the button is still
-// down. When Explorer takes the drop, the host copies through the transfer queue (a copyToPc job).
+// down. Explorer gets virtual files, which a dragOut job in the transfer queue copies while Explorer reads them.
 
 import type { BridgeClient } from '../../bridge';
+import { startDragOut } from '../../shell/dragOut';
 
 interface DragOutResult {
   /** "copy" when another app took the drop; "none" when it was cancelled or dropped back on the window. */
@@ -15,7 +16,7 @@ export const canDragOut = (client: BridgeClient) => client.kind === 'webview';
 
 export async function dragOutFiles(client: BridgeClient, deviceId: string, root: string, paths: string[]): Promise<DragOutResult | null> {
   if (!canDragOut(client) || paths.length === 0) return null;
-  // shell.dragOut is the desktop feature's method; called by name so this compiles on its own branch as well.
-  const call = client.call as unknown as (method: string, params: unknown) => Promise<DragOutResult>;
-  return call.call(client, 'shell.dragOut', { source: 'files', deviceId, root, paths });
+  // Through the shell's helper: drop zones ignore the drag while it runs, and a drop back on the window (the PC
+  // pane) reaches the element under the pointer.
+  return startDragOut(client, { source: 'files', deviceId, root, paths });
 }

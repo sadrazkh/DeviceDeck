@@ -212,23 +212,76 @@ public sealed class TransferQueue : IAsyncDisposable
                     break;
                 case TransferState.Failed:
                 case TransferState.Done when job.Data.Items.Any(i => i.State == TransferItemState.Failed):
-                    var retry = job.Data.Items.Where(i => i.State == TransferItemState.Failed).ToList();
-                    foreach (var item in retry)
-                    {
-                        item.State = TransferItemState.Queued;
-                        item.ErrorCode = null;
-                        item.ErrorMessage = null;
-                    }
-
-                    _store.UpdateItems(job.Data.Id, retry);
-                    job.Data.Error = null;
-                    job.Data.FinishedAt = null;
-                    SetState(job, TransferState.Queued);
+                    RequeueFailed(job);
                     break;
             }
 
             Pump();
         }
+    }
+
+    /// <summary>
+    /// transfers.retry: a failed job, a job done with failed items, or a cancelled one runs again. Items already
+    /// copied stay done; failed ones and the ones never reached are copied (a job that failed while planning plans again).
+    /// </summary>
+    public void Retry(string jobId)
+    {
+        lock (_gate)
+        {
+            var job = Find(jobId);
+            switch (job.Data.State)
+            {
+                case TransferState.Failed:
+                case TransferState.Cancelled:
+                case TransferState.Done when job.Data.Items.Any(i => i.State == TransferItemState.Failed):
+                    RequeueFailed(job);
+                    break;
+                default:
+                    throw new InvalidOperationException("This transfer has nothing to try again.");
+            }
+
+            Pump();
+        }
+    }
+
+    /// <summary>
+    /// transfers.clear: removes finished jobs (done, failed, cancelled) from the list and the database; all of them,
+    /// or only those in <paramref name="jobIds"/>. Jobs still going are left alone. Returns how many were removed.
+    /// </summary>
+    public int Clear(IReadOnlyCollection<string>? jobIds = null)
+    {
+        lock (_gate)
+        {
+            var wanted = jobIds is null ? null : new HashSet<string>(jobIds, StringComparer.Ordinal);
+            var finished = _jobs.Values
+                .Where(j => j.Data.State is TransferState.Done or TransferState.Failed or TransferState.Cancelled && j.Worker is null)
+                .Where(j => wanted is null || wanted.Contains(j.Data.Id))
+                .ToList();
+            foreach (var job in finished)
+            {
+                _jobs.Remove(job.Data.Id);
+                _store.DeleteJob(job.Data.Id);
+            }
+
+            return finished.Count;
+        }
+    }
+
+    // Caller holds _gate.
+    private void RequeueFailed(Job job)
+    {
+        var retry = job.Data.Items.Where(i => i.State == TransferItemState.Failed).ToList();
+        foreach (var item in retry)
+        {
+            item.State = TransferItemState.Queued;
+            item.ErrorCode = null;
+            item.ErrorMessage = null;
+        }
+
+        _store.UpdateItems(job.Data.Id, retry);
+        job.Data.Error = null;
+        job.Data.FinishedAt = null;
+        SetState(job, TransferState.Queued);
     }
 
     /// <summary>Stops a job for good. Items already copied stay; the partial file of the one in flight is removed.</summary>
@@ -310,6 +363,12 @@ public sealed class TransferQueue : IAsyncDisposable
             var running = group.Count(j => j.Data.State == TransferState.Running);
             foreach (var job in group.Where(j => j.Data.State == TransferState.Queued).OrderBy(j => j.Data.Seq).ToList())
             {
+                if (job.Worker is not null)
+                {
+                    // Retried or resumed while its last run is still closing; that run's finally pumps again.
+                    continue;
+                }
+
                 if (!usable)
                 {
                     SetState(job, TransferState.WaitingForDevice);

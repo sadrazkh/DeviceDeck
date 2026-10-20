@@ -299,7 +299,7 @@ describe('mock backend', () => {
   it('answers unknown methods with -32601', async () => {
     const { client } = setup();
     // @ts-expect-error not a contract method
-    await expect(client.call('device.rename', { deviceId: IPHONE_ID })).rejects.toMatchObject({ rpcCode: -32601, code: 'method_not_found' });
+    await expect(client.call('device.teleport', { deviceId: IPHONE_ID })).rejects.toMatchObject({ rpcCode: -32601, code: 'method_not_found' });
   });
 });
 

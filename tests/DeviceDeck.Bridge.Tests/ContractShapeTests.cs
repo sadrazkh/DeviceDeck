@@ -22,7 +22,7 @@ public sealed class ContractShapeTests
         var summary = FakeSampleData.Iphone().Summary with { State = DeviceState.AwaitingTrust };
         var json = ToJson(summary);
 
-        Assert.Equal(["id", "name", "platform", "model", "marketingName", "osVersion", "connection", "state", "mode", "capabilities", "colorHex"], Keys(json));
+        Assert.Equal(["id", "name", "platform", "model", "marketingName", "osVersion", "connection", "state", "mode", "capabilities", "colorHex", "stateDetail"], Keys(json));
         Assert.Equal("ios", (string?)json["platform"]);
         Assert.Equal("usb", (string?)json["connection"]);
         Assert.Equal("awaitingTrust", (string?)json["state"]);
@@ -38,7 +38,7 @@ public sealed class ContractShapeTests
     {
         var all = Enum.GetValues<DeviceCapability>().Aggregate(DeviceCapability.None, (a, b) => a | b);
         var json = JsonSerializer.Serialize(all, DeviceDeckJson.Options);
-        Assert.Equal(24, JsonNode.Parse(json)!.AsArray().Count);
+        Assert.Equal(25, JsonNode.Parse(json)!.AsArray().Count);
         Assert.Equal(all, JsonSerializer.Deserialize<DeviceCapability>(json, DeviceDeckJson.Options));
         Assert.Equal("[]", JsonSerializer.Serialize(DeviceCapability.None, DeviceDeckJson.Options));
         Assert.Equal("[\"screenMirror\",\"rebootToBootloader\"]", JsonSerializer.Serialize(DeviceCapability.ScreenMirror | DeviceCapability.RebootToBootloader, DeviceDeckJson.Options));

@@ -1,0 +1,37 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0-windows</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <IsPackable>false</IsPackable>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="coverlet.collector" Version="6.0.4" />
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.1" />
+    <PackageReference Include="xunit" Version="2.9.3" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="3.1.4" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Using Include="Xunit" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DeviceDeck.Bridge\DeviceDeck.Bridge.csproj" />
+  </ItemGroup>
+
+  <!--
+    The Shell is a WinUI app, which a test project can't reference cheaply. Its plain Win32 / .NET parts
+    (drag out, the connect notifier, its strings) don't touch WinUI, so they are compiled in here as they are.
+  -->
+  <ItemGroup>
+    <Compile Include="..\..\src\DeviceDeck.Shell\Desktop\Interop\Ole.cs" Link="Shell\Interop\Ole.cs" />
+    <Compile Include="..\..\src\DeviceDeck.Shell\Desktop\DragOut\*.cs" LinkBase="Shell\DragOut" />
+    <Compile Include="..\..\src\DeviceDeck.Shell\Desktop\DeviceNotifier.cs" Link="Shell\DeviceNotifier.cs" />
+    <Compile Include="..\..\src\DeviceDeck.Shell\Desktop\ShellText.cs" Link="Shell\ShellText.cs" />
+  </ItemGroup>
+
+</Project>

@@ -1,0 +1,136 @@
+/* The "This PC" pane of the Files screen (frame and width from Files.module.css: .pane .pcPane). */
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2) var(--space-2) var(--space-2) var(--space-3);
+  border-bottom: 1px solid var(--color-stroke-divider);
+}
+
+.location {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  line-height: var(--type-caption-line);
+}
+
+.locationName {
+  font-weight: var(--type-strong-weight);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.locationPath {
+  color: var(--color-text-tertiary);
+  font-size: var(--type-micro-size);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  direction: ltr;
+  text-align: start;
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.banner {
+  padding: var(--space-3);
+}
+
+.skeletons {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: var(--space-3);
+}
+
+.list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  outline: none;
+}
+
+.list:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--color-focus);
+}
+
+.inner {
+  position: relative;
+}
+
+.row {
+  position: absolute;
+  inset-inline: 0;
+  top: 0;
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-inline: var(--space-3);
+  user-select: none;
+  cursor: default;
+}
+
+.row:hover {
+  background: var(--color-surface-row-hover);
+}
+
+.row[aria-selected='true'] {
+  background: var(--color-surface-row-selected);
+}
+
+.row[data-active] {
+  box-shadow: inset 2px 0 0 var(--color-accent);
+}
+
+:root[dir='rtl'] .row[data-active] {
+  box-shadow: inset -2px 0 0 var(--color-accent);
+}
+
+.icon {
+  display: inline-flex;
+  flex: none;
+  font-size: var(--icon-size);
+  color: var(--color-text-secondary);
+}
+
+.icon[data-folder] {
+  color: var(--color-accent-text);
+}
+
+.name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.meta {
+  flex: none;
+  color: var(--color-text-tertiary);
+  font-size: var(--type-caption-size);
+  font-variant-numeric: tabular-nums;
+}
+
+.footer {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-2);
+  padding: var(--space-3);
+  border-top: 1px solid var(--color-stroke-divider);
+}
+
+.hint {
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}

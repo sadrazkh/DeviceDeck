@@ -1,93 +1,21 @@
-import { AppGenericRegular, ArrowSwapRegular, FolderOpenRegular, InfoRegular, LaptopRegular, OpenRegular, PhoneRegular } from '@fluentui/react-icons';
+import { AppGenericRegular, ArrowSwapRegular, PhoneRegular } from '@fluentui/react-icons';
 import { useEffect, useState, type DragEvent } from 'react';
 import type { DeviceSummary } from '../../bridge/types';
 import { useActions } from '../../app/actions';
 import { useClient } from '../../app/bridgeContext';
-import { useFileRoots, useSettings, useTransfers, useUpdateSettings } from '../../app/queries';
+import { useFileRoots } from '../../app/queries';
 import { Button } from '../../components/Button';
 import { ErrorBanner } from '../../components/ErrorState';
-import { LinearProgress, Segmented, Skeleton, Switch, Tooltip } from '../../components/ui';
+import { Segmented, Skeleton, Switch, Tooltip } from '../../components/ui';
 import { useI18n } from '../../i18n';
-import { jobFraction } from '../../state/transfers';
 import { useDevicePlace, useUi } from '../../state/ui';
-import { progressLine } from '../../shell/TransferDrawer';
+import { useInsideDrop } from '../../shell/dragOut';
+import { noPhoneFolderToast, PcPane } from '../../shell/pc/PcPane';
 import { findFolder, useAppFiles } from '../appDocuments/appFiles';
 import { AppGrid, folderLabel, PlaceIcon, placeLabel } from '../appDocuments/AppGrid';
 import { ScreenLayout } from '../ScreenLayout';
 import { FileBrowser, RootGlyph } from './FileBrowser';
 import styles from './Files.module.css';
-
-// ---------------------------------------------------------------- PC pane
-
-function PcPane({ device }: { device: DeviceSummary }) {
-  const i18n = useI18n();
-  const { t } = i18n;
-  const settings = useSettings().data;
-  const updateSettings = useUpdateSettings();
-  const actions = useActions();
-  const folder = settings?.fileCopyFolder ?? '';
-  const jobs = (useTransfers().data ?? [])
-    .filter((j) => j.deviceId === device.id && (j.kind === 'copyToPc' || j.kind === 'copyToDevice'))
-    .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-    .slice(0, 6);
-  return (
-    <section className={`${styles.pane} ${styles.pcPane}`} aria-label={t('files.pc')}>
-      <div className={styles.paneHeader}>
-        <span className={styles.paneTitle}>
-          <LaptopRegular aria-hidden />
-          {t('files.pc')}
-        </span>
-      </div>
-      <div className={styles.pcBody}>
-        <div>
-          <div className={styles.pcLabel}>{t('files.pcDestination')}</div>
-          <div className={styles.path}>{folder}</div>
-        </div>
-        <div className={styles.pcActions}>
-          <Button
-            size="small"
-            icon={<FolderOpenRegular />}
-            onClick={async () => {
-              const picked = await actions.pickFolder(t('files.pcDestination'));
-              if (picked) updateSettings.mutate({ fileCopyFolder: picked });
-            }}
-          >
-            {t('common.change')}
-          </Button>
-          <Button size="small" icon={<OpenRegular />} onClick={() => void actions.revealInExplorer(folder)} disabled={!folder}>
-            {t('files.pcOpen')}
-          </Button>
-        </div>
-        <p className={styles.hint}>
-          <InfoRegular aria-hidden />
-          <span>{t('files.pcHint')}</span>
-        </p>
-        <div>
-          <div className={styles.pcLabel}>{t('files.pcRecent')}</div>
-          {jobs.length === 0 ? (
-            <p className="t-caption t-secondary">{t('files.pcRecentEmpty')}</p>
-          ) : (
-            <ul className={styles.recent}>
-              {jobs.map((job) => (
-                <li key={job.id} className={styles.recentItem}>
-                  <span className={styles.recentTitle} title={job.title}>
-                    {job.title}
-                  </span>
-                  <LinearProgress value={jobFraction(job)} tone={job.state === 'done' ? 'success' : job.state === 'failed' ? 'danger' : job.state === 'running' ? 'accent' : 'paused'} label={job.title} />
-                  <span className="t-secondary">{progressLine(job, i18n, device)}</span>
-                </li>
-              ))}
-            </ul>
-          )}
-        </div>
-        <p className={styles.hint}>
-          <InfoRegular aria-hidden />
-          <span>{t('files.pcBrowseLater')}</span>
-        </p>
-      </div>
-    </section>
-  );
-}
 
 // ---------------------------------------------------------------- screen
 
@@ -144,15 +72,21 @@ export function FilesScreen({ device }: { device: DeviceSummary }) {
       void actions.copyToDevice(device, key, '/', Array.from(e.dataTransfer.files));
     },
   });
+  // PC files dragged from the PC pane and dropped on the phone side: copy them into the open folder.
+  const phoneDropRef = useInsideDrop((drop) => {
+    if (drop.source !== 'pc') return;
+    if (currentRoot) void actions.copyToDevice(device, currentRoot.key, path, drop.paths);
+    else noPhoneFolderToast(t);
+  });
 
   return (
     <ScreenLayout title={t('files.title')} testId="screen-files" fill>
       <div className={styles.panes} data-swapped={swapped || undefined}>
-        <PcPane device={device} />
+        <PcPane device={device} phoneTarget={currentRoot ? { root: currentRoot.key, path, label: labelOf(currentRoot.key) } : null} />
         <Tooltip content={t('files.swap')}>
           <Button className={styles.swap} variant="subtle" icon={<ArrowSwapRegular />} aria-label={t('files.swap')} onClick={() => setSwapped((s) => !s)} />
         </Tooltip>
-        <section className={`${styles.pane} ${styles.phonePane}`} aria-label={device.name}>
+        <section ref={phoneDropRef} className={`${styles.pane} ${styles.phonePane}`} aria-label={device.name}>
           <div className={styles.paneHeader}>
             <span className={styles.paneTitle}>
               <PhoneRegular aria-hidden />

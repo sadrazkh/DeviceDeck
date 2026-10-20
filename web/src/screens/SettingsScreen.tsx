@@ -1,6 +1,7 @@
 import { useHello, useUpdateSettings } from '../app/queries';
 import { Card, Segmented } from '../components/ui';
 import { useI18n } from '../i18n';
+import { DesktopSettings } from '../shell/DesktopSettings';
 import { usePrefs } from '../state/prefs';
 import { BackupSettingsCard } from './backup/BackupSettingsCard';
 import { PhotosBackupSettings } from './photos/PhotosBackupSettings';
@@ -67,6 +68,7 @@ export function SettingsScreen() {
             />
           </div>
         </Card>
+        <DesktopSettings />
         <PhotosBackupSettings />
         <BackupSettingsCard />
         <p className={styles.muted}>{t('settings.more')}</p>

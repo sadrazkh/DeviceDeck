@@ -3,6 +3,7 @@ using System.Runtime.InteropServices;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using Microsoft.Windows.AppLifecycle;
+using Velopack;
 
 namespace DeviceDeck.Shell;
 
@@ -14,9 +15,20 @@ public static partial class Program
     [STAThread]
     private static int Main(string[] args)
     {
+        // First, always: Velopack's install, update and uninstall hooks run here and exit.
+        VelopackApp.Build()
+            .OnBeforeUninstallFastCallback(_ => ForgetNotifications())
+            .Run();
+
         WinRT.ComWrappersSupport.InitializeComWrappers();
         if (RedirectedToRunningInstance())
         {
+            return 0;
+        }
+
+        if (args.Contains(QuitArgument, StringComparer.OrdinalIgnoreCase))
+        {
+            // "DeviceDeck.exe --quit" with nothing running: nothing to do.
             return 0;
         }
 
@@ -54,6 +66,29 @@ public static partial class Program
         }
     }
 
+    /// <summary>Uninstalling: remove what Windows keeps for this app's notifications (its registration and Action Center entries).</summary>
+    private static void ForgetNotifications()
+    {
+        try
+        {
+            WinRT.ComWrappersSupport.InitializeComWrappers();
+            Desktop.AppIdentity.Forget();
+        }
+        catch (Exception)
+        {
+            // Nothing registered, or the runtime isn't usable here; the uninstall goes on.
+        }
+    }
+
+    /// <summary>"DeviceDeck.exe --quit": the running copy quits for good, also from the notification area (scripts, tests).</summary>
+    public const string QuitArgument = "--quit";
+
+    /// <summary>Was this redirected launch "DeviceDeck.exe --quit"?</summary>
+    public static bool IsQuit(AppActivationArguments activation) =>
+        activation.Kind == ExtendedActivationKind.Launch &&
+        activation.Data is Windows.ApplicationModel.Activation.ILaunchActivatedEventArgs launch &&
+        launch.Arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains(QuitArgument, StringComparer.OrdinalIgnoreCase);
+
     /// <summary>Raised in the first instance when a later launch was redirected to it.</summary>
     public static event EventHandler<AppActivationArguments>? Reactivated;
 
@@ -86,6 +121,10 @@ public static partial class Program
         });
         var handles = new[] { done.WaitHandle.SafeWaitHandle.DangerousGetHandle() };
         _ = CoWaitForMultipleObjects(0, 10_000, 1, handles, out _);
+        if (IsQuit(args))
+        {
+            return true;
+        }
 
         try
         {

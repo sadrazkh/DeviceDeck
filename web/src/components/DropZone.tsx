@@ -1,6 +1,7 @@
 import { ArrowDownloadRegular, ProhibitedRegular } from '@fluentui/react-icons';
 import { AnimatePresence, motion } from 'framer-motion';
 import { useCallback, useRef, useState, type DragEvent, type ReactNode } from 'react';
+import { isDraggingOut } from '../shell/dragOut';
 import styles from './DropZone.module.css';
 
 export interface DropVerdict {
@@ -9,7 +10,8 @@ export interface DropVerdict {
   message: string;
 }
 
-const hasFiles = (e: DragEvent) => Array.from(e.dataTransfer?.types ?? []).includes('Files');
+// A drag out of the window (to File Explorer) carries files too; it isn't a drop here.
+const hasFiles = (e: DragEvent) => !isDraggingOut() && Array.from(e.dataTransfer?.types ?? []).includes('Files');
 
 /**
  * Files dragged from Explorer onto a view land in that view. While dragging, the overlay names

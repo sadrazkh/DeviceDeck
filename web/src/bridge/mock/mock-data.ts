@@ -40,6 +40,7 @@ export const IPHONE_FULL_CAPABILITIES: DeviceCapability[] = [
   'crashReports',
   'reboot',
   'shutdown',
+  'rename',
 ];
 
 /** iPhone without Apple's driver, over PTP: camera-roll photos only. */
@@ -69,6 +70,7 @@ export const ANDROID_CAPABILITIES: DeviceCapability[] = [
   'shutdown',
   'rebootToRecovery',
   'rebootToBootloader',
+  'rename',
 ];
 
 export const iphone: DeviceSummary = {
@@ -322,6 +324,9 @@ export const defaultSettings: Settings = {
   convertHeic: false,
   fileCopyFolder: 'D:\\Phone files',
   conflictRule: 'ask',
+  closeToTray: true,
+  notifyOnConnect: true,
+  autoUpdate: true,
   photoBackupFolder: 'D:\\Phone backups',
   photoBackupPattern: 'yyyy/MM',
   photoBackupConvertHeic: false,

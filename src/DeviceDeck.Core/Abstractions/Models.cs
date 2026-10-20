@@ -52,9 +52,15 @@ public enum DeviceCapability : long
     Shutdown = 1L << 21,
     RebootToRecovery = 1L << 22,
     RebootToBootloader = 1L << 23,
+
+    // Round 2 additions: one block per feature, bits far apart so parallel branches can't pick the same one.
+
+    /// <summary>The phone's name can be changed from the PC (device.rename); the device implements <see cref="IDeviceRenamer"/>.</summary>
+    Rename = 1L << 40,
 }
 
 /// <param name="Id">Stable across reconnects: the iPhone's UDID or the Android serial.</param>
+/// <param name="StateDetail">One plain sentence about the state when it needs the user ("Don't Trust was tapped · unplug and plug in again"); null otherwise.</param>
 public sealed record DeviceSummary(
     string Id,
     string Name,
@@ -66,7 +72,8 @@ public sealed record DeviceSummary(
     DeviceState State,
     DeviceMode Mode,
     DeviceCapability Capabilities,
-    string? ColorHex = null);
+    string? ColorHex = null,
+    string? StateDetail = null);
 
 /// <param name="Key">One of: photos, videos, apps, media, system, other.</param>
 public sealed record StorageCategory(string Key, long Bytes);

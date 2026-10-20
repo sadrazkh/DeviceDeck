@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { contrastProblems } from './contrast';
 import { query, settle, shot, watchConsole, type Variant } from './helpers';
 
 // Every screen in light, dark and right-to-left Persian, against the mock backend.
@@ -43,6 +44,8 @@ for (const screen of SCREENS) {
       await expect(html).toHaveAttribute('data-theme', variant === 'dark' ? 'dark' : 'light');
       await settle(page);
       await shot(page, `${screen.name}-${variant}`);
+      // Text contrast (WCAG AA) in both themes; Persian uses the light colours.
+      if (variant !== 'rtl') expect(await contrastProblems(page)).toEqual([]);
       consoleWatch.assertClean();
     });
   }

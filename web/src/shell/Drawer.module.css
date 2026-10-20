@@ -22,6 +22,18 @@
   overflow: hidden;
 }
 
+/* An opaque layer of its own in the host, so the drawer's text gets ClearType (see .layer in Shell.module.css). */
+.pane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+:root[data-host='webview'] .pane {
+  background: var(--color-surface-overlay-solid);
+  backface-visibility: hidden;
+}
+
 .header {
   display: flex;
   align-items: center;

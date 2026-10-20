@@ -39,6 +39,8 @@ export const DEVICE_CAPABILITIES = [
   'shutdown',
   'rebootToRecovery',
   'rebootToBootloader',
+  // Round 2
+  'rename',
 ] as const;
 export type DeviceCapability = (typeof DEVICE_CAPABILITIES)[number];
 
@@ -55,6 +57,8 @@ export interface DeviceSummary {
   mode: DeviceMode;
   capabilities: DeviceCapability[];
   colorHex: string | null;
+  /** One plain sentence when the state needs the user ("Don't Trust was tapped · unplug…"); absent from older hosts. */
+  stateDetail?: string | null;
 }
 
 export type StorageCategoryKey = 'photos' | 'videos' | 'apps' | 'media' | 'system' | 'other';
@@ -195,6 +199,8 @@ export type TransferKind =
   | 'copyToDevice'
   | 'appInstall'
   | 'appExport'
+  /** Photos or files dragged into File Explorer (virtual files the queue copies while Explorer reads them). */
+  | 'dragOut'
   // Photos (round 2): backup to the PC, photos into an iPhone app's Documents.
   | 'photosBackup'
   | 'photosToApp';
@@ -248,6 +254,13 @@ export interface Settings {
   convertHeic: boolean;
   fileCopyFolder: string;
   conflictRule: 'ask' | ConflictChoice;
+  // Desktop (round 2)
+  /** Closing the window keeps DeviceDeck in the notification area. */
+  closeToTray: boolean;
+  /** A Windows notification when a phone connects while the window isn't in front. */
+  notifyOnConnect: boolean;
+  /** Look for updates on GitHub Releases in the background (installed copies only). */
+  autoUpdate: boolean;
   // Photos backup defaults, for a phone without options of its own.
   /** Each phone backs up into a sub-folder named after it. */
   photoBackupFolder: string;
@@ -292,6 +305,100 @@ export const DEVICE_ERROR_CODES = [
   'internal',
 ] as const;
 export type DeviceErrorCode = (typeof DEVICE_ERROR_CODES)[number];
+
+// ---------- Desktop (round 2): this PC, drag out, notifications, updates ----------
+
+export type PcRootKind =
+  | 'home'
+  | 'desktop'
+  | 'downloads'
+  | 'documents'
+  | 'pictures'
+  | 'videos'
+  | 'music'
+  | 'drive'
+  | 'removableDrive'
+  | 'networkDrive'
+  | 'opticalDrive';
+
+export interface PcRoot {
+  path: string;
+  /** A drive's volume label (may be empty) or the folder's own name; the page localises by kind. */
+  label: string;
+  kind: PcRootKind;
+  totalBytes: number | null;
+  freeBytes: number | null;
+}
+
+export interface PcEntry {
+  /** Full Windows path. */
+  path: string;
+  name: string;
+  isDirectory: boolean;
+  size: number;
+  modified: string | null;
+  readOnly: boolean;
+  hidden: boolean;
+}
+
+/** One dragged photo or phone file as the page knows it. */
+export interface DragOutEntry {
+  /** Asset id, or the file's path in its root. */
+  id: string;
+  name: string;
+  size: number;
+  isDirectory: boolean;
+  modified: string | null;
+}
+
+export type DragOutParams =
+  | { source: 'photos'; deviceId: string; items: DragOutEntry[] }
+  | { source: 'files'; deviceId: string; root: string; items: DragOutEntry[] }
+  /** Bare paths in the root; the host looks each one up on the phone. */
+  | { source: 'files'; deviceId: string; root: string; paths: string[] }
+  | { source: 'pc'; paths: string[] };
+
+export interface DragOutResult {
+  /** 'copy' when another app (File Explorer) took the drop. */
+  effect: 'copy' | 'none';
+  /** Set when the drop landed back on DeviceDeck's window, in CSS pixels: the page handles it. */
+  droppedInside: { x: number; y: number } | null;
+}
+
+export interface NotificationButton {
+  label: string;
+  command: string;
+}
+
+export interface NotificationShowParams {
+  title: string;
+  body?: string;
+  /** A later notification with the same tag replaces this one. */
+  tag?: string;
+  deviceId?: string;
+  /** What a click on the notification means; default 'open'. */
+  command?: string;
+  buttons?: NotificationButton[];
+  args?: Record<string, string>;
+}
+
+export interface NotificationActivation {
+  command: string;
+  deviceId: string | null;
+  tag: string | null;
+  args: Record<string, string>;
+}
+
+export type UpdateState = 'notInstalled' | 'idle' | 'checking' | 'upToDate' | 'downloading' | 'ready' | 'error';
+
+export interface UpdateStatus {
+  state: UpdateState;
+  currentVersion: string;
+  newVersion: string | null;
+  percent: number | null;
+  error: string | null;
+  lastChecked: string | null;
+}
 
 // ---------- Photos backup (docs/bridge-contract.md, "Photos backup and adding photos") ----------
 

@@ -5,6 +5,8 @@ export interface ImageUrls {
   thumb(deviceId: string, assetId: string, size?: number): string;
   photo(deviceId: string, assetId: string): string;
   icon(deviceId: string, appId: string): string;
+  /** The original of a video with HTTP Range (seekable); size is PhotoAsset.size. */
+  video(deviceId: string, assetId: string, size: number): string;
 }
 
 /** Moves JSON-RPC messages between the page and a backend (the .NET host or the mock). */
@@ -24,4 +26,5 @@ export const deviceLocalImages: ImageUrls = {
   thumb: (deviceId, assetId, size = 256) => `https://device.local/thumb/${enc(deviceId)}/${enc(assetId)}?s=${size}`,
   photo: (deviceId, assetId) => `https://device.local/photo/${enc(deviceId)}/${enc(assetId)}`,
   icon: (deviceId, appId) => `https://device.local/icon/${enc(deviceId)}/${enc(appId)}`,
+  video: (deviceId, assetId, size) => `https://device.local/video/${enc(deviceId)}/${enc(assetId)}?size=${size}`,
 };

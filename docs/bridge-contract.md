@@ -139,7 +139,7 @@ Root keys of app folders:
   `com.whatsapp (Media)`), not `_`.
 - `appFiles.measure` on a path that is gone answers zeros; a folder the phone won't list counts what it can read.
 - Dragging rows out to File Explorer uses the desktop feature's `shell.dragOut { source: "files", deviceId, root, paths }`
-  on these roots; the copy is a `copyToPc` job.
+  on these roots (see "Desktop (round 2)"): Explorer receives virtual files and the copy is a `dragOut` job.
 - iPhone: opening house_arrest takes about a second, so the host keeps one connection per app for listings and
   small changes; file contents use a connection of their own per job.
 
@@ -535,3 +535,90 @@ type Message = {
   attachments: { id: string; name: string; mimeType: string | null; size: number; inBackup: boolean }[];
 };
 ```
+
+## Desktop (round 2)
+
+Added by the desktop session. C#: `src/DeviceDeck.Bridge/Methods/DesktopMethods.cs`, `src/DeviceDeck.Bridge/IDesktopShell.cs`,
+`src/DeviceDeck.Core/Notifications/INotificationService.cs`; TypeScript: the "Desktop (round 2)" blocks of
+`web/src/bridge/types.ts` and `methods.ts`.
+
+### Methods
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `device.rename` | `{ deviceId, name }` (1–64 characters, trimmed) | `DeviceSummary` (also announced with `device.changed`) |
+| `transfers.retry` | `{ jobId }` | `{}`: a failed or cancelled job, or one done with failed items, runs again; anything else fails with `internal` |
+| `transfers.clear` | `{ jobIds? }` | `{ cleared }`: finished jobs (done, failed, cancelled) leave the list and the database; all of them, or those listed |
+| `notifications.show` | `{ title, body?, tag?, deviceId?, command?, buttons?: [{ label, command }], args? }` | `{}` (at most three buttons) |
+| `pc.roots` | — | `PcRoot[]`: home, desktop, downloads, documents, pictures, videos, music, then the drives |
+| `pc.list` | `{ path, showHidden? }` | `PcEntry[]` (hidden and system items only with `showHidden`) |
+| `pc.mkdir` | `{ path }` | `PcEntry`; `already_exists` when the name is taken |
+| `pc.rename` | `{ path, name }` (a bare name) | `PcEntry` |
+| `shell.openFile` | `{ path }` | `{}`: opens a PC file with its default app |
+| `shell.dragOut` | `{ source: "photos", deviceId, items }` · `{ source: "files", deviceId, root, items }` · `{ source: "pc", paths }` | `{ effect: "copy" \| "none", droppedInside: { x, y } \| null }`, when the drag ends (no timeout) |
+| `app.updateStatus` | — | `UpdateStatus` |
+| `app.checkForUpdates` | — | `UpdateStatus` after the check (a new version starts downloading) |
+| `app.applyUpdate` | — | `{}`; the app quits and Velopack restarts it on the new version |
+
+PC errors use the usual codes: `path_not_found`, `permission_denied`, `already_exists`. `shell.dragOut`, `shell.openFile` and
+`app.*` need the window; elsewhere (tests) they fail with `not_supported`.
+
+**Drag out.** On `dragstart` the page calls `preventDefault()` and `shell.dragOut` with what the user is dragging (`items` are
+`{ id, name, size, isDirectory, modified }`: an asset id or a file's path in its root). The host starts a native drag while the button
+is still down. File Explorer receives virtual files; when it asks for the first file's contents a `dragOut` job starts in the
+transfer queue and copies each file while Explorer reads it (pause, a pulled cable and retries as for any job; Explorer's copy
+waits). Dragged phone folders are walked on the phone. PC files travel as a plain file drop. A drop back on DeviceDeck's own window
+is cancelled and returned as `droppedInside` (CSS pixels): the page decides (the PC pane copies phone files into the folder under
+the pointer; the phone pane copies PC files into its open folder).
+
+### Events
+
+| Event | Params |
+| --- | --- |
+| `notification.activated` | `{ command, deviceId, tag, args }`: a click on a notification or one of its buttons; the window is already in front. `open` = show (the page selects `deviceId`) |
+| `app.updateChanged` | `UpdateStatus` |
+
+### Shapes
+
+```ts
+// DeviceSummary gains:
+stateDetail: string | null;   // one plain sentence when the state needs the user: "Don't Trust was tapped · unplug the iPhone and plug it in again, then tap Trust"
+// DeviceCapability gains "rename" (bit 40): the phone can be renamed from the PC.
+// TransferKind gains "dragOut".
+// Settings gains:
+closeToTray: boolean;      // default true: closing the window keeps DeviceDeck in the notification area (Quit in its menu)
+notifyOnConnect: boolean;  // default true: a Windows notification when a phone connects while the window isn't in front
+autoUpdate: boolean;       // default true: check GitHub Releases a minute after start and every 6 h, download in the background
+
+type PcRoot = { path: string; label: string; kind: "home" | "desktop" | "downloads" | "documents" | "pictures" | "videos" | "music"
+  | "drive" | "removableDrive" | "networkDrive" | "opticalDrive"; totalBytes: number | null; freeBytes: number | null };
+type PcEntry = { path: string; name: string; isDirectory: boolean; size: number; modified: string | null; readOnly: boolean; hidden: boolean };
+type UpdateStatus = { state: "notInstalled" | "idle" | "checking" | "upToDate" | "downloading" | "ready" | "error";
+  currentVersion: string; newVersion: string | null; percent: number | null; error: string | null; lastChecked: string | null };
+```
+
+`notInstalled`: the portable zip (only a copy installed by the Setup can update itself).
+
+### Notifications from C#
+
+Any feature can show a Windows notification through `BridgeServices.Notifications` (`INotificationService`):
+
+```csharp
+services.Notifications.Show(new AppNotification("12 new photos", "On Nima's iPhone")
+{
+    Tag = $"photos:{deviceId}",                       // a later one with the same tag replaces it
+    DeviceId = deviceId,                              // the page selects this phone on a click
+    Buttons = [new NotificationButton("Back up", "photos.backup")],
+});
+services.Notifications.Activated += (_, click) => { if (click.Command == "photos.backup") { /* … */ } };
+```
+
+`Show` never throws. Clicks arrive on a background thread after the window is in front, and also reach the page as
+`notification.activated`. Tests use `RecordingNotificationService` (records, and `Click(n, "photos.backup")` plays a click).
+The window uses Windows App SDK app notifications, or a balloon from its tray icon where those aren't available.
+
+### Video URL
+
+| Path | Serves |
+| --- | --- |
+| `video/{deviceId}/{assetId}?size={PhotoAsset.size}` | the original of a video with HTTP Range (200, 206 or 416; `Accept-Ranges: bytes`), so `<video>` can seek. The file is copied off the phone once into a cache and each range is answered as soon as its bytes are there; the last three videos stay cached. Without `size` the answer waits for the whole copy. |

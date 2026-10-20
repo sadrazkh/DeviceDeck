@@ -11,7 +11,8 @@ internal static class SummaryBuilder
         | DeviceCapability.Files | DeviceCapability.AppDocuments
         | DeviceCapability.AppsList | DeviceCapability.AppsInstall | DeviceCapability.AppsUninstall | DeviceCapability.AppsExport
         | DeviceCapability.Screenshot | DeviceCapability.ScreenMirror | DeviceCapability.Syslog | DeviceCapability.CrashReports
-        | DeviceCapability.Reboot | DeviceCapability.Shutdown | DeviceCapability.RebootToRecovery | DeviceCapability.RebootToBootloader;
+        | DeviceCapability.Reboot | DeviceCapability.Shutdown | DeviceCapability.RebootToRecovery | DeviceCapability.RebootToBootloader
+        | DeviceCapability.Rename;
 
     /// <summary>adb's state word for a device that is fully usable.</summary>
     public const string OnlineState = "device";
@@ -39,7 +40,8 @@ internal static class SummaryBuilder
             TrackDevicesParser.IsWifiSerial(entry.Serial) ? ConnectionKind.Wifi : ConnectionKind.Usb,
             state,
             DeviceMode.Full,
-            capabilities);
+            capabilities,
+            StateDetail: state == DeviceState.Unauthorized ? UnauthorizedDetail : null);
     }
 
     public static DeviceSummary Ready(AdbDeviceEntry entry, DeviceProfile profile) =>
@@ -52,5 +54,9 @@ internal static class SummaryBuilder
             State = DeviceState.Ready,
             Capabilities = ReadyCapabilities,
             ColorHex = profile.ColorHex,
+            StateDetail = null,
         };
+
+    /// <summary>DeviceSummary.StateDetail while the phone shows "Allow USB debugging?".</summary>
+    public const string UnauthorizedDetail = "Tap Allow on the phone · if nothing appears, unplug it and plug it in again";
 }
