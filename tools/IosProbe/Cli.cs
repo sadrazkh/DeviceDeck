@@ -47,6 +47,11 @@ internal sealed class Cli
           bench-storage [--browse]            time each source of the storage categories
           bench-overview                      storage while apps, photo index and icons load, as the host does
 
+        Toolbox
+          syslog [--seconds 5] [--show 5]     stream the live log, then counts by level and process
+          crashes [--limit 10]                crash reports (moves new ones into place first, like Finder)
+          wifisync [on|off --yes]             the "show this iPhone when on Wi-Fi" switch
+
         Power
           reboot --yes                        restart the phone
           shutdown --yes                      shut the phone down

@@ -55,6 +55,9 @@ internal sealed partial class FakeAdbServer : IAsyncDisposable
 
     public Func<string, byte[], string> Exec { get; set; } = (_, _) => "Success\n";
 
+    /// <summary>Toolbox tests: answers requests this fake doesn't know (host:pair, localabstract:…); true = handled.</summary>
+    public Func<string, NetworkStream, CancellationToken, Task<bool>>? Extra { get; set; }
+
     public async Task SetDevicesAsync(params FakeDevice[] devices)
     {
         List<NetworkStream> trackers;
@@ -125,6 +128,10 @@ internal sealed partial class FakeAdbServer : IAsyncDisposable
                     return;
                 }
                 Requests.Enqueue(request);
+                if (Extra is { } extra && await extra(request, stream, ct))
+                {
+                    return;
+                }
 
                 if (request == "host:version")
                 {

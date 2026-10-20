@@ -29,6 +29,7 @@ internal sealed class TestHost : IAsyncDisposable
         Settings = new SettingsStore(Paths.SettingsFile);
         Shell = new FakeShell();
         Transport = new MemoryTransport();
+        Toolbox = new ToolboxFakes(root);
         Services = new BridgeServices
         {
             Hub = hub,
@@ -38,6 +39,7 @@ internal sealed class TestHost : IAsyncDisposable
             Screenshots = new ScreenshotStore(),
             Version = "9.9.9-test",
             DevFake = fake,
+            Toolbox = Toolbox.Services,
         };
         Bridge = new BridgeHost(Transport, Services);
     }
@@ -54,6 +56,7 @@ internal sealed class TestHost : IAsyncDisposable
     public MemoryTransport Transport { get; }
     public BridgeServices Services { get; }
     public BridgeHost Bridge { get; }
+    public ToolboxFakes Toolbox { get; }
 
     public string PcFolder(string name)
     {
