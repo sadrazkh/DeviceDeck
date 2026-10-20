@@ -6,6 +6,8 @@ namespace DeviceDeck.Core.Transfers.Handlers;
 /// <summary>apps.install: one .ipa, or the .apk files of one app (split APKs), as a single item.</summary>
 public sealed class AppInstallHandler : TransferHandler<AppInstallRequest>
 {
+    private static readonly HashSet<string> AndroidPackages = new(StringComparer.OrdinalIgnoreCase) { ".apk", ".apks", ".xapk", ".apkm" };
+
     public override TransferKind Kind => TransferKind.AppInstall;
 
     protected override Task<string> DescribeAsync(IDevice device, AppInstallRequest request, CancellationToken ct)
@@ -17,6 +19,16 @@ public sealed class AppInstallHandler : TransferHandler<AppInstallRequest>
             {
                 throw new ArgumentException("Each file must be a full path on this PC.");
             }
+        }
+
+        // The wrong kind of package fails the call at once, before a job exists.
+        if (device.Summary.Platform == DevicePlatform.Ios
+                ? request.Files.Count != 1 || !Path.GetExtension(request.Files[0]).Equals(".ipa", StringComparison.OrdinalIgnoreCase)
+                : request.Files.Any(f => !AndroidPackages.Contains(Path.GetExtension(f))))
+        {
+            throw new DeviceException(DeviceErrorCodes.InstallFailed, device.Summary.Platform == DevicePlatform.Ios
+                ? "An iPhone installs one .ipa file at a time."
+                : "Android installs .apk, .apks, .xapk or .apkm files.");
         }
 
         return Task.FromResult($"Installing {Path.GetFileName(request.Files[0])}");

@@ -125,6 +125,12 @@ public sealed class DeviceImageHandler
                 var bytes = await device.Photos.GetThumbnailAsync(assetId, size, timeout.Token).ConfigureAwait(false);
                 if (bytes is not { Length: > 0 })
                 {
+                    // No thumbnail on the phone (an iPhone without PhotoData/Thumbnails): make one from the original.
+                    bytes = await ThumbnailFromOriginalAsync(device, assetId, size, timeout.Token).ConfigureAwait(false);
+                }
+
+                if (bytes is not { Length: > 0 })
+                {
                     return null;
                 }
 
@@ -140,6 +146,30 @@ public sealed class DeviceImageHandler
         {
             _inFlight.TryRemove(key, out _);
         }
+    }
+
+    /// <summary>Originals larger than this are not read just to make a thumbnail.</summary>
+    public long MaxOriginalForThumbnail { get; init; } = 64L * 1024 * 1024;
+
+    private async Task<byte[]?> ThumbnailFromOriginalAsync(IDevice device, string assetId, int size, CancellationToken ct)
+    {
+        if (_transcoder is null)
+        {
+            return null;
+        }
+
+        using var original = new HeadCheckedStream(MaxOriginalForThumbnail, head => ImageFormats.Sniff(head).StartsWith("image/", StringComparison.Ordinal));
+        try
+        {
+            await device.Photos.ReadOriginalAsync(assetId, original, null, ct).ConfigureAwait(false);
+        }
+        catch (HeadCheckedStream.RejectedException)
+        {
+            return null; // a video, or too big
+        }
+
+        original.Position = 0;
+        return await _transcoder.ToJpegAsync(original, size, ct).ConfigureAwait(false);
     }
 
     private async Task<ImageResponse> PhotoAsync(string deviceId, string assetId, CancellationToken ct)

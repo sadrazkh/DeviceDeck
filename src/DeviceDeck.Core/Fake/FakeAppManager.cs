@@ -68,7 +68,7 @@ internal sealed class FakeAppManager : IAppManager
 
         var first = Path.GetFileName(localPaths[0]);
         var ext = Path.GetExtension(first).ToLowerInvariant();
-        if (IsIos ? (localPaths.Count != 1 || ext != ".ipa") : localPaths.Any(p => Path.GetExtension(p).ToLowerInvariant() is not (".apk" or ".apks" or ".xapk")))
+        if (IsIos ? (localPaths.Count != 1 || ext != ".ipa") : localPaths.Any(p => Path.GetExtension(p).ToLowerInvariant() is not (".apk" or ".apks" or ".xapk" or ".apkm")))
         {
             throw new DeviceException(DeviceErrorCodes.InstallFailed, IsIos ? "An iPhone installs one .ipa file." : "Android installs .apk, .apks or .xapk files.");
         }

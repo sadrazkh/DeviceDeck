@@ -19,6 +19,9 @@ public sealed class FakeDeviceSpec
     public required IReadOnlyList<FakeRoot> Roots { get; init; }
     public required IReadOnlyList<FakeApp> Apps { get; init; }
 
+    /// <summary>False plays an iPhone whose library has no ready-made thumbnails: GetThumbnailAsync returns null.</summary>
+    public bool ThumbnailsOnPhone { get; init; } = true;
+
     /// <summary>Screen size for screenshots.</summary>
     public (int Width, int Height) Screen { get; init; } = (603, 1311);
 }

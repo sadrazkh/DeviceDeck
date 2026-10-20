@@ -89,7 +89,7 @@ internal sealed class FakePhotoLibrary : IPhotoLibrary, IPhotoIndexProgressSourc
             _byId.TryGetValue(assetId, out asset);
         }
 
-        if (asset is null)
+        if (asset is null || !_device.Spec.ThumbnailsOnPhone)
         {
             return Task.FromResult<byte[]?>(null);
         }

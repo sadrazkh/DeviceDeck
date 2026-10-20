@@ -161,6 +161,57 @@ public sealed class ImageHandlerTests
         Assert.Equal(200, (await Handler(host).HandleAsync(new Uri(url), CancellationToken.None)).StatusCode);
     }
 
+    private sealed class StubTranscoder : Core.Imaging.IImageTranscoder
+    {
+        public List<(string Type, int? MaxSize)> Calls { get; } = [];
+
+        public async Task<byte[]?> ToJpegAsync(Stream source, int? maxSize, CancellationToken ct)
+        {
+            var head = new byte[16];
+            var read = await source.ReadAtLeastAsync(head, head.Length, throwOnEndOfStream: false, ct);
+            Calls.Add((Core.Imaging.ImageFormats.Sniff(head.AsSpan(0, read)), maxSize));
+            return [0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3];
+        }
+    }
+
+    [Fact]
+    public async Task A_phone_without_thumbnails_gets_them_made_from_the_original()
+    {
+        var phone = TestPhones.Iphone();
+        var bare = new Core.Fake.FakeDeviceSpec
+        {
+            Summary = phone.Summary, Storage = phone.Storage, Battery = phone.Battery, Details = phone.Details,
+            Assets = phone.Assets, Albums = phone.Albums, Roots = phone.Roots, Apps = phone.Apps, ThumbnailsOnPhone = false,
+        };
+        await using var host = await TestHost.StartAsync(bare);
+        var url = new Uri(DeviceImageHandler.ThumbUrl(TestPhones.IphoneId, $"{TestPhones.IphoneId}-a0", 256));
+
+        var without = await Handler(host).HandleAsync(url, CancellationToken.None);
+        Assert.Equal(404, without.StatusCode);
+
+        var transcoder = new StubTranscoder();
+        var handler = new DeviceImageHandler(host.Hub, new ThumbnailCache(Path.Combine(host.Root, "thumbs2")), host.Services.Screenshots, transcoder, Path.Combine(host.Root, "viewer"));
+        var made = await handler.HandleAsync(url, CancellationToken.None);
+        Assert.Equal(200, made.StatusCode);
+        Assert.Equal("image/jpeg", made.ContentType);
+        Assert.Equal([("image/png", (int?)256)], transcoder.Calls);
+    }
+
+    [Fact]
+    public void Originals_that_are_not_pictures_or_too_big_are_refused_early()
+    {
+        using var video = new HeadCheckedStream(1_000_000, head => Core.Imaging.ImageFormats.Sniff(head).StartsWith("image/", StringComparison.Ordinal));
+        byte[] mov = [0, 0, 0, 0x14, (byte)'f', (byte)'t', (byte)'y', (byte)'p', (byte)'q', (byte)'t', (byte)' ', (byte)' ', 0, 0, 0, 0, 9, 9];
+        Assert.Throws<HeadCheckedStream.RejectedException>(() => video.Write(mov));
+
+        using var heic = new HeadCheckedStream(1_000_000, head => Core.Imaging.ImageFormats.Sniff(head).StartsWith("image/", StringComparison.Ordinal));
+        heic.Write([0, 0, 0, 0x18, (byte)'f', (byte)'t', (byte)'y', (byte)'p', (byte)'h', (byte)'e', (byte)'i', (byte)'c', 0, 0, 0, 0, 1]);
+        Assert.Equal(17, heic.Length);
+
+        using var huge = new HeadCheckedStream(10, _ => true);
+        Assert.Throws<HeadCheckedStream.RejectedException>(() => huge.Write(new byte[11]));
+    }
+
     [Theory]
     [InlineData("", 256)]
     [InlineData("?s=100", 128)]

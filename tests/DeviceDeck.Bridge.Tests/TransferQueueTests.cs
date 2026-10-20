@@ -385,6 +385,22 @@ public sealed class TransferQueueTests
     }
 
     [Fact]
+    public async Task The_wrong_package_type_fails_the_call_at_once()
+    {
+        await using var host = await TestHost.StartAsync();
+        var zip = Path.Combine(host.PcFolder("pkgs"), "thing.zip");
+        var apk = Path.Combine(host.PcFolder("pkgs"), "thing.apk");
+        await File.WriteAllBytesAsync(zip, [1]);
+        await File.WriteAllBytesAsync(apk, [1]);
+
+        var onAndroid = await host.CallAsync("apps.install", new { deviceId = TestPhones.AndroidId, files = new[] { zip } });
+        Assert.Equal("install_failed", (string?)onAndroid["error"]!["data"]!["code"]);
+        var onIphone = await host.CallAsync("apps.install", new { deviceId = TestPhones.IphoneId, files = new[] { apk } });
+        Assert.Equal("install_failed", (string?)onIphone["error"]!["data"]!["code"]);
+        Assert.Empty(host.Queue.List());
+    }
+
+    [Fact]
     public async Task Bad_requests_are_refused_before_a_job_exists()
     {
         await using var host = await TestHost.StartAsync();

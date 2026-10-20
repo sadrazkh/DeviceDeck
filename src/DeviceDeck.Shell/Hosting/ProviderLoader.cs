@@ -8,7 +8,8 @@ namespace DeviceDeck.Shell.Hosting;
 /// Picks the device providers from DEVICEDECK_PROVIDERS: "fake" (default), "real" (iPhone + Android),
 /// "ios", "android", or a '+'-joined mix such as "real+fake". Real providers are found by reflection in
 /// DeviceDeck.Ios.dll and DeviceDeck.Android.dll: every public IDeviceProvider with a constructor whose
-/// parameters all have defaults. If nothing loads, the fake phones are used so the app always opens.
+/// parameters each have a default or are an options class with a parameterless constructor
+/// (new AndroidDeviceProvider(new AndroidProviderOptions())). If nothing loads, the fake phones are used so the app always opens.
 /// </summary>
 internal static class ProviderLoader
 {
@@ -70,7 +71,10 @@ internal static class ProviderLoader
             .Where(t => t is { IsClass: true, IsAbstract: false } && typeof(IDeviceProvider).IsAssignableFrom(t));
         foreach (var type in types)
         {
-            var ctor = type.GetConstructors().FirstOrDefault(c => c.GetParameters().All(p => p.HasDefaultValue));
+            var ctor = type.GetConstructors()
+                .Where(c => c.GetParameters().All(CanSupply))
+                .OrderBy(c => c.GetParameters().Length)
+                .FirstOrDefault();
             if (ctor is null)
             {
                 ShellLog.Info($"{type.FullName} has no constructor usable without arguments; skipped.");
@@ -80,7 +84,7 @@ internal static class ProviderLoader
             IDeviceProvider? provider = null;
             try
             {
-                provider = (IDeviceProvider)ctor.Invoke(ctor.GetParameters().Select(p => p.DefaultValue).ToArray());
+                provider = (IDeviceProvider)ctor.Invoke(ctor.GetParameters().Select(Supply).ToArray());
             }
             catch (Exception ex)
             {
@@ -93,4 +97,12 @@ internal static class ProviderLoader
             }
         }
     }
+
+    // A parameter is fine when it has a default, or is a concrete options class we can new up (its defaults apply).
+    private static bool CanSupply(ParameterInfo p) =>
+        p.HasDefaultValue ||
+        (p.ParameterType is { IsClass: true, IsAbstract: false } t && t != typeof(string) && t.GetConstructor(Type.EmptyTypes) is not null);
+
+    private static object? Supply(ParameterInfo p) =>
+        p.HasDefaultValue ? p.DefaultValue : Activator.CreateInstance(p.ParameterType);
 }
