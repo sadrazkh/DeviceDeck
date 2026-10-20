@@ -489,3 +489,4 @@ web/test-results/
 web/playwright-report/
 
 artifacts/
+!docs/releases/
