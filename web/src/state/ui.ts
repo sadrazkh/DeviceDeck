@@ -24,6 +24,8 @@ interface DevicePlace {
   forward: Section[];
   albumId: string;
   files: FilesPlace;
+  /** Where App documents is: root null = the grid of apps. */
+  appDocs: FilesPlace;
 }
 
 const freshPlace = (section: Section = 'overview'): DevicePlace => ({
@@ -32,6 +34,7 @@ const freshPlace = (section: Section = 'overview'): DevicePlace => ({
   forward: [],
   albumId: 'all',
   files: { root: null, path: '/' },
+  appDocs: { root: null, path: '/' },
 });
 
 /** Where the page is: per phone, so switching phones keeps each one's place. */
@@ -47,6 +50,8 @@ interface UiState {
   jobDestinations: Record<string, string>;
   /** Phones whose Hidden album the user revealed. In memory only: it locks again when the app closes. */
   hiddenRevealed: Record<string, boolean>;
+  /** The root (app) each copy this page started goes into, for progress on App documents cards. */
+  jobRoots: Record<string, string>;
 
   selectDevice(id: string | null): void;
   navigate(section: Section): void;
@@ -54,11 +59,13 @@ interface UiState {
   goForward(): void;
   setAlbum(albumId: string): void;
   setFilesPlace(place: FilesPlace): void;
+  setAppDocsPlace(place: FilesPlace): void;
   setDrawerOpen(open: boolean): void;
   setPaletteOpen(open: boolean): void;
   setIndexProgress(deviceId: string, done: number, total: number): void;
   rememberDestination(jobId: string, destination: string): void;
   setHiddenRevealed(deviceId: string, revealed: boolean): void;
+  rememberJobRoot(jobId: string, root: string): void;
 }
 
 function placeOf(state: UiState, deviceId: string): DevicePlace {
@@ -74,6 +81,7 @@ export const useUi = create<UiState>((set, get) => ({
   indexProgress: {},
   jobDestinations: {},
   hiddenRevealed: {},
+  jobRoots: {},
 
   selectDevice: (id) =>
     set((s) => ({
@@ -142,6 +150,12 @@ export const useUi = create<UiState>((set, get) => ({
     set((s) => ({ places: { ...s.places, [id]: { ...placeOf(s, id), files } } }));
   },
 
+  setAppDocsPlace: (appDocs) => {
+    const { selectedDeviceId: id } = get();
+    if (!id) return;
+    set((s) => ({ places: { ...s.places, [id]: { ...placeOf(s, id), appDocs } } }));
+  },
+
   setDrawerOpen: (drawerOpen) => set({ drawerOpen }),
   setPaletteOpen: (paletteOpen) => set({ paletteOpen }),
   setIndexProgress: (deviceId, done, total) =>
@@ -150,6 +164,7 @@ export const useUi = create<UiState>((set, get) => ({
     set((s) => ({ jobDestinations: { ...s.jobDestinations, [jobId]: destination } })),
   setHiddenRevealed: (deviceId, revealed) =>
     set((s) => ({ hiddenRevealed: { ...s.hiddenRevealed, [deviceId]: revealed } })),
+  rememberJobRoot: (jobId, root) => set((s) => ({ jobRoots: { ...s.jobRoots, [jobId]: root } })),
 }));
 
 /** The section shown now for the selected phone. */

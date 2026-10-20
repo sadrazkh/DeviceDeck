@@ -4,6 +4,7 @@ import type { CSSProperties } from 'react';
 import { useSelectedDevice } from '../app/queries';
 import { usePrefs } from '../state/prefs';
 import { useSection, useUi } from '../state/ui';
+import { AppDocumentsScreen } from '../screens/appDocuments/AppDocumentsScreen';
 import { AppsScreen } from '../screens/apps/AppsScreen';
 import { ComingNextScreen } from '../screens/ComingNextScreen';
 import { FilesScreen } from '../screens/files/FilesScreen';
@@ -37,6 +38,8 @@ function Screen() {
       return <PhotosScreen device={device} />;
     case 'files':
       return <FilesScreen device={device} />;
+    case 'appDocuments':
+      return <AppDocumentsScreen device={device} />;
     case 'apps':
       return <AppsScreen device={device} />;
     default:

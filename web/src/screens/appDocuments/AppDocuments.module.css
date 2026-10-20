@@ -1,0 +1,161 @@
+.grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: var(--space-3);
+}
+
+.card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--space-4);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--color-stroke-card);
+  background: var(--color-surface-card);
+  box-shadow: var(--shadow-card);
+  color: var(--color-text-primary);
+  text-align: start;
+  transition:
+    border-color var(--motion-fast) var(--ease-standard),
+    background-color var(--motion-fast) var(--ease-standard),
+    box-shadow var(--motion-fast) var(--ease-standard);
+}
+
+button.card:hover {
+  border-color: var(--color-accent-stroke);
+  background: var(--color-surface-card-hover);
+}
+
+.card[data-drop] {
+  border-color: var(--color-accent);
+  border-style: dashed;
+  background: var(--color-accent-subtle);
+}
+
+.card[data-disabled] {
+  box-shadow: none;
+  background: var(--color-surface-content);
+}
+
+.card[data-refuse] {
+  border-color: var(--color-danger-stroke);
+  border-style: dashed;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.icon {
+  width: 48px;
+  height: 48px;
+  flex: none;
+  border-radius: 12px;
+}
+
+.card[data-disabled] .icon {
+  opacity: 0.45;
+  filter: grayscale(0.8);
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-half);
+  min-width: 0;
+}
+
+.name {
+  font-weight: var(--type-strong-weight);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.meta {
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  font-variant-numeric: var(--type-numeric);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.reason {
+  color: var(--color-text-tertiary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+.dropNote {
+  color: var(--color-accent-text);
+  font-size: var(--type-caption-size);
+  font-weight: var(--type-strong-weight);
+}
+
+.copy {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.copyLine {
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  font-variant-numeric: var(--type-numeric);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.sectionHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.hint {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  color: var(--color-text-secondary);
+}
+
+.hint svg {
+  flex: none;
+  font-size: var(--icon-size-small);
+}
+
+.page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
+}
+
+/* An app opened: its files in a pane that fills the screen. */
+.browserPane {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-card);
+  background: var(--color-surface-card);
+  border: 1px solid var(--color-stroke-card);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+}

@@ -394,6 +394,21 @@ export const en = {
   'files.noSharingApps': 'No app on this iPhone shares files with computers.',
   'files.copyStarted': 'Copy started',
 
+  // App documents
+  'appDocs.title': 'App documents',
+  'appDocs.subtitle': '{count, plural, one {# app shares files with this PC} other {# apps share files with this PC}}',
+  'appDocs.hint': 'Drop files on an app to copy them into it, or open it to see its files.',
+  'appDocs.items': '{count, plural, one {# item} other {# items}}',
+  'appDocs.empty': 'Empty',
+  'appDocs.dataSize': '{size} of app data',
+  'appDocs.dropOn': 'Drop to copy into {app}',
+  'appDocs.showOthers': 'Show apps that don’t share files',
+  'appDocs.others': 'Apps that don’t share files',
+  'appDocs.notSharing': 'This app doesn’t share files with computers.',
+  'appDocs.none.title': 'No app here shares files with computers',
+  'appDocs.none.body': 'Apps such as VLC, Documents or Infuse do. Install one on the iPhone, then come back.',
+  'appDocs.open': 'Open {app}',
+
   // Apps
   'apps.title': 'Apps',
   'apps.subtitle': '{count, plural, one {# app} other {# apps}}',
@@ -431,8 +446,6 @@ export const en = {
   // Coming next
   'coming.title': '{section} is coming next',
   'coming.body': 'This part of DeviceDeck is planned for a later phase.',
-  'coming.appDocuments': 'App documents already open in Files: each file-sharing app is a place there.',
-  'coming.openFiles': 'Open in Files',
 
   // Settings (basic)
   'settings.title': 'Settings',

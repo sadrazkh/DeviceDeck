@@ -191,6 +191,7 @@ export const appIconColours: Record<string, [string, string]> = {
   'org.videolan.vlc': ['#ff8a00', '#f25c05'],
   'com.readdle.ReaddleDocsIPad': ['#4f8ef7', '#2563eb'],
   'com.firecore.infuse': ['#ff7a3d', '#d9480f'],
+  'com.goodiware.GoodReader': ['#38bdf8', '#0369a1'],
   'ph.telegra.Telegraph': ['#3fb2ef', '#1d8fd1'],
   'org.telegram.messenger': ['#3fb2ef', '#1d8fd1'],
   'net.whatsapp.WhatsApp': ['#3ddc84', '#16a34a'],
@@ -217,6 +218,8 @@ export const apps: Record<string, AppInfo[]> = {
     { id: 'org.videolan.vlc-ios', name: 'VLC', version: '3.6.4', appBytes: Math.round(214 * MB), dataBytes: Math.round(3.1 * GB), source: 'store', fileSharing: true, installedAt: d('2025-02-11T10:20:00Z') },
     { id: 'com.readdle.ReaddleDocsIPad', name: 'Documents', version: '8.21', appBytes: Math.round(312 * MB), dataBytes: Math.round(0.888 * GB), source: 'store', fileSharing: true, installedAt: d('2024-09-03T08:00:00Z') },
     { id: 'com.firecore.infuse', name: 'Infuse', version: '8.1.2', appBytes: Math.round(96 * MB), dataBytes: Math.round(4.704 * GB), source: 'store', fileSharing: true, installedAt: d('2025-06-21T19:44:00Z') },
+    // A file-sharing app with nothing in it yet (the brief's "empty app" state).
+    { id: 'com.goodiware.GoodReader', name: 'GoodReader', version: '5.20', appBytes: Math.round(54 * MB), dataBytes: 0, source: 'store', fileSharing: true, installedAt: d('2026-10-12T09:30:00Z') },
     { id: 'ph.telegra.Telegraph', name: 'Telegram', version: '12.1', appBytes: Math.round(160 * MB), dataBytes: Math.round(252 * MB), source: 'store', fileSharing: false, installedAt: d('2023-12-01T12:00:00Z') },
     { id: 'net.whatsapp.WhatsApp', name: 'WhatsApp', version: '26.20.75', appBytes: Math.round(210 * MB), dataBytes: Math.round(1.59 * GB), source: 'store', fileSharing: false, installedAt: d('2023-12-01T12:05:00Z') },
     { id: 'com.burbn.instagram', name: 'Instagram', version: '402.0', appBytes: Math.round(380 * MB), dataBytes: Math.round(310 * MB), source: 'store', fileSharing: false, installedAt: d('2024-03-14T17:30:00Z') },

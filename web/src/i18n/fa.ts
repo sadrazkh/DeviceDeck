@@ -384,6 +384,20 @@ export const fa: Record<MessageKey, string> = {
   'files.noSharingApps': 'هیچ برنامه‌ای روی این آیفون فایل را با رایانه به اشتراک نمی‌گذارد.',
   'files.copyStarted': 'کپی شروع شد',
 
+  'appDocs.title': 'اسناد برنامه‌ها',
+  'appDocs.subtitle': '{count} برنامه با این رایانه فایل به اشتراک می‌گذارد',
+  'appDocs.hint': 'فایل‌ها را روی یک برنامه رها کنید تا در آن کپی شوند، یا بازش کنید تا فایل‌هایش را ببینید.',
+  'appDocs.items': '{count} مورد',
+  'appDocs.empty': 'خالی',
+  'appDocs.dataSize': '{size} دادهٔ برنامه',
+  'appDocs.dropOn': 'رها کنید تا در {app} کپی شود',
+  'appDocs.showOthers': 'نمایش برنامه‌هایی که فایل به اشتراک نمی‌گذارند',
+  'appDocs.others': 'برنامه‌هایی که فایل به اشتراک نمی‌گذارند',
+  'appDocs.notSharing': 'این برنامه فایل را با رایانه به اشتراک نمی‌گذارد.',
+  'appDocs.none.title': 'هیچ برنامه‌ای اینجا فایل را با رایانه به اشتراک نمی‌گذارد',
+  'appDocs.none.body': 'برنامه‌هایی مثل VLC، Documents یا Infuse این کار را می‌کنند. یکی را روی آیفون نصب کنید و برگردید.',
+  'appDocs.open': 'باز کردن {app}',
+
   'apps.title': 'برنامه‌ها',
   'apps.subtitle': '{count} برنامه',
   'apps.includeSystem': 'نمایش برنامه‌های سیستمی',
@@ -419,8 +433,6 @@ export const fa: Record<MessageKey, string> = {
 
   'coming.title': '{section} به‌زودی',
   'coming.body': 'این بخش از DeviceDeck برای مرحله‌ای بعدی برنامه‌ریزی شده است.',
-  'coming.appDocuments': 'اسناد برنامه‌ها همین حالا در بخش فایل‌ها باز می‌شوند: هر برنامهٔ دارای اشتراک فایل یک مکان در آنجاست.',
-  'coming.openFiles': 'باز کردن در فایل‌ها',
 
   'settings.title': 'تنظیمات',
   'settings.general': 'عمومی',

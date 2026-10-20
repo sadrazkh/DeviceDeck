@@ -25,7 +25,7 @@ console errors or warnings.
 | `src/state/` | zustand stores (per-phone place, drawer, palette, toasts, prefs) and pure selection / queue helpers |
 | `src/app/` | React Query hooks over the bridge, live event wiring, shortcuts, document attributes |
 | `src/shell/` | title bar, nav rail / top tabs, transfer drawer, toasts, command palette, conflict dialog |
-| `src/screens/` | Welcome, Overview, Photos, Files, Apps, Settings (basic), "coming next" |
+| `src/screens/` | Welcome, Overview, Photos, Files, App documents, Apps, Settings (basic), "coming next" |
 
 ## Mock backend switches (URL query, browser only)
 

@@ -219,7 +219,8 @@ describe('mock backend', () => {
   it('serves the file roots and folders, including blocked and very large ones', async () => {
     const { client } = setup();
     const roots = await client.call('files.roots', { deviceId: IPHONE_ID });
-    expect(roots.map((r) => r.label)).toEqual(['VLC', 'Documents', 'Infuse', 'Media folder']);
+    expect(roots.map((r) => r.label)).toEqual(['VLC', 'Documents', 'Infuse', 'GoodReader', 'Media folder']);
+    expect(await client.call('files.list', { deviceId: IPHONE_ID, root: 'app:com.goodiware.GoodReader', path: '/' })).toEqual([]);
     expect(roots[0]).toMatchObject({ kind: 'appDocuments', appId: 'org.videolan.vlc-ios' });
 
     await expect(client.call('files.list', { deviceId: ANDROID_ID, root: 'internal', path: '/Android/data' })).rejects.toMatchObject({
