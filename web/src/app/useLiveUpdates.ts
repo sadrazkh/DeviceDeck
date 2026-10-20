@@ -15,6 +15,9 @@ function invalidateAfter(queryClient: ReturnType<typeof useQueryClient>, job: Tr
     case 'copyToDevice':
       void queryClient.invalidateQueries({ queryKey: ['files.list', id] });
       void queryClient.invalidateQueries({ queryKey: keys.storage(id) });
+      // App files: card sizes and Android's "empty folder" flags.
+      void queryClient.invalidateQueries({ queryKey: ['appFiles.measure', id] });
+      void queryClient.invalidateQueries({ queryKey: ['appFiles.list', id] });
       break;
     case 'photosImport':
       void queryClient.invalidateQueries({ queryKey: ['photos.list', id] });
