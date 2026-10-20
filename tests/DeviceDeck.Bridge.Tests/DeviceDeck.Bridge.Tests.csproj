@@ -20,6 +20,8 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\DeviceDeck.Bridge\DeviceDeck.Bridge.csproj" />
+    <!-- Reads the fake iPhone's backups in the backup tests (Apple's format lives in the iPhone provider). -->
+    <ProjectReference Include="..\..\src\DeviceDeck.Ios\DeviceDeck.Ios.csproj" />
   </ItemGroup>
 
 </Project>

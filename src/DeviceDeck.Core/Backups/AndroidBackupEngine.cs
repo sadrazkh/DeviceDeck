@@ -41,9 +41,9 @@ internal static class AndroidBackupEngine
 
         var media = new List<(string Path, long Size, DateTimeOffset? Modified)>();
         var copiedFolders = new List<string>();
-        if ((summary.Capabilities & DeviceCapability.Files) != 0)
+        if ((summary.Capabilities & DeviceCapability.Files) != 0 && await OpenStorageAsync(device, ct).ConfigureAwait(false) is { } storage)
         {
-            await using var fs = await device.OpenFileSystemAsync(StorageRoot, ct).ConfigureAwait(false);
+            await using var fs = storage;
             foreach (var top in MediaFolders)
             {
                 var path = "/" + top;
@@ -113,6 +113,19 @@ internal static class AndroidBackupEngine
         };
         finished.Write(folder);
         return finished;
+    }
+
+    /// <summary>The phone's shared storage, or null when it has none DeviceDeck can open (then only apps are saved).</summary>
+    private static async Task<IDeviceFileSystem?> OpenStorageAsync(IDevice device, CancellationToken ct)
+    {
+        try
+        {
+            return await device.OpenFileSystemAsync(StorageRoot, ct).ConfigureAwait(false);
+        }
+        catch (DeviceException ex) when (ex.Code is DeviceErrorCodes.PathNotFound or DeviceErrorCodes.NotSupported or DeviceErrorCodes.PermissionDenied)
+        {
+            return null;
+        }
     }
 
     private static async Task WalkAsync(IDeviceFileSystem fs, string path, List<(string, long, DateTimeOffset?)> into, CancellationToken ct)
