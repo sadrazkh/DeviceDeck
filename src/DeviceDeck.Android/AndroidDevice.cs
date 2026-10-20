@@ -129,6 +129,10 @@ internal sealed partial class AndroidDevice : IDevice, IDisposable
         {
             basePath = "/storage/" + match.Groups["id"].Value;
         }
+        else if (TryAppFilesBase(rootKey, out var appFolder))
+        {
+            basePath = appFolder;
+        }
         else
         {
             throw new DeviceException(DeviceErrorCodes.PathNotFound, $"There's no storage called '{rootKey}' on this phone.");

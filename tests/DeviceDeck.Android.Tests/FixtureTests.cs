@@ -411,7 +411,7 @@ public class InfoBuilderTests
         Assert.Equal("15", ready.OsVersion);
         Assert.Equal(DevicePlatform.Android, ready.Platform);
         Assert.Equal(DeviceMode.Full, ready.Mode);
-        Assert.False(ready.Capabilities.HasFlag(DeviceCapability.AppDocuments));
+        Assert.True(ready.Capabilities.HasFlag(DeviceCapability.AppDocuments)); // app folders: Android/media, Android/data, Documents, Download
         Assert.True(ready.Capabilities.HasFlag(DeviceCapability.PhotosImport));
     }
 }
