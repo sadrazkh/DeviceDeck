@@ -33,6 +33,9 @@ internal sealed class FakePhone
 
     public Dictionary<string, PlistDict> Domains { get; } = [];
 
+    /// <summary>Keys a domain answers only when asked for by name, not in its full dump (as iOS 27 does).</summary>
+    public Dictionary<string, PlistDict> ByNameOnly { get; } = [];
+
     /// <summary>Lockdown error for StartSession (e.g. "InvalidHostID", "PasswordProtected"); null = succeed.</summary>
     public string? StartSessionError { get; set; }
 
@@ -79,6 +82,8 @@ internal sealed class FakePhone
                 {
                     var domain = msg.GetString("Domain");
                     var key = msg.GetString("Key");
+                    lock (Log)
+                        Log.Add($"lockdown:GetValue {domain ?? "-"} {key ?? "*"}");
                     PlistDict source = domain is null ? Values : Domains.GetValueOrDefault(domain) ?? new PlistDict();
                     if (!session && domain is null)
                         source = new PlistDict(source.Where(kv => UnpairedKeys.Contains(kv.Key)).ToDictionary());
@@ -91,6 +96,8 @@ internal sealed class FakePhone
                         reply["Value"] = source;
                     else if (source.TryGetValue(key, out var v))
                         reply["Value"] = v;
+                    else if (domain is not null && ByNameOnly.GetValueOrDefault(domain)?.TryGetValue(key, out var hiddenValue) == true)
+                        reply["Value"] = hiddenValue!;
                     else
                         reply["Error"] = "MissingValue";
                     break;

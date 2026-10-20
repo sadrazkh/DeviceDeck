@@ -41,15 +41,13 @@ public static class LockdownMapping
     /// From the com.apple.disk_usage domain (merged with com.apple.disk_usage.factory where the first lacks a key).
     /// Categories: photos, videos, apps, media, system; "other" is what is used but unaccounted for.
     /// </summary>
-    /// <param name="appBytes">Installed apps and their data, summed from installation_proxy (recent iOS has no
-    /// MobileApplicationUsage key); null to use the domain's own figure.</param>
-    /// <param name="videoBytes">Video files in the camera roll (from Photos.sqlite), split out of the photo usage; null when unknown.</param>
+    /// <param name="videoBytes">Video files in the camera roll, split out of the photo usage; null when unknown.</param>
     /// <remarks>
     /// Free space is AmountDataAvailable: what can be written right now. AFC's FSFreeBytes is that plus
     /// AmountDataReserved. Settings → iPhone Storage shows more free (an iPhone 16 on iOS 27: 6.86 GB in Settings
     /// against 4.2 GB here) because it also counts purgeable data, which no lockdown or AFC value reports.
     /// </remarks>
-    public static StorageInfo Storage(PlistDict diskUsage, long? appBytes = null, long? videoBytes = null)
+    public static StorageInfo Storage(PlistDict diskUsage, long? videoBytes = null)
     {
         var total = diskUsage.GetLong("TotalDiskCapacity") ?? 0;
         var dataCapacity = diskUsage.GetLong("TotalDataCapacity");
@@ -73,7 +71,7 @@ public static class LockdownMapping
             photos -= videos;
         }
         var media = Sum(diskUsage.GetLong("MediaCacheUsage"), diskUsage.GetLong("VoicemailUsage"));
-        var apps = appBytes ?? Sum(diskUsage.GetLong("MobileApplicationUsage"), diskUsage.GetLong("WebAppCacheUsage"));
+        var apps = Sum(diskUsage.GetLong("MobileApplicationUsage"), diskUsage.GetLong("WebAppCacheUsage"));
 
         var categories = new List<StorageCategory>();
         void Add(string key, long? bytes)

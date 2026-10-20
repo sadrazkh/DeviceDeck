@@ -224,21 +224,34 @@ public sealed class IosDeviceTests : IAsyncLifetime
     }
 
     [Fact]
-    public async Task Storage_on_ios27_sums_app_sizes_from_installation_proxy()
+    public async Task Storage_on_ios27_asks_for_app_usage_by_name_and_splits_videos_from_dcim()
     {
         var phone = PairedPhone();
-        phone.Domains["com.apple.disk_usage"] = PlistSerializer.ParseDict(Fixture.Bytes("Plist", "disk_usage_ios27.xml"));
-        phone.Apps.Add(App("com.example.a", "A", staticBytes: 30_000_000_000, dynamicBytes: 6_000_000_000));
-        phone.Apps.Add(App("com.apple.MobileSMS", "Messages", type: "System", staticBytes: 50_000_000, dynamicBytes: 800_000_000));
+        // As on iOS 27: the main dump has neither app nor camera usage; they come by name, the camera roll
+        // from the ".factory" domain.
+        var dump = PlistSerializer.ParseDict(Fixture.Bytes("Plist", "disk_usage_ios27.xml"));
+        dump.Remove("CameraUsage");
+        dump.Remove("PhotoUsage");
+        phone.Domains["com.apple.disk_usage"] = dump;
+        phone.ByNameOnly["com.apple.disk_usage"] = new PlistDict { ["MobileApplicationUsage"] = 36_800_000_000L };
+        phone.ByNameOnly["com.apple.disk_usage.factory"] = new PlistDict { ["CameraUsage"] = 26_000_000_000L };
+        phone.Media.AddFile("/DCIM/100APPLE/IMG_0001.HEIC", new byte[100]);
+        phone.Media.AddFile("/DCIM/100APPLE/IMG_0001.MOV", new byte[50]);   // Live Photo motion: counts as photo
+        phone.Media.AddFile("/DCIM/101APPLE/IMG_0102.MOV", new byte[4000]); // a video
+        phone.Media.AddFile("/DCIM/101APPLE/IMG_0103.MP4", new byte[1000]); // a video
         var device = await AttachAsync(phone);
 
         var c = (await device.GetStorageAsync(Ct)).Volumes[0].Categories.ToDictionary(x => x.Key, x => x.Bytes);
-        Assert.Equal(36_800_000_000, c["apps"]); // user code + data, built-in apps' data only
-        Assert.Equal(26_000_000_000, c["photos"]);
-        Assert.False(c.ContainsKey("videos")); // no photo index yet
+        Assert.Equal(36_800_000_000, c["apps"]);
+        Assert.Equal(5000, c["videos"]);
+        Assert.Equal(26_000_000_000 - 5000, c["photos"]);
+        Assert.DoesNotContain(phone.Log, l => l == "instproxy:Browse"); // no slow size scan
+        Assert.DoesNotContain(phone.Log, l => l == "lockdown:GetValue com.apple.disk_usage.factory *"); // no slow full dump
 
+        // The video sizes are cached: a second call does not stat the camera roll again.
+        var stats = phone.Media.Operations.Count(o => o == Protocol.Afc.AfcOperation.GetFileInfo);
         await device.GetStorageAsync(Ct);
-        Assert.True(phone.Log.Count(l => l == "instproxy:Browse") <= 1, "app sizes are cached (and prefetched once)");
+        Assert.Equal(stats, phone.Media.Operations.Count(o => o == Protocol.Afc.AfcOperation.GetFileInfo));
     }
 
     [Fact]

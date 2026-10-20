@@ -33,10 +33,6 @@ public sealed class IosDevice : IDevice, IAsyncDisposable
     private IosPairing.Attempt? _pendingPairing;
     private bool _pairingDenied;
     private readonly SharedConnection<AfcClient> _mediaAfc;
-    private readonly object _appSizeGate = new();
-    private (long Bytes, DateTime AtUtc)? _appBytes;
-    private Task<long>? _appSizeScan;
-    private bool _prefetched;
     private Task _loop = Task.CompletedTask;
     private bool _gone;
 
@@ -166,13 +162,6 @@ public sealed class IosDevice : IDevice, IAsyncDisposable
             }
 
             UpdateSummary(state);
-            if (state == DeviceState.Ready && !_prefetched && _options.PrefetchAppSizes)
-            {
-                // App sizes take the phone several seconds to compute; start now so the storage card is quick.
-                _prefetched = true;
-                _ = GetAppBytesAsync(ct).ContinueWith(t => _ = t.Exception, CancellationToken.None,
-                    TaskContinuationOptions.OnlyOnFaulted, TaskScheduler.Default);
-            }
             var delay = state == DeviceState.Ready && failures == 0
                 ? Timeout.InfiniteTimeSpan
                 : TimeSpan.FromTicks(_options.RetryInterval.Ticks * Math.Min(1 << Math.Min(failures, 4), 10));
@@ -360,67 +349,47 @@ public sealed class IosDevice : IDevice, IAsyncDisposable
         });
 
     /// <summary>
-    /// Capacity, free space and categories. Apps come from installation_proxy sizes (about 7 s on a phone with
-    /// 100+ apps, so cached for 10 minutes); videos are split from photos once the photo index has been built.
+    /// Capacity, free space and categories in under a second (0.8 s measured on an iPhone 16, iOS 27): the
+    /// disk-usage domain, a few keys asked for by name, and, in parallel, a stat of the camera roll's videos for
+    /// the photos/videos split. The ".factory" domain is not read: the phone spends ~1.5 s computing it.
     /// </summary>
     public Task<StorageInfo> GetStorageAsync(CancellationToken ct) => UseAsync(async c =>
     {
+        var videos = ((IosPhotoLibrary)Photos).GetVideoBytesAsync(ct);
         PlistDict usage;
         await using (var lockdown = await c.OpenSessionAsync(ct).ConfigureAwait(false))
+            usage = await ReadDiskUsageAsync(lockdown, ct).ConfigureAwait(false);
+
+        long? videoBytes = null;
+        try
         {
-            usage = await lockdown.GetAllValuesAsync("com.apple.disk_usage", ct).ConfigureAwait(false);
-            var factory = await lockdown.GetAllValuesAsync("com.apple.disk_usage.factory", ct).ConfigureAwait(false);
-            foreach (var (k, v) in factory)
-                usage.TryAdd(k, v);
+            videoBytes = await videos.ConfigureAwait(false);
         }
-        long? appBytes = null;
-        if (usage.GetLong("MobileApplicationUsage") is null)
-            appBytes = await GetAppBytesAsync(ct).ConfigureAwait(false);
-        var videoBytes = (Photos as IosPhotoLibrary)?.LastIndex?.VideoBytes;
-        return LockdownMapping.Storage(usage, appBytes, videoBytes);
+        catch (DeviceException ex) when (ex.Code is DeviceErrorCodes.PermissionDenied or DeviceErrorCodes.Protocol or DeviceErrorCodes.PathNotFound)
+        {
+            // Without it, videos stay inside "photos".
+        }
+        return LockdownMapping.Storage(usage, videoBytes);
     });
 
-    private static readonly string[] SizeAttributes = ["CFBundleIdentifier", "ApplicationType", "StaticDiskUsage", "DynamicDiskUsage"];
+    /// <summary>Cheap keys iOS 27 leaves out of the domain's full dump but answers when asked for by name.</summary>
+    private static readonly string[] DiskUsageKeysByName = ["MobileApplicationUsage", "MediaCacheUsage", "VoicemailUsage", "WebAppCacheUsage"];
 
-    /// <summary>Cached app bytes, or the result of the one scan in flight (the prefetch, or a new one).</summary>
-    private Task<long> GetAppBytesAsync(CancellationToken ct)
+    private static async Task<PlistDict> ReadDiskUsageAsync(LockdownClient lockdown, CancellationToken ct)
     {
-        lock (_appSizeGate)
+        const string domain = "com.apple.disk_usage";
+        var usage = await lockdown.GetAllValuesAsync(domain, ct).ConfigureAwait(false);
+        foreach (var key in DiskUsageKeysByName)
         {
-            if (_appBytes is { } cached && DateTime.UtcNow - cached.AtUtc < TimeSpan.FromMinutes(10))
-                return Task.FromResult(cached.Bytes);
-            if (_appSizeScan is null || _appSizeScan.IsCompleted)
-                _appSizeScan = ScanAppBytesAsync(_life.Token);
-            return _appSizeScan.WaitAsync(ct);
+            if (!usage.ContainsKey(key) && await lockdown.GetValueAsync(domain, key, ct).ConfigureAwait(false) is { } value)
+                usage[key] = value;
         }
-    }
-
-    private async Task<long> ScanAppBytesAsync(CancellationToken ct)
-    {
-        await using var proxy = await Connector().StartServiceAsync(ServiceNames.InstallationProxy, ct).ConfigureAwait(false);
-        var apps = await InstallationProxyClient.BrowseAsync(proxy, "Any", ct, SizeAttributes).ConfigureAwait(false);
-        return RememberAppSizes(apps);
-    }
-
-    /// <summary>
-    /// User apps count with their code and data; built-in apps only with their data (their code lives on the
-    /// sealed system volume, already in "system").
-    /// </summary>
-    internal long RememberAppSizes(IReadOnlyList<PlistDict> apps)
-    {
-        long total = 0;
-        foreach (var a in apps)
-        {
-            total += a.GetString("ApplicationType") switch
-            {
-                "User" => (a.GetLong("StaticDiskUsage") ?? 0) + (a.GetLong("DynamicDiskUsage") ?? 0),
-                "System" => a.GetLong("DynamicDiskUsage") ?? 0,
-                _ => 0,
-            };
-        }
-        lock (_appSizeGate)
-            _appBytes = (total, DateTime.UtcNow);
-        return total;
+        // The camera roll's size lives in the ".factory" domain; the phone computes it on request (~0.7 s).
+        // PhotoUsage carries the same figure on iOS 27, so it is not asked for separately.
+        if (!usage.ContainsKey("CameraUsage") && !usage.ContainsKey("PhotoUsage")
+            && await lockdown.GetValueAsync(domain + ".factory", "CameraUsage", ct).ConfigureAwait(false) is { } camera)
+            usage["CameraUsage"] = camera;
+        return usage;
     }
 
     public Task<BatteryInfo> GetBatteryAsync(CancellationToken ct) => UseAsync(async c =>

@@ -83,6 +83,8 @@ internal static class Commands
             }
             Out.Plist(await d.GetLockdownValuesAsync(domain, ct));
         }),
+        ["bench-storage"] = new([], (d, c, ct) => BenchStorage.RunAsync(d, c.Has("browse"), ct)),
+        ["bench-overview"] = new([], (d, _, ct) => BenchStorage.OverviewAsync(d, ct)),
         ["afcinfo"] = new([], async (d, _, ct) =>
         {
             foreach (var (k, v) in (await d.GetAfcDeviceInfoAsync(ct)).OrderBy(kv => kv.Key, StringComparer.Ordinal))
@@ -227,11 +229,7 @@ internal static class Commands
 
     private static async Task StorageAsync(IosDevice device, CancellationToken ct)
     {
-        // The host splits videos out once the Photos page has built the index; the probe builds it up front.
         var sw = Stopwatch.StartNew();
-        var index = await ((IosPhotoLibrary)device.Photos).GetIndexAsync(refresh: false, ct);
-        Console.Error.WriteLine($"(photo index: {index.Mode}, {sw.Elapsed.TotalSeconds:0.0} s)");
-        sw.Restart();
         var info = await device.GetStorageAsync(ct);
         Console.Error.WriteLine($"(storage: {sw.Elapsed.TotalSeconds:0.0} s)");
         foreach (var v in info.Volumes)

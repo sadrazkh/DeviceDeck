@@ -63,7 +63,7 @@ public class LockdownMappingTests
     }
 
     [Fact]
-    public void Storage_on_ios27_counts_the_camera_roll_once_and_takes_apps_and_videos_from_outside()
+    public void Storage_on_ios27_counts_the_camera_roll_once_and_splits_videos_out()
     {
         var usage = Load("disk_usage_ios27.xml");
 
@@ -71,7 +71,9 @@ public class LockdownMappingTests
         Assert.Equal(26_000_000_000, merged["photos"]); // not 52 GB: CameraUsage == PhotoUsage
         Assert.False(merged.ContainsKey("apps"));
 
-        var v = LockdownMapping.Storage(usage, appBytes: 36_800_000_000, videoBytes: 16_500_000_000).Volumes[0];
+        // iOS 27 answers MobileApplicationUsage only when asked for by name; the provider adds it.
+        usage["MobileApplicationUsage"] = 36_800_000_000L;
+        var v = LockdownMapping.Storage(usage, videoBytes: 16_500_000_000).Volumes[0];
         var c = v.Categories.ToDictionary(x => x.Key, x => x.Bytes);
         Assert.Equal(4_300_000_000, v.FreeBytes); // AmountDataAvailable, not TotalDataAvailable
         Assert.Equal(9_500_000_000, c["photos"]);

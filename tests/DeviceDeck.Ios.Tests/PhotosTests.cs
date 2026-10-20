@@ -56,7 +56,6 @@ public sealed class PhotosTests : IDisposable
         var index = PhotoIndex.Build(DcimFiles, db.ReadAssets(), db.ReadAlbums(), db.Schema.Variant);
 
         Assert.Equal(PhotoIndexMode.Database, index.Mode);
-        Assert.Equal(40_000_000, index.VideoBytes); // the one video whose file is on the phone
         // Newest first; trashed (5) and hidden (6) are not in All; IMG_0007.JPG is not in the database and comes last.
         Assert.Equal(
             ["DCIM/101APPLE/IMG_0101.HEIC", "DCIM/100APPLE/IMG_0004.PNG", "DCIM/100APPLE/IMG_0003.MOV",
@@ -126,7 +125,13 @@ public sealed class PhotosTests : IDisposable
         Assert.Equal(AlbumKind.User, index.Albums.Single(a => a.Id == "hidden").Kind);
         Assert.Equal(["DCIM/100APPLE/IMG_0002.MOV"], index.Page("hidden", 0, 10).Items.Select(a => a.Id));
         Assert.DoesNotContain(index.Page(null, 0, 10).Items, a => a.Id == "DCIM/100APPLE/IMG_0002.MOV");
-        Assert.Equal(1000, index.VideoBytes); // its file still takes space on the phone
+    }
+
+    [Fact]
+    public void Stand_alone_videos_leave_out_live_photo_motion()
+    {
+        // IMG_0002.MOV is the motion half of IMG_0002.HEIC; IMG_0003.MOV is a video of its own.
+        Assert.Equal(["DCIM/100APPLE/IMG_0003.MOV"], IosPhotoLibrary.StandAloneVideos(DcimFiles));
     }
 
     [Fact]
@@ -146,7 +151,6 @@ public sealed class PhotosTests : IDisposable
 
         Assert.Equal(PhotoIndexMode.DcimOnly, index.Mode);
         Assert.Equal("no database", index.FallbackReason);
-        Assert.Null(index.VideoBytes);
         var byId = index.Assets.ToDictionary(a => a.Id);
         Assert.Equal(7, byId.Count); // 8 files, the Live Photo's MOV folded into its HEIC
         Assert.Equal(PhotoKind.LivePhoto, byId["DCIM/100APPLE/IMG_0002.HEIC"].Kind);
