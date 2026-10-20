@@ -28,7 +28,7 @@ export interface BridgeClientOptions {
   timeoutMs?: number;
 }
 
-const NO_TIMEOUT: ReadonlySet<string> = new Set(['shell.pickFolder']);
+const NO_TIMEOUT: ReadonlySet<string> = new Set(['shell.pickFolder', 'crash.list', 'report.save']);
 
 export class BridgeClient {
   private nextId = 1;

@@ -1,6 +1,7 @@
 /// <reference types="vitest/config" />
 import { defineConfig, type Plugin } from 'vite';
 import react from '@vitejs/plugin-react';
+import { fileURLToPath } from 'node:url';
 
 // The built page makes no network requests: images come from data:/blob: URLs (mock) or the
 // host's virtual host https://device.local/ (WebView2). Dev mode skips this so HMR keeps working.
@@ -28,7 +29,17 @@ export default defineConfig({
   base: './',
   server: { port: 5173, strictPort: true },
   preview: { port: 4173, strictPort: true },
-  build: { target: 'es2022', chunkSizeWarningLimit: 1500 },
+  build: {
+    target: 'es2022',
+    chunkSizeWarningLimit: 1500,
+    // index.html is the app; mirror.html is the screen-mirroring window (toolbox).
+    rollupOptions: {
+      input: {
+        main: fileURLToPath(new URL('./index.html', import.meta.url)),
+        mirror: fileURLToPath(new URL('./mirror.html', import.meta.url)),
+      },
+    },
+  },
   test: {
     environment: 'jsdom',
     include: ['tests/unit/**/*.test.ts', 'tests/unit/**/*.test.tsx'],

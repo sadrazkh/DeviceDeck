@@ -1,0 +1,93 @@
+.app {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-scrim-media);
+  color: var(--color-text-on-media);
+  font-family: var(--font-ui);
+  font-size: var(--type-body-size);
+}
+
+.toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  background: var(--color-media-panel);
+  border-bottom: 1px solid var(--color-media-stroke);
+}
+
+.toolbar button {
+  color: var(--color-text-on-media);
+}
+
+.stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+}
+
+.screen {
+  display: block;
+  background: #000000;
+  border-radius: 6px;
+  touch-action: none;
+  cursor: default;
+  outline: none;
+}
+
+.screen:focus-visible {
+  box-shadow: 0 0 0 2px var(--color-focus);
+}
+
+.overlay {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-3);
+  padding: var(--space-6);
+  text-align: center;
+  color: var(--color-media-text-secondary);
+}
+
+.overlay strong {
+  color: var(--color-text-on-media);
+  font-size: var(--type-subtitle-size);
+}
+
+.placeholder {
+  width: min(70vw, 300px);
+  aspect-ratio: 9 / 19.5;
+  border-radius: 24px;
+  background: linear-gradient(165deg, #2b2f6b, #5b5bf6 55%, #e2733a);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  color: #ffffff;
+  font-size: 48px;
+  font-weight: 300;
+}
+
+.placeholder small {
+  font-size: var(--type-caption-size);
+  opacity: 0.8;
+}
+
+.status {
+  padding: var(--space-1) var(--space-3);
+  color: var(--color-media-text-tertiary);
+  font-size: var(--type-caption-size);
+  text-align: center;
+  font-variant-numeric: var(--type-numeric);
+}

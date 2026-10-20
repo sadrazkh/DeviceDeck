@@ -11,6 +11,7 @@ import { FilesScreen } from '../screens/files/FilesScreen';
 import { OverviewScreen } from '../screens/overview/OverviewScreen';
 import { PhotosScreen } from '../screens/photos/PhotosScreen';
 import { SettingsScreen } from '../screens/SettingsScreen';
+import { ToolboxScreen } from '../screens/toolbox/ToolboxScreen';
 import { WelcomeScreen } from '../screens/welcome/WelcomeScreen';
 import { CommandPalette } from './CommandPalette';
 import { ConflictDialog } from './ConflictDialog';
@@ -42,6 +43,8 @@ function Screen() {
       return <AppDocumentsScreen device={device} />;
     case 'apps':
       return <AppsScreen device={device} />;
+    case 'toolbox':
+      return <ToolboxScreen device={device} />;
     default:
       return <ComingNextScreen section={section} />;
   }

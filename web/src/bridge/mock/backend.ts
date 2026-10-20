@@ -34,6 +34,7 @@ import {
 import { assetsInAlbum, generateLibrary, toContractAsset, type MockAsset, type MockLibrary } from './photos';
 import { hashString } from './random';
 import { TransferEngine, type JobItem } from './transfers';
+import { MockToolbox } from './toolbox';
 
 export type MockScenario = 'ready' | 'empty' | 'trust' | 'limited' | 'driverMissing' | 'iphoneOnly';
 
@@ -262,6 +263,17 @@ export class MockBackend {
     return handler((params ?? {}) as never);
   }
 
+  /** Toolbox methods (round 2); its arrows reach this backend only when called. */
+  private readonly toolbox = new MockToolbox({
+    emit: (event, params) => this.emit(event, params),
+    ready: (deviceId, capability) => this.requireReady(deviceId, capability),
+    after: (ms, run) => this.after(ms, run),
+    now: () => this.now(),
+    details: (deviceId) => structuredClone(details[deviceId] ?? { rows: [] }),
+    fault: (code, message) => fault(code, message),
+    badParams: (message) => badParams(message),
+  });
+
   readonly handlers: { [M in MethodName]: Handler<M> } = {
     'app.hello': () => ({ version: '0.1.0-mock', isWebView: false }),
     'drivers.status': () => this.driverList.map((d) => ({ ...d })),
@@ -475,6 +487,7 @@ export class MockBackend {
       this.settings = { ...this.settings, ...pickSettings(patch) };
       return { ...this.settings };
     },
+    ...this.toolbox.handlers,
   };
 
   // ---------- helpers ----------
