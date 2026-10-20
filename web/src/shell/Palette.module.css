@@ -1,0 +1,127 @@
+.overlay {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-palette);
+  background: var(--color-scrim);
+  animation: dd-fade-in var(--motion-fast) var(--ease-enter);
+}
+
+.palette {
+  position: fixed;
+  z-index: var(--z-palette);
+  top: 12vh;
+  left: 50%;
+  translate: -50% 0;
+  width: min(640px, calc(100vw - 48px));
+  max-height: 64vh;
+  display: flex;
+  flex-direction: column;
+  border-radius: var(--radius-dialog);
+  background: var(--color-surface-overlay);
+  backdrop-filter: blur(var(--blur-acrylic));
+  border: 1px solid var(--color-stroke-card);
+  box-shadow: var(--shadow-overlay);
+  overflow: hidden;
+  animation: dd-palette-in var(--motion-medium) var(--ease-enter);
+}
+
+@keyframes dd-palette-in {
+  from {
+    opacity: 0;
+    transform: translateY(calc(var(--motion-shift) * -1)) scale(0.99);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.inputRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 0 var(--space-4);
+  border-bottom: 1px solid var(--color-stroke-divider);
+}
+
+.inputIcon {
+  font-size: var(--icon-size);
+  color: var(--color-text-secondary);
+  flex: none;
+}
+
+.input {
+  flex: 1;
+  height: 52px;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-size: var(--type-subtitle-size);
+  outline: none;
+}
+
+.input::placeholder {
+  color: var(--color-text-tertiary);
+}
+
+.list {
+  overflow-y: auto;
+  padding: var(--space-2);
+}
+
+.group {
+  padding: var(--space-3) var(--space-3) var(--space-1);
+  color: var(--color-text-tertiary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  font-weight: var(--type-strong-weight);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  height: 40px;
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-control);
+  cursor: default;
+}
+
+.item[data-active] {
+  background: var(--color-accent-subtle);
+}
+
+.itemIcon {
+  display: inline-flex;
+  font-size: var(--icon-size);
+  color: var(--color-text-secondary);
+  flex: none;
+}
+
+.item[data-active] .itemIcon {
+  color: var(--color-accent);
+}
+
+.itemLabel {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemHint {
+  max-width: 45%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--color-text-tertiary);
+  font-size: var(--type-caption-size);
+  direction: ltr;
+}
+
+.empty {
+  padding: var(--space-8) var(--space-4);
+  text-align: center;
+  color: var(--color-text-secondary);
+}

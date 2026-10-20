@@ -1,0 +1,142 @@
+/* Device art, storage bar and connection badge. */
+
+.art {
+  display: block;
+  flex: none;
+  overflow: visible;
+  filter: drop-shadow(var(--shadow-device));
+  transition: opacity var(--motion-medium) var(--ease-standard);
+}
+.art[data-dimmed] {
+  opacity: 0.45;
+  filter: grayscale(0.6);
+}
+.frame {
+  fill: var(--device-color);
+}
+.screen {
+  fill: var(--color-device-screen);
+}
+.wallpaper {
+  opacity: 0.55;
+}
+.wallTop {
+  stop-color: var(--device-color);
+}
+.wallBottom {
+  stop-color: var(--color-device-screen);
+}
+.island {
+  fill: var(--color-device-island);
+}
+.button {
+  fill: var(--device-color);
+  filter: brightness(0.85);
+}
+.highlight {
+  fill: var(--color-device-highlight);
+}
+
+/* ---------- Storage bar ---------- */
+.storage {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+.storageHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+.storageLabel {
+  font-weight: var(--type-strong-weight);
+}
+.storageUsed {
+  color: var(--color-text-secondary);
+}
+.storageUsed strong {
+  color: var(--color-text-primary);
+  font-weight: var(--type-strong-weight);
+}
+.bar {
+  display: flex;
+  height: 14px;
+  border-radius: var(--radius-full);
+  overflow: hidden;
+  background: var(--color-storage-free);
+  gap: 2px;
+}
+.barCompact {
+  height: 8px;
+  gap: 1px;
+}
+.segment {
+  height: 100%;
+  min-width: 2px;
+  transition: width var(--motion-slow) var(--ease-standard);
+}
+.photos {
+  background: var(--color-storage-photos);
+}
+.videos {
+  background: var(--color-storage-videos);
+}
+.apps {
+  background: var(--color-storage-apps);
+}
+.media {
+  background: var(--color-storage-media);
+}
+.system {
+  background: var(--color-storage-system);
+}
+.other {
+  background: var(--color-storage-other);
+}
+.free {
+  background: var(--color-storage-free);
+}
+.legend {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-2) var(--space-5);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.legendItem {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.swatch {
+  width: 10px;
+  height: 10px;
+  border-radius: 3px;
+  flex: none;
+}
+.legendName {
+  color: var(--color-text-secondary);
+}
+.legendValue {
+  margin-inline-start: auto;
+  font-weight: var(--type-strong-weight);
+  font-variant-numeric: var(--type-numeric);
+  white-space: nowrap;
+}
+
+/* ---------- Connection badge ---------- */
+.connection {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  white-space: nowrap;
+}
+.connection svg {
+  font-size: 14px;
+}

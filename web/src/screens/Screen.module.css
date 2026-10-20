@@ -1,0 +1,94 @@
+.screen {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3) var(--space-4);
+  padding: var(--content-padding-y) var(--content-padding-x) var(--space-4);
+}
+
+.heading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-half);
+  min-width: 0;
+}
+
+.subtitle {
+  color: var(--color-text-secondary);
+  font-variant-numeric: var(--type-numeric);
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 var(--content-padding-x) var(--space-6);
+}
+
+.bodyFill {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 var(--content-padding-x) var(--space-4);
+}
+
+.banners {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  padding: 0 var(--content-padding-x) var(--space-3);
+}
+
+/* ---------- Coming next ---------- */
+.coming {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  padding: var(--space-8);
+}
+
+/* ---------- Settings ---------- */
+.settings {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  max-width: 720px;
+}
+
+.settingRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
+  min-height: 48px;
+  padding: var(--space-2) 0;
+  border-bottom: 1px solid var(--color-stroke-divider);
+}
+
+.settingRow:last-child {
+  border-bottom: 0;
+}
+
+.settingLabel {
+  font-weight: var(--type-strong-weight);
+}
+
+.muted {
+  color: var(--color-text-secondary);
+}

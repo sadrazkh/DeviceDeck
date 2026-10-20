@@ -1,0 +1,511 @@
+/* ---------- Card ---------- */
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: var(--card-padding);
+  border-radius: var(--radius-card);
+  background: var(--color-surface-card);
+  border: 1px solid var(--color-stroke-card);
+  box-shadow: var(--shadow-card);
+}
+
+.cardHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+  min-height: var(--type-subtitle-line);
+}
+
+.cardTitle {
+  font-size: var(--type-subtitle-size);
+  line-height: var(--type-subtitle-line);
+  font-weight: var(--type-subtitle-weight);
+}
+
+.cardActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+/* ---------- Badge ---------- */
+.badge {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  height: 22px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  white-space: nowrap;
+  background: var(--color-surface-subtle);
+  color: var(--color-text-primary);
+}
+.badge svg {
+  font-size: 14px;
+}
+.badge-accent {
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-text);
+}
+.badge-success {
+  background: var(--color-success-subtle);
+  color: var(--color-success-text);
+}
+.badge-warning {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning-text);
+}
+.badge-danger {
+  background: var(--color-danger-subtle);
+  color: var(--color-danger-text);
+}
+.badge-info {
+  background: var(--color-info-subtle);
+  color: var(--color-info-text);
+}
+
+/* ---------- Status dot ---------- */
+.dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  flex: none;
+  background: var(--color-text-tertiary);
+}
+.dot-success {
+  background: var(--color-success);
+}
+.dot-warning {
+  background: var(--color-warning);
+}
+.dot-danger {
+  background: var(--color-danger);
+}
+.dot-accent {
+  background: var(--color-accent);
+}
+
+/* ---------- Linear progress ---------- */
+.progress {
+  position: relative;
+  height: 4px;
+  border-radius: var(--radius-full);
+  background: var(--color-accent-track);
+  overflow: hidden;
+}
+.progressLarge {
+  height: 8px;
+}
+.progressFill {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 0;
+  border-radius: inherit;
+  background: var(--color-accent);
+  transition: width var(--motion-medium) var(--ease-standard);
+}
+.progress-success .progressFill {
+  background: var(--color-success);
+}
+.progress-danger .progressFill {
+  background: var(--color-danger);
+}
+.progress-paused .progressFill {
+  background: var(--color-text-tertiary);
+}
+.progressIndeterminate .progressFill {
+  width: 40%;
+  animation: dd-indeterminate 1.4s var(--ease-standard) infinite;
+}
+@keyframes dd-indeterminate {
+  from {
+    transform: translateX(calc(-100% * var(--dir-x)));
+  }
+  to {
+    transform: translateX(calc(250% * var(--dir-x)));
+  }
+}
+
+/* ---------- Ring ---------- */
+.ringWrap {
+  position: relative;
+  flex: none;
+}
+.ringCenter {
+  position: absolute;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  text-align: center;
+}
+.ring {
+  display: block;
+  flex: none;
+}
+.ringTrack {
+  stroke: var(--color-accent-track);
+}
+.ringFill {
+  stroke: var(--color-accent);
+  transition: stroke-dashoffset var(--motion-slow) var(--ease-standard);
+}
+.ring-success .ringFill {
+  stroke: var(--color-success);
+}
+.ring-success .ringTrack {
+  stroke: var(--color-success-subtle);
+}
+.ring-warning .ringFill {
+  stroke: var(--color-warning);
+}
+.ring-warning .ringTrack {
+  stroke: var(--color-warning-subtle);
+}
+.ring-danger .ringFill {
+  stroke: var(--color-danger);
+}
+.ringIndeterminate {
+  animation: dd-spin 1s linear infinite;
+}
+
+/* ---------- Spinner ---------- */
+.spinner {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border-radius: var(--radius-full);
+  border: 2px solid var(--color-accent);
+  border-right-color: transparent;
+  animation: dd-spin 0.8s linear infinite;
+  flex: none;
+}
+.spinnerLarge {
+  width: 28px;
+  height: 28px;
+  border-width: 3px;
+}
+
+/* ---------- Skeleton ---------- */
+.skeleton {
+  display: block;
+  border-radius: var(--radius-control);
+  background: linear-gradient(
+      90deg,
+      transparent 0%,
+      var(--color-skeleton-shine) 50%,
+      transparent 100%
+    )
+    var(--color-skeleton);
+  background-size: 200% 100%;
+  animation: dd-shimmer 1.6s linear infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skeleton {
+    animation: none;
+  }
+}
+
+/* ---------- Empty state ---------- */
+.empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  padding: var(--space-12) var(--space-6);
+  text-align: center;
+  min-height: 0;
+}
+.emptyArt {
+  display: grid;
+  place-items: center;
+  width: 72px;
+  height: 72px;
+  margin-bottom: var(--space-2);
+  border-radius: var(--radius-dialog);
+  background: var(--color-accent-subtle);
+  color: var(--color-accent);
+  font-size: 36px;
+}
+.emptyTitle {
+  font-size: var(--type-subtitle-size);
+  line-height: var(--type-subtitle-line);
+  font-weight: var(--type-subtitle-weight);
+}
+.emptyBody {
+  max-width: 420px;
+  color: var(--color-text-secondary);
+}
+.emptyAction {
+  margin-top: var(--space-3);
+}
+
+/* ---------- Banner ---------- */
+.banner {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--color-stroke-card);
+  background: var(--color-info-subtle);
+}
+.bannerIcon {
+  display: inline-flex;
+  font-size: var(--icon-size);
+  padding-top: 0;
+  flex: none;
+  color: var(--color-info-text);
+}
+.bannerBody {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.bannerTitle {
+  font-weight: var(--type-strong-weight);
+}
+.bannerActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+}
+.banner-warning {
+  background: var(--color-warning-subtle);
+}
+.banner-warning .bannerIcon {
+  color: var(--color-warning-text);
+}
+.banner-danger {
+  background: var(--color-danger-subtle);
+}
+.banner-danger .bannerIcon {
+  color: var(--color-danger-text);
+}
+.banner-success {
+  background: var(--color-success-subtle);
+}
+.banner-success .bannerIcon {
+  color: var(--color-success-text);
+}
+.detailsToggle {
+  align-self: flex-start;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--color-accent-text);
+  font-size: var(--type-caption-size);
+}
+.detailsText {
+  margin: 0;
+  padding: var(--space-2);
+  border-radius: var(--radius-input);
+  background: var(--color-surface-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--type-caption-size);
+  white-space: pre-wrap;
+  word-break: break-word;
+  direction: ltr;
+  text-align: start;
+  user-select: text;
+}
+
+/* ---------- Segmented control ---------- */
+.segmented {
+  display: inline-flex;
+  padding: 3px;
+  gap: 2px;
+  border-radius: var(--radius-control);
+  background: var(--color-surface-subtle);
+}
+.segment {
+  height: calc(var(--control-height) - 6px);
+  padding: 0 var(--space-3);
+  border: 0;
+  border-radius: calc(var(--radius-control) - 2px);
+  background: transparent;
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+.segment:hover {
+  color: var(--color-text-primary);
+}
+.segment[data-state='on'] {
+  background: var(--color-surface-control);
+  color: var(--color-text-primary);
+  font-weight: var(--type-strong-weight);
+  box-shadow: var(--shadow-control);
+}
+
+/* ---------- Switch ---------- */
+.switchRow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.switch {
+  position: relative;
+  width: 40px;
+  height: 20px;
+  flex: none;
+  padding: 0;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-stroke-control-strong);
+  background: var(--color-surface-control);
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+.switch[data-state='checked'] {
+  background: var(--color-accent);
+  border-color: transparent;
+}
+.switchThumb {
+  position: absolute;
+  top: 3px;
+  inset-inline-start: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: var(--radius-full);
+  background: var(--color-text-secondary);
+  transition: transform var(--motion-fast) var(--ease-standard);
+}
+.switch[data-state='checked'] .switchThumb {
+  background: var(--color-on-accent);
+  transform: translateX(calc(20px * var(--dir-x)));
+}
+
+/* ---------- Checkbox ---------- */
+.checkbox {
+  display: inline-grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  flex: none;
+  padding: 0;
+  border-radius: var(--radius-input);
+  border: 1px solid var(--color-stroke-control-strong);
+  background: var(--color-surface-control);
+  color: var(--color-on-accent);
+}
+.checkbox[data-state='checked'],
+.checkbox[data-state='indeterminate'] {
+  background: var(--color-accent);
+  border-color: transparent;
+}
+.checkbox svg {
+  font-size: 14px;
+}
+
+/* ---------- Tooltip ---------- */
+.tooltip {
+  z-index: var(--z-toast);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  max-width: 320px;
+  padding: var(--space-1) var(--space-2);
+  border-radius: var(--radius-input);
+  background: var(--color-surface-overlay-solid);
+  border: 1px solid var(--color-stroke-card);
+  box-shadow: var(--shadow-flyout);
+  color: var(--color-text-primary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  animation: dd-fade-in var(--motion-fast) var(--ease-enter);
+}
+
+.kbd {
+  display: inline-flex;
+  align-items: center;
+  height: 18px;
+  padding: 0 5px;
+  border-radius: var(--radius-input);
+  border: 1px solid var(--color-stroke-control);
+  color: var(--color-text-secondary);
+  font-size: var(--type-micro-size);
+  line-height: var(--type-micro-line);
+  font-family: var(--font-latin);
+  direction: ltr;
+  white-space: nowrap;
+}
+
+/* ---------- Radio cards ---------- */
+.radioGroup {
+  display: grid;
+  gap: var(--space-2);
+}
+.radioCard {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--color-stroke-control);
+  background: var(--color-surface-control);
+  text-align: start;
+  color: var(--color-text-primary);
+}
+.radioCard[data-state='checked'] {
+  border-color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+.radioDot {
+  width: 18px;
+  height: 18px;
+  flex: none;
+  margin-top: 1px;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-stroke-control-strong);
+  display: grid;
+  place-items: center;
+}
+.radioCard[data-state='checked'] .radioDot {
+  border: 5px solid var(--color-accent);
+}
+.radioText {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.radioHint {
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+/* ---------- Field ---------- */
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+.fieldLabel {
+  font-weight: var(--type-strong-weight);
+}
+.input {
+  height: var(--control-height);
+  padding: 0 var(--space-3);
+  border-radius: var(--radius-input);
+  border: 1px solid var(--color-stroke-control);
+  border-bottom-color: var(--color-stroke-control-strong);
+  background: var(--color-surface-input);
+  color: var(--color-text-primary);
+  min-width: 0;
+}
+.input:focus {
+  outline: none;
+  border-bottom: 2px solid var(--color-stroke-input-active);
+}
+.fieldError {
+  color: var(--color-danger-text);
+  font-size: var(--type-caption-size);
+}
