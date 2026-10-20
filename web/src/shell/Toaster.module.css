@@ -1,7 +1,8 @@
+/* Top-end, under the title bar, so toasts never cover selection bars; beside the drawer when it is open. */
 .region {
   position: fixed;
   inset-inline-end: var(--space-4);
-  bottom: var(--space-4);
+  top: calc(var(--titlebar-height) + var(--space-3));
   z-index: var(--z-toast);
   display: flex;
   flex-direction: column;
@@ -11,6 +12,11 @@
   padding: 0;
   list-style: none;
   pointer-events: none;
+  transition: inset-inline-end var(--motion-slow) var(--ease-standard);
+}
+
+.region[data-beside-drawer] {
+  inset-inline-end: calc(var(--drawer-width) + var(--space-6));
 }
 
 .toast {

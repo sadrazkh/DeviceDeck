@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { Button } from '../components/Button';
 import { useI18n } from '../i18n';
 import { useToasts, type Toast } from '../state/toasts';
+import { useUi } from '../state/ui';
 import styles from './Toaster.module.css';
 
 const ICONS = { info: InfoFilled, success: CheckmarkCircleFilled, warning: WarningFilled, danger: ErrorCircleFilled };
@@ -22,7 +23,7 @@ function ToastView({ toast }: { toast: Toast }) {
       layout
       className={styles.toast}
       data-tone={toast.tone}
-      initial={{ opacity: 0, y: 12, scale: 0.98 }}
+      initial={{ opacity: 0, y: -12, scale: 0.98 }}
       animate={{ opacity: 1, y: 0, scale: 1 }}
       exit={{ opacity: 0, scale: 0.98, transition: { duration: 0.12 } }}
       transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
@@ -55,8 +56,9 @@ function ToastView({ toast }: { toast: Toast }) {
 
 export function Toaster() {
   const toasts = useToasts((s) => s.toasts);
+  const drawerOpen = useUi((s) => s.drawerOpen);
   return (
-    <ol className={styles.region} aria-live="polite">
+    <ol className={styles.region} aria-live="polite" data-beside-drawer={drawerOpen || undefined}>
       <AnimatePresence initial={false}>
         {toasts.map((toast) => (
           <ToastView key={toast.id} toast={toast} />

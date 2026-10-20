@@ -17,7 +17,7 @@ export interface Bridge {
 
 const SCENARIOS: readonly MockScenario[] = ['ready', 'empty', 'trust', 'limited', 'driverMissing', 'iphoneOnly'];
 
-/** Reads mock options from the page URL: ?mock=trust&latency=0&lang=fa&theme=dark&density=compact */
+/** Reads mock options from the page URL: ?mock=trust&latency=0&indexing=0&queue=0&lang=fa&theme=dark&density=compact */
 export function mockOptionsFromUrl(search: string): MockTransportOptions {
   const query = new URLSearchParams(search);
   const scenario = query.get('mock');
@@ -29,6 +29,7 @@ export function mockOptionsFromUrl(search: string): MockTransportOptions {
     scenario: SCENARIOS.includes(scenario as MockScenario) ? (scenario as MockScenario) : 'ready',
     latencyMs: latency !== null && !Number.isNaN(Number(latency)) ? Number(latency) : undefined,
     indexing: query.get('indexing') !== '0',
+    seedQueue: query.get('queue') !== '0',
     settings: {
       ...(lang === 'fa' || lang === 'en' ? { language: lang } : {}),
       ...(theme === 'light' || theme === 'dark' || theme === 'system' ? { theme } : {}),

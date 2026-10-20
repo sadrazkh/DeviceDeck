@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Tooltip as RadixTooltip } from 'radix-ui';
+import { Direction, Tooltip as RadixTooltip } from 'radix-ui';
 import type { CSSProperties } from 'react';
 import { useSelectedDevice } from '../app/queries';
 import { usePrefs } from '../state/prefs';
@@ -46,38 +46,41 @@ function Screen() {
 
 export function AppShell() {
   const nav = usePrefs((s) => s.navLayout);
+  const dir = usePrefs((s) => (s.language === 'fa' ? 'rtl' : 'ltr'));
   const device = useSelectedDevice();
   const section = useSection();
   const screenKey = `${device?.id ?? 'none'}:${device?.state === 'ready' ? section : 'welcome'}`;
   const style = (device?.colorHex ? { '--device-color': device.colorHex } : {}) as CSSProperties;
 
   return (
-    <RadixTooltip.Provider delayDuration={400}>
-      <div className={styles.shell} style={style}>
-        <TitleBar />
-        {nav === 'tabs' ? <TopTabs /> : null}
-        <div className={styles.body}>
-          {nav === 'rail' ? <NavRail /> : null}
-          <main className={styles.content} id="content" data-testid="content">
-            <AnimatePresence mode="wait" initial={false}>
-              <motion.div
-                key={screenKey}
-                className={styles.screen}
-                initial={{ opacity: 0, y: 6 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0 }}
-                transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
-              >
-                <Screen />
-              </motion.div>
-            </AnimatePresence>
-          </main>
+    <Direction.Provider dir={dir}>
+      <RadixTooltip.Provider delayDuration={400}>
+        <div className={styles.shell} style={style}>
+          <TitleBar />
+          {nav === 'tabs' ? <TopTabs /> : null}
+          <div className={styles.body}>
+            {nav === 'rail' ? <NavRail /> : null}
+            <main className={styles.content} id="content" data-testid="content">
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.div
+                  key={screenKey}
+                  className={styles.screen}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
+                >
+                  <Screen />
+                </motion.div>
+              </AnimatePresence>
+            </main>
+          </div>
+          <TransferDrawer />
+          <Toaster />
+          <CommandPalette />
+          <ConflictDialog />
         </div>
-        <TransferDrawer />
-        <Toaster />
-        <CommandPalette />
-        <ConflictDialog />
-      </div>
-    </RadixTooltip.Provider>
+      </RadixTooltip.Provider>
+    </Direction.Provider>
   );
 }

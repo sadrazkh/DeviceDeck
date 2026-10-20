@@ -264,7 +264,7 @@ function useCommands(open: boolean): Command[] {
               deviceId: IPHONE_ID,
               root: 'app:org.videolan.vlc-ios',
               path: '/',
-              files: ['C:\\Users\\Nima\\Videos\\Persepolis.mkv'],
+              files: [mock.registerLocalFile('Persepolis.mkv', 1_240_000_000)],
             });
           },
         });

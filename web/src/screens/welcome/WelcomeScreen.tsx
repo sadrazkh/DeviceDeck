@@ -260,7 +260,7 @@ export function WelcomeScreen({ device }: { device: DeviceSummary | null }) {
 
       {drivers.length > 0 ? <DriverRow drivers={drivers} /> : null}
 
-      {mock ? (
+      {mock && (!devices.some((d) => d.id === IPHONE_ID) || !devices.some((d) => d.id === ANDROID_ID)) ? (
         <div className={styles.sim}>
           <span>{t('common.simulation')}:</span>
           {!devices.some((d) => d.id === IPHONE_ID) ? (

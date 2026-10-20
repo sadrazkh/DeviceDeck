@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import { useId, type CSSProperties } from 'react';
 import type { DevicePlatform } from '../bridge/types';
 import styles from './device.module.css';
 
@@ -19,6 +19,7 @@ export function DeviceArt({
   dimmed?: boolean;
   label?: string;
 }) {
+  const gradient = `screen-${useId().replace(/:/g, '')}`;
   const height = Math.round(width * 2.05);
   const style = { width, height, ...(colorHex ? { '--device-color': colorHex } : {}) } as CSSProperties;
   const ios = platform === 'ios';
@@ -33,7 +34,7 @@ export function DeviceArt({
       aria-hidden={label ? undefined : true}
     >
       <defs>
-        <linearGradient id={`screen-${platform}`} x1="0" y1="0" x2="1" y2="1">
+        <linearGradient id={gradient} x1="0" y1="0" x2="1" y2="1">
           <stop offset="0" className={styles.wallTop} />
           <stop offset="1" className={styles.wallBottom} />
         </linearGradient>
@@ -42,7 +43,7 @@ export function DeviceArt({
       <rect x="1" y="1" width="148" height="306" rx={ios ? 30 : 18} className={styles.frame} />
       {/* screen */}
       <rect x="7" y="7" width="136" height="294" rx={ios ? 24 : 13} className={styles.screen} />
-      <rect x="7" y="7" width="136" height="294" rx={ios ? 24 : 13} fill={`url(#screen-${platform})`} className={styles.wallpaper} />
+      <rect x="7" y="7" width="136" height="294" rx={ios ? 24 : 13} fill={`url(#${gradient})`} className={styles.wallpaper} />
       {ios ? (
         <rect x="52" y="15" width="46" height="14" rx="7" className={styles.island} />
       ) : (

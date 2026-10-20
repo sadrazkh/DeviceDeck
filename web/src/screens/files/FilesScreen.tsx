@@ -669,7 +669,7 @@ export function FilesScreen({ device }: { device: DeviceSummary }) {
                   )}
                   <div className={styles.status}>
                     <span>{t('files.count', { count: entries.length })}</span>
-                    <span>{selection.ids.size > 0 ? t('common.selected', { count: selection.ids.size }) : bytes(totalSize)}</span>
+                    <span>{selection.ids.size > 0 ? t('common.selected', { count: selection.ids.size }) : totalSize > 0 ? bytes(totalSize) : null}</span>
                   </div>
                 </>
               )}

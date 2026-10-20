@@ -238,6 +238,13 @@ export class MockBackend {
     return appIconUrl(appId, app?.name ?? appId, appIconColours[appId]);
   }
 
+  /** Makes up a local file of a given size (for demos: a film to copy into VLC). */
+  registerLocalFile(name: string, size: number): string {
+    const path = `C:\\Users\\Nima\\Videos\\${name}`;
+    this.fileSizes.set(path, size);
+    return path;
+  }
+
   /** Gives dropped File objects the paths the host would have read from CoreWebView2File.Path. */
   registerFiles(files: readonly File[]): string[] {
     return files.map((file) => {
