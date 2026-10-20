@@ -38,6 +38,10 @@ internal sealed class Cli
           thumb <assetId> <out.jpg> [--size 256]   the phone's own thumbnail, if it has one
           photo-pull <assetId> <dest>         copy an original off the phone
 
+        Clean-up (read-only)
+          cleanup [--top 10] [--min-mb 10] [--names]   biggest apps, largest media, exact duplicates, big app files
+                                              (sizes only; photo and file names hidden unless --names)
+
         Diagnostics
           values <domain|-> [--key K]         raw lockdown values of a domain ('-' = top; e.g. com.apple.disk_usage)
           carrier                             the SIMs' carrier bundles (no ICCID / IMSI) and the mapped name
@@ -66,7 +70,7 @@ internal sealed class Cli
     public IReadOnlyList<string> Positional { get; }
     public IReadOnlyDictionary<string, string?> Options { get; }
 
-    private static readonly HashSet<string> Flags = ["reveal", "system", "yes", "recursive", "browse"];
+    private static readonly HashSet<string> Flags = ["reveal", "system", "yes", "recursive", "browse", "names"];
 
     public static Cli Parse(string[] args)
     {

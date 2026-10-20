@@ -4,6 +4,8 @@ using System.Text.Json.Nodes;
 using DeviceDeck.Bridge.Images;
 using DeviceDeck.Bridge.Methods;
 using DeviceDeck.Core;
+using DeviceDeck.Core.Battery;
+using DeviceDeck.Core.Cleanup;
 using DeviceDeck.Core.Fake;
 using DeviceDeck.Core.Hub;
 using DeviceDeck.Core.Settings;
@@ -29,6 +31,8 @@ internal sealed class TestHost : IAsyncDisposable
         Settings = new SettingsStore(Paths.SettingsFile);
         Shell = new FakeShell();
         Transport = new MemoryTransport();
+        Cleanup = new CleanupService(hub, queue, Settings, CleanupOptions) { ProgressInterval = TimeSpan.Zero };
+        Battery = new BatteryRecorder(hub, new BatteryHistoryStore(BatteryHistoryStore.PathIn(Paths)), new BatteryRecorderOptions { SettleDelay = TimeSpan.Zero });
         Services = new BridgeServices
         {
             Hub = hub,
@@ -38,6 +42,8 @@ internal sealed class TestHost : IAsyncDisposable
             Screenshots = new ScreenshotStore(),
             Version = "9.9.9-test",
             DevFake = fake,
+            Cleanup = Cleanup,
+            Battery = Battery,
         };
         Bridge = new BridgeHost(Transport, Services);
     }
@@ -54,6 +60,11 @@ internal sealed class TestHost : IAsyncDisposable
     public MemoryTransport Transport { get; }
     public BridgeServices Services { get; }
     public BridgeHost Bridge { get; }
+    public CleanupService Cleanup { get; }
+    public BatteryRecorder Battery { get; }
+
+    /// <summary>Small enough that the test phones' files count as big.</summary>
+    public static StorageAnalyzerOptions CleanupOptions { get; } = new() { AppFileMinBytes = 100_000, DuplicatePrefixBytes = 1024 };
 
     public string PcFolder(string name)
     {
@@ -118,6 +129,8 @@ internal sealed class TestHost : IAsyncDisposable
     public async ValueTask DisposeAsync()
     {
         Bridge.Dispose();
+        await Cleanup.DisposeAsync();
+        await Battery.DisposeAsync();
         await Queue.DisposeAsync();
         Store.Dispose();
         await Hub.DisposeAsync();

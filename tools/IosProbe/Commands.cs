@@ -69,6 +69,7 @@ internal static class Commands
         ["install"] = new(["app.ipa"], (d, c, ct) => InstallAsync(d, c.Positional[0], ct)),
         ["uninstall"] = new(["bundleId"], (d, c, ct) => UninstallAsync(d, c.Positional[0], ct), NeedsYes: true),
         ["photos"] = new([], (d, c, ct) => PhotosAsync(d, c.IntOption("limit", 50), c.Option("album"), ct)),
+        ["cleanup"] = new([], CleanupProbe.RunAsync),
         ["values"] = new(["domain"], async (d, c, ct) =>
         {
             var domain = c.Positional[0] == "-" ? null : c.Positional[0];
