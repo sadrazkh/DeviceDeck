@@ -1,4 +1,5 @@
 import { expect, test } from '@playwright/test';
+import { contrastProblems } from './contrast';
 import { query, settle, shot, watchConsole, type Variant } from './helpers';
 
 // The Toolbox screen and each tool, in light, dark and right-to-left Persian, against the mock backend.
@@ -36,6 +37,8 @@ for (const tool of TOOLS) {
       await expect(page.locator('html')).toHaveAttribute('dir', variant === 'rtl' ? 'rtl' : 'ltr');
       await settle(page);
       await shot(page, `${tool.name}-${variant}`);
+      // Text contrast (WCAG AA) in both themes; Persian uses the light colours (desktop session's check).
+      if (variant !== 'rtl') expect(await contrastProblems(page)).toEqual([]);
       consoleWatch.assertClean();
     });
   }

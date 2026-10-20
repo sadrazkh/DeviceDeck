@@ -261,6 +261,17 @@
   line-height: var(--type-caption-line);
 }
 
+/* Copies are told apart by name and date: the whole name shows (wrapping where it must), the date on its own line. */
+.copy .name {
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+.copy .name .detail {
+  display: block;
+  white-space: normal;
+}
+
 /* ---------- Caches ---------- */
 .caches {
   display: flex;
