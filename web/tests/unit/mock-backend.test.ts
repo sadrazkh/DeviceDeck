@@ -64,7 +64,12 @@ describe('mock backend', () => {
   it('generates the photo libraries, newest first, with exact counts', async () => {
     const { client } = setup({ indexing: false });
     const albums = await client.call('photos.albums', { deviceId: IPHONE_ID });
-    expect(albums).toHaveLength(18);
+    // The brief's 18 albums plus the Hidden album, which the iOS provider lists as id "hidden".
+    expect(albums).toHaveLength(19);
+    expect(albums.at(-1)).toEqual({ id: 'hidden', name: 'Hidden', kind: 'user', count: 1847 });
+    const hidden = await client.call('photos.list', { deviceId: IPHONE_ID, albumId: 'hidden', offset: 0, limit: 5000 });
+    expect(hidden.total).toBe(1847);
+    expect(hidden.items.every((a) => a.id.startsWith('ios-hidden-'))).toBe(true);
     const all = albums.find((a) => a.kind === 'all')!;
     const videos = albums.find((a) => a.kind === 'videos')!;
     expect(all.count).toBe(12_481 + 732);

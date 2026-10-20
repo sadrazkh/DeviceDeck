@@ -91,7 +91,7 @@ const PHOTO_PAGE = 2000;
  * Every asset of an album, fetched page by page in the background so the grid can group by month
  * while later pages arrive.
  */
-export function usePhotoLibrary(device: DeviceSummary | null, albumId: string) {
+export function usePhotoLibrary(device: DeviceSummary | null, albumId: string, options: { enabled?: boolean } = {}) {
   const client = useClient();
   const query = useInfiniteQuery({
     queryKey: keys.photos(device?.id ?? '', albumId),
@@ -102,7 +102,7 @@ export function usePhotoLibrary(device: DeviceSummary | null, albumId: string) {
       const loaded = pages.reduce((n, p) => n + p.items.length, 0);
       return loaded < last.total && last.items.length > 0 ? loaded : undefined;
     },
-    enabled: isReady(device) && device.capabilities.includes('photosRead'),
+    enabled: (options.enabled ?? true) && isReady(device) && device.capabilities.includes('photosRead'),
     staleTime: 5 * 60_000,
   });
   const { hasNextPage, isFetchingNextPage, fetchNextPage } = query;

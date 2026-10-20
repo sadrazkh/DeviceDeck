@@ -45,6 +45,8 @@ interface UiState {
   indexProgress: Record<string, { done: number; total: number }>;
   /** Destinations of jobs this page started, for "Show in Explorer" (TransferJob has none). */
   jobDestinations: Record<string, string>;
+  /** Phones whose Hidden album the user revealed. In memory only: it locks again when the app closes. */
+  hiddenRevealed: Record<string, boolean>;
 
   selectDevice(id: string | null): void;
   navigate(section: Section): void;
@@ -56,6 +58,7 @@ interface UiState {
   setPaletteOpen(open: boolean): void;
   setIndexProgress(deviceId: string, done: number, total: number): void;
   rememberDestination(jobId: string, destination: string): void;
+  setHiddenRevealed(deviceId: string, revealed: boolean): void;
 }
 
 function placeOf(state: UiState, deviceId: string): DevicePlace {
@@ -70,6 +73,7 @@ export const useUi = create<UiState>((set, get) => ({
   paletteOpen: false,
   indexProgress: {},
   jobDestinations: {},
+  hiddenRevealed: {},
 
   selectDevice: (id) =>
     set((s) => ({
@@ -144,6 +148,8 @@ export const useUi = create<UiState>((set, get) => ({
     set((s) => ({ indexProgress: { ...s.indexProgress, [deviceId]: { done, total } } })),
   rememberDestination: (jobId, destination) =>
     set((s) => ({ jobDestinations: { ...s.jobDestinations, [jobId]: destination } })),
+  setHiddenRevealed: (deviceId, revealed) =>
+    set((s) => ({ hiddenRevealed: { ...s.hiddenRevealed, [deviceId]: revealed } })),
 }));
 
 /** The section shown now for the selected phone. */

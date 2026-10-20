@@ -52,6 +52,54 @@ test('first indexing shows "Reading 13,213 photos" with progress', async ({ page
   consoleWatch.assertClean();
 });
 
+for (const variant of ['light', 'rtl'] as const) {
+  test(`the Hidden album stays locked until Reveal, for this session only (${variant})`, async ({ page }) => {
+    const consoleWatch = watchConsole(page);
+    const rtl = variant === 'rtl';
+    await page.goto(rtl ? '/?latency=0&indexing=0&lang=fa&theme=light&screen=photos' : '/?latency=0&indexing=0&theme=light&screen=photos');
+    await expect(page.locator('[data-testid=photo-grid] [role=gridcell]').first()).toBeVisible();
+
+    // Count every photos.list call for the Hidden album.
+    await page.evaluate(() => {
+      const m = (window as unknown as { deviceDeckMock: { handlers: Record<string, (p: { albumId?: string }) => unknown> } }).deviceDeckMock;
+      const original = m.handlers['photos.list']!;
+      (window as unknown as { hiddenCalls: number }).hiddenCalls = 0;
+      m.handlers['photos.list'] = (p) => {
+        if (p.albumId === 'hidden') (window as unknown as { hiddenCalls: number }).hiddenCalls++;
+        return original(p);
+      };
+    });
+    const hiddenCalls = () => page.evaluate(() => (window as unknown as { hiddenCalls: number }).hiddenCalls);
+
+    const item = page.getByTestId('album-hidden');
+    await expect(item).toHaveAttribute('data-locked', 'true');
+    await expect(item).not.toContainText(rtl ? '۱٬۸۴۷' : '1,847');
+    await item.click();
+    await expect(page.getByTestId('hidden-locked')).toBeVisible();
+    await expect(page.locator('[data-testid=photo-grid]')).toHaveCount(0);
+    await settle(page);
+    await shot(page, `photos-hidden-locked-${variant}`);
+    expect(await hiddenCalls()).toBe(0);
+
+    await page.getByTestId('hidden-reveal').click();
+    await expect(page.locator('[data-testid=photo-grid] [role=gridcell]').first()).toBeVisible();
+    await expect(item).toContainText(rtl ? '۱٬۸۴۷' : '1,847');
+    expect(await hiddenCalls()).toBeGreaterThan(0);
+
+    await page.getByTestId('hidden-lock').click();
+    await expect(page.getByTestId('hidden-locked')).toBeVisible();
+    await expect(item).toHaveAttribute('data-locked', 'true');
+
+    // Reveal lasts for this session only: a fresh start is locked again.
+    await page.getByTestId('hidden-reveal').click();
+    await expect(item).not.toHaveAttribute('data-locked', 'true');
+    await page.reload();
+    await page.getByTestId('album-hidden').click();
+    await expect(page.getByTestId('hidden-locked')).toBeVisible();
+    consoleWatch.assertClean();
+  });
+}
+
 test('photo viewer opens on double-click and moves with the arrow keys', async ({ page }) => {
   const consoleWatch = watchConsole(page);
   await page.goto(query('dark', { screen: 'photos' }));

@@ -139,6 +139,17 @@ describe('ui store', () => {
     expect(useUi.getState().places.iphone!.forward).toEqual([]);
   });
 
+  it('remembers a revealed Hidden album per phone, in memory only', () => {
+    useUi.setState({ hiddenRevealed: {} });
+    expect(useUi.getState().hiddenRevealed.iphone).toBeUndefined();
+    useUi.getState().setHiddenRevealed('iphone', true);
+    expect(useUi.getState().hiddenRevealed).toEqual({ iphone: true });
+    useUi.getState().setHiddenRevealed('iphone', false);
+    expect(useUi.getState().hiddenRevealed.iphone).toBe(false);
+    expect(localStorage.length).toBe(0);
+    expect(sessionStorage.length).toBe(0);
+  });
+
   it('opens Settings with no phone', () => {
     useUi.getState().navigate('settings');
     expect(useUi.getState().globalSection).toBe('settings');
