@@ -24,10 +24,10 @@ internal sealed class MediaAudioTrimmer : IAudioTrimmer
         var output = await folder.CreateFileAsync(Path.GetFileName(path), CreationCollisionOption.ReplaceExisting).AsTask(ct).ConfigureAwait(false);
 
         var transcoder = new MediaTranscoder { TrimStartTime = start };
-        if (duration > TimeSpan.Zero && end < duration)
+        if (duration <= TimeSpan.Zero || end < duration)
         {
-            // TrimStopTime is how much to cut off the end, not where to stop.
-            transcoder.TrimStopTime = duration - end;
+            // Where to stop in the source (measured: start 2.5 s, stop 7.5 s gives 5 s), not how much to cut off.
+            transcoder.TrimStopTime = end;
         }
 
         var prepared = await transcoder.PrepareFileTranscodeAsync(input, output, MediaEncodingProfile.CreateM4a(AudioEncodingQuality.High)).AsTask(ct).ConfigureAwait(false);
