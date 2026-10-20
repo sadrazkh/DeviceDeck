@@ -39,6 +39,8 @@ internal sealed class Commands(AndroidDeviceProvider provider, CommandLine cli, 
               shell "<command>"               run one shell command (debugging)
 
             Options: --serial <id>  --adb <path to adb.exe>  --port <n> (default 5137)  --no-cache  --verbose
+                     --keep-server   leave an adb server this run started running after it exits
+                     --mdns          start the server with mDNS discovery (Wireless debugging); off by default
             """);
     }
 
@@ -95,8 +97,14 @@ internal sealed class Commands(AndroidDeviceProvider provider, CommandLine cli, 
         int? version = await provider.Host.GetServerVersionAsync(ct);
         Console.WriteLine(before != null
             ? $"server       : already running, protocol {version}"
-            : $"server       : started in {Format.Elapsed(watch)}, protocol {version}");
+            : $"server       : started in {Format.Elapsed(watch)}, protocol {version}; " +
+              (cli.Flag("keep-server") ? "left running on exit (--keep-server)" : "stopped again when the probe exits"));
 
+        string? mdns = await provider.Host.GetMdnsCheckAsync(ct);
+        Console.WriteLine($"mDNS         : {(mdns == null ? "unknown" : mdns.Contains("disabled", StringComparison.OrdinalIgnoreCase) ? "off" : "ON")} ({mdns})" +
+            (mdns != null && !mdns.Contains("disabled", StringComparison.OrdinalIgnoreCase) && !cli.Flag("mdns")
+                ? " — this server was started elsewhere with mDNS; stop it (adb -P 5137 kill-server) to restart without"
+                : ""));
         Console.WriteLine($"port 5037    : {(IsListening(5037) ? "another adb server is running there (fine; we don't use it)" : "free")}");
 
         await using (var connection = await AdbConnection.ConnectAsync(provider.Host.EndPoint, ct))

@@ -24,6 +24,9 @@ var options = new AndroidProviderOptions
     AdbPath = cli.Option("adb"),
     ServerPort = int.TryParse(cli.Option("port"), out int port) ? port : AndroidProviderOptions.DefaultServerPort,
     CacheDirectory = cli.Flag("no-cache") ? null : new AndroidProviderOptions().CacheDirectory,
+    // A server this run starts is stopped on exit unless --keep-server (saves ~5 s per command when probing a phone).
+    StopServerOnDispose = !cli.Flag("keep-server"),
+    EnableMdns = cli.Flag("mdns"),
 };
 
 try

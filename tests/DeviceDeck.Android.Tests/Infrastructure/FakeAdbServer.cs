@@ -40,6 +40,15 @@ internal sealed partial class FakeAdbServer : IAsyncDisposable
 
     public ConcurrentQueue<string> Requests { get; } = new();
 
+    /// <summary>
+    /// False = behave like a port nobody serves yet: connections are closed at once, so host:version gets no answer.
+    /// host:kill sets it back to false, like a real server exiting.
+    /// </summary>
+    public volatile bool Running = true;
+
+    /// <summary>What host:mdns:check answers (adb's text when the server runs with ADB_MDNS=0).</summary>
+    public string MdnsCheck { get; set; } = "ERROR: mdns discovery disabled";
+
     public ConcurrentDictionary<string, byte[]> Files { get; } = new(StringComparer.Ordinal);
 
     public Func<string, FakeShellReply> Shell { get; set; } = command => FakeShellReply.Text("", 127, $"sh: {command}: not found");
@@ -102,6 +111,10 @@ internal sealed partial class FakeAdbServer : IAsyncDisposable
         using var _ = client;
         var stream = client.GetStream();
         bool keepOpen = false;
+        if (!Running)
+        {
+            return;
+        }
         try
         {
             while (true)
@@ -197,7 +210,19 @@ internal sealed partial class FakeAdbServer : IAsyncDisposable
                     await SyncAsync(stream, ct);
                     return;
                 }
-                if (request.StartsWith("reboot:", StringComparison.Ordinal) || request == "host:kill")
+                if (request == "host:mdns:check")
+                {
+                    await OkayAsync(stream, ct);
+                    await WriteHexStringAsync(stream, MdnsCheck, ct);
+                    return;
+                }
+                if (request == "host:kill")
+                {
+                    Running = false;
+                    await OkayAsync(stream, ct);
+                    return;
+                }
+                if (request.StartsWith("reboot:", StringComparison.Ordinal))
                 {
                     await OkayAsync(stream, ct);
                     return;
