@@ -1,0 +1,228 @@
+.welcome {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-6);
+  padding: var(--space-8) var(--content-padding-x) var(--space-8);
+}
+
+.hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-3);
+  max-width: 640px;
+  text-align: center;
+}
+
+.subtitle {
+  color: var(--color-text-secondary);
+}
+
+/* ---------- Illustration ---------- */
+.art {
+  width: 340px;
+  max-width: 100%;
+  height: auto;
+}
+.laptop {
+  fill: var(--color-surface-card);
+  stroke: var(--color-stroke-control-strong);
+  stroke-width: 2;
+}
+.laptopScreen {
+  fill: var(--color-accent-subtle);
+}
+.laptopBase {
+  fill: var(--color-stroke-control);
+}
+.phone {
+  fill: var(--device-color);
+}
+.phoneScreen {
+  fill: var(--color-device-screen);
+}
+.cable {
+  fill: none;
+  stroke: var(--color-text-tertiary);
+  stroke-width: 3;
+  stroke-linecap: round;
+}
+.pulse {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-dasharray: 14 400;
+  animation: dd-cable-pulse 2.2s var(--ease-standard) infinite;
+}
+@keyframes dd-cable-pulse {
+  from {
+    stroke-dashoffset: 0;
+  }
+  to {
+    stroke-dashoffset: -260;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pulse {
+    animation: none;
+    stroke-dasharray: none;
+    opacity: 0.4;
+  }
+}
+.spark {
+  fill: var(--color-accent);
+}
+.check {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+/* ---------- State card (Trust, USB debugging, locked …) ---------- */
+.state {
+  display: flex;
+  align-items: center;
+  gap: var(--space-6);
+  width: min(760px, 100%);
+  padding: var(--space-6);
+  border-radius: var(--radius-card);
+  background: var(--color-surface-card);
+  border: 1px solid var(--color-stroke-card);
+  box-shadow: var(--shadow-card);
+}
+.stateText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+.waiting {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  color: var(--color-text-secondary);
+}
+.prompt {
+  margin-top: var(--space-2);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-subtle);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+.promptTitle {
+  font-weight: var(--type-strong-weight);
+  direction: ltr;
+  text-align: start;
+}
+
+/* ---------- Two cards ---------- */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+  width: min(760px, 100%);
+}
+.platformCard {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+}
+.platformText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+.platformBody {
+  color: var(--color-text-secondary);
+}
+
+/* ---------- Drivers ---------- */
+.drivers {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2) var(--space-6);
+  width: min(760px, 100%);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--color-stroke-card);
+  background: var(--color-surface-content);
+}
+.driversTitle {
+  font-weight: var(--type-strong-weight);
+  margin-inline-end: auto;
+}
+.driver {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+.driverOk {
+  color: var(--color-success);
+  display: inline-flex;
+}
+.driverBad {
+  color: var(--color-danger);
+  display: inline-flex;
+}
+
+/* ---------- Simulation (mock only) ---------- */
+.sim {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-2);
+  color: var(--color-text-tertiary);
+  font-size: var(--type-caption-size);
+}
+
+/* ---------- Guide ---------- */
+.guide {
+  display: grid;
+  grid-template-columns: 160px minmax(0, 1fr);
+  gap: var(--space-5);
+  align-items: center;
+}
+.guideArt {
+  display: grid;
+  place-items: center;
+  height: 180px;
+  border-radius: var(--radius-card);
+  background: var(--color-accent-subtle);
+}
+.guideStep {
+  color: var(--color-text-tertiary);
+  font-size: var(--type-caption-size);
+}
+.guideDots {
+  display: flex;
+  gap: var(--space-1);
+}
+.guideDot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  background: var(--color-stroke-control-strong);
+}
+.guideDot[data-active] {
+  background: var(--color-accent);
+}
+
+@media (max-width: 1100px) {
+  .cards {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

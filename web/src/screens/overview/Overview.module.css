@@ -1,0 +1,219 @@
+.grid {
+  display: grid;
+  grid-template-columns: 280px minmax(0, 1fr) minmax(0, 1fr);
+  grid-auto-rows: min-content;
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.device {
+  grid-row: span 3;
+  align-items: center;
+  gap: var(--space-4);
+  padding-top: var(--space-6);
+}
+
+.deviceName {
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-half);
+}
+
+.badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: var(--space-1);
+}
+
+.quick {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+}
+
+.quick > * {
+  width: 100%;
+}
+
+.quickSlot,
+.quickSlot > button {
+  width: 100%;
+}
+
+.skeletonStack {
+  flex: 1;
+  display: grid;
+  gap: var(--space-3);
+}
+
+.quickTitle {
+  width: 100%;
+  color: var(--color-text-tertiary);
+  font-size: var(--type-caption-size);
+  margin-top: var(--space-2);
+}
+
+.wide {
+  grid-column: span 2;
+}
+
+/* ---------- Battery ---------- */
+.battery {
+  display: flex;
+  align-items: center;
+  gap: var(--space-5);
+}
+
+.ringValue {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.ringNumber {
+  font-size: var(--type-title-size);
+  line-height: var(--type-title-line);
+  font-weight: var(--type-title-weight);
+  font-variant-numeric: var(--type-numeric);
+}
+
+.ringCaption {
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  color: var(--color-text-secondary);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: auto auto;
+  gap: var(--space-1) var(--space-5);
+  margin: 0;
+  font-variant-numeric: var(--type-numeric);
+}
+
+.facts dt {
+  color: var(--color-text-secondary);
+}
+
+.facts dd {
+  margin: 0;
+  font-weight: var(--type-strong-weight);
+}
+
+.charging {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-success-text);
+}
+
+.onBattery {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  color: var(--color-text-secondary);
+}
+
+/* ---------- Details ---------- */
+.details {
+  display: flex;
+  flex-direction: column;
+  margin: 0;
+}
+
+.detailRow {
+  display: grid;
+  grid-template-columns: minmax(90px, 0.8fr) minmax(0, 2fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  min-height: 34px;
+  border-bottom: 1px solid var(--color-stroke-divider);
+}
+
+.detailRow:last-child {
+  border-bottom: 0;
+}
+
+.detailLabel {
+  color: var(--color-text-secondary);
+}
+
+.detailValue {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-variant-numeric: var(--type-numeric);
+  direction: ltr;
+  text-align: start;
+  user-select: text;
+}
+
+:root[dir='rtl'] .detailValue {
+  text-align: end;
+}
+
+.detailActions {
+  display: flex;
+  gap: var(--space-1);
+}
+
+/* ---------- Activity ---------- */
+.activity {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.activityItem {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.activityTitle {
+  font-weight: var(--type-strong-weight);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.activityMeta {
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  color: var(--color-text-secondary);
+  font-variant-numeric: var(--type-numeric);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shot {
+  display: block;
+  max-height: 60vh;
+  max-width: 100%;
+  margin: 0 auto;
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+@media (max-width: 1180px) {
+  .grid {
+    grid-template-columns: 240px minmax(0, 1fr);
+  }
+  .wide {
+    grid-column: span 1;
+  }
+  .device {
+    grid-row: span 4;
+  }
+  .activity {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

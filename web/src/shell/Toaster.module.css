@@ -1,0 +1,73 @@
+/* Top-end, under the title bar, so toasts never cover selection bars; beside the drawer when it is open. */
+.region {
+  position: fixed;
+  inset-inline-end: var(--space-4);
+  top: calc(var(--titlebar-height) + var(--space-3));
+  z-index: var(--z-toast);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: var(--space-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  pointer-events: none;
+  transition: inset-inline-end var(--motion-slow) var(--ease-standard);
+}
+
+.region[data-beside-drawer] {
+  inset-inline-end: calc(var(--drawer-width) + var(--space-6));
+}
+
+.toast {
+  pointer-events: auto;
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-3);
+  width: min(380px, calc(100vw - 32px));
+  padding: var(--space-3) var(--space-2) var(--space-3) var(--space-4);
+  border-radius: var(--radius-card);
+  background: var(--color-surface-overlay);
+  backdrop-filter: blur(var(--blur-acrylic));
+  border: 1px solid var(--color-stroke-card);
+  box-shadow: var(--shadow-flyout);
+}
+
+.icon {
+  display: inline-flex;
+  padding-top: 1px;
+  font-size: var(--icon-size);
+  color: var(--color-info);
+}
+.toast[data-tone='success'] .icon {
+  color: var(--color-success);
+}
+.toast[data-tone='warning'] .icon {
+  color: var(--color-warning);
+}
+.toast[data-tone='danger'] .icon {
+  color: var(--color-danger);
+}
+
+.body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.title {
+  font-weight: var(--type-strong-weight);
+  overflow-wrap: anywhere;
+}
+
+.text {
+  color: var(--color-text-secondary);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+}
