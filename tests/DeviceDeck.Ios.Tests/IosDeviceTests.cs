@@ -77,6 +77,21 @@ public sealed class IosDeviceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Phones_already_plugged_in_are_listed_when_StartAsync_returns()
+    {
+        _mux.ListenReplayDelay = TimeSpan.FromSeconds(1.5);
+        _mux.Attach(1, PairedPhone());
+
+        await _provider.StartAsync(Ct);
+
+        Assert.Single(_provider.Devices);
+        await WaitUntil(() => _provider.Find(Udid)?.Summary.State == DeviceState.Ready, "ready");
+        await Task.Delay(1700); // the late replay must not add it twice
+        Assert.Single(_events, e => e.Change == DeviceChange.Added);
+        Assert.Single(_provider.Devices);
+    }
+
+    [Fact]
     public async Task Unpaired_phone_waits_for_trust_then_pairs()
     {
         var phone = new FakePhone(Udid);
@@ -154,8 +169,9 @@ public sealed class IosDeviceTests : IAsyncLifetime
         var device = await AttachAsync(PairedPhone());
 
         _mux.Detach(1);
-        await WaitUntil(() => _provider.Devices.Count == 0, "removal");
+        await WaitUntil(() => _events.Any(e => e.Change == DeviceChange.Removed), "removal");
 
+        Assert.Empty(_provider.Devices);
         var removed = Assert.Single(_events, e => e.Change == DeviceChange.Removed);
         Assert.Equal(DeviceState.Disconnected, removed.Summary.State);
         Assert.Equal(DeviceErrorCodes.Disconnected, (await Assert.ThrowsAsync<DeviceException>(() => device.GetDetailsAsync(Ct))).Code);

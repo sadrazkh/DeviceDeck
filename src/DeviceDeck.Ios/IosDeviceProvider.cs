@@ -47,6 +47,10 @@ public sealed class IosDeviceProvider : IDeviceProvider
     /// <summary>The last time listening failed, for diagnostics.</summary>
     public Exception? LastListenError { get; private set; }
 
+    /// <summary>
+    /// Starts listening. Returns once usbmux has answered and the phones already plugged in are in
+    /// <see cref="Devices"/> (state Connecting until their handshake finishes), or once usbmux could not be reached.
+    /// </summary>
     public async Task StartAsync(CancellationToken ct)
     {
         var firstAttempt = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
@@ -73,8 +77,15 @@ public sealed class IosDeviceProvider : IDeviceProvider
                 await using var client = await _usbmux.ConnectAsync(ct).ConfigureAwait(false);
                 await client.ListenAsync(ct).ConfigureAwait(false);
                 LastListenError = null;
-                // usbmux replays Attached for phones already connected, right after the Listen result.
-                _ = Task.Delay(TimeSpan.FromMilliseconds(300), ct).ContinueWith(_ => firstAttempt.TrySetResult(), TaskScheduler.Default);
+                // usbmux replays Attached for phones already connected, but Apple Mobile Device Service can take
+                // over a second to do it. Seed the list from ListDevices (after Listen, so nothing is missed) so
+                // Devices is complete when StartAsync returns; the replayed Attached then finds them tracked.
+                await using (var lister = await _usbmux.ConnectAsync(ct).ConfigureAwait(false))
+                {
+                    foreach (var d in await lister.ListDevicesAsync(ct).ConfigureAwait(false))
+                        await HandleAsync(new UsbmuxEvent(UsbmuxEventKind.Attached, d.DeviceId, d)).ConfigureAwait(false);
+                }
+                firstAttempt.TrySetResult();
                 while (true)
                 {
                     var evt = await client.ReadEventAsync(ct).ConfigureAwait(false);
@@ -114,6 +125,8 @@ public sealed class IosDeviceProvider : IDeviceProvider
                     existing = _devices.GetValueOrDefault(d.Udid);
                 if (existing is not null)
                 {
+                    if (existing.HasLink(d.DeviceId))
+                        break; // the Listen replay of a phone seeded from ListDevices
                     // Second link (USB + Wi-Fi) for a phone we already track.
                     existing.AddLink(d.DeviceId, d.ConnectionType);
                     existing.RequestRefresh();

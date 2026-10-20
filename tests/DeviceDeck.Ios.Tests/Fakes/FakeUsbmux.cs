@@ -21,6 +21,9 @@ internal sealed class FakeUsbmux : IUsbmuxConnector
 
     public bool ReplyBinary { get; set; }
 
+    /// <summary>How long Listen waits before replaying Attached for phones already there (AMDS can take over a second).</summary>
+    public TimeSpan ListenReplayDelay { get; set; }
+
     public Task<UsbmuxClient> ConnectAsync(CancellationToken ct)
     {
         Connections++;
@@ -114,6 +117,8 @@ internal sealed class FakeUsbmux : IUsbmuxConnector
                         lock (_listeners)
                             _listeners.Add(channel);
                         await Wire.WriteUsbmuxAsync(s, tag, Result(0), ct, ReplyBinary);
+                        if (ListenReplayDelay > TimeSpan.Zero)
+                            await Task.Delay(ListenReplayDelay, ct);
                         foreach (var p in Phones)
                             channel.Writer.TryWrite(new PlistDict { ["MessageType"] = "Attached", ["DeviceID"] = (long)p.Key, ["Properties"] = Properties(p.Key, p.Value) });
                         await foreach (var evt in channel.Reader.ReadAllAsync(ct))
