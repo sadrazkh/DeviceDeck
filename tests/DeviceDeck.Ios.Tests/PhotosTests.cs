@@ -57,11 +57,15 @@ public sealed class PhotosTests : IDisposable
 
         Assert.Equal(PhotoIndexMode.Database, index.Mode);
         Assert.Equal(40_000_000, index.VideoBytes); // the one video whose file is on the phone
-        // Newest first; trashed (5) and hidden (6) are left out; IMG_0007.JPG is not in the database and comes last.
+        // Newest first; trashed (5) and hidden (6) are not in All; IMG_0007.JPG is not in the database and comes last.
         Assert.Equal(
             ["DCIM/101APPLE/IMG_0101.HEIC", "DCIM/100APPLE/IMG_0004.PNG", "DCIM/100APPLE/IMG_0003.MOV",
              "DCIM/100APPLE/IMG_0002.HEIC", "DCIM/100APPLE/IMG_0001.JPG", "DCIM/100APPLE/IMG_0007.JPG"],
-            index.Assets.Select(a => a.Id));
+            index.Page(null, 0, 100).Items.Select(a => a.Id));
+
+        // The hidden photo (6) is only in the Hidden album.
+        Assert.Equal(1, index.HiddenCount);
+        Assert.Equal(["DCIM/100APPLE/IMG_0006.JPG"], index.Page("hidden", 0, 10).Items.Select(a => a.Id));
 
         var byId = index.Assets.ToDictionary(a => a.Id);
         var photo = byId["DCIM/100APPLE/IMG_0001.JPG"];

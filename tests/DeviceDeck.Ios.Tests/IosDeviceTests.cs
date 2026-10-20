@@ -426,7 +426,7 @@ public sealed class IosDeviceTests : IAsyncLifetime
         Assert.Equal(Device.Photos.PhotoIndexMode.Database, first.Mode);
         Assert.Contains("WAL", first.Note);
         Assert.Contains("attempt 2", first.Note);
-        Assert.Equal(6, first.Assets.Count);
+        Assert.Equal(6, first.Page(null, 0, 100).Total);
 
         // Nothing changed on the phone: the cached copy is reused.
         var second = await library.GetIndexAsync(refresh: true, Ct);
@@ -436,7 +436,7 @@ public sealed class IosDeviceTests : IAsyncLifetime
         phone.Media.AddFile("/PhotoData/Photos.sqlite-wal", walBytes, t0.AddMinutes(1));
         var third = await library.GetIndexAsync(refresh: true, Ct);
         Assert.Matches(@"^copied [0-9.]+ KB WAL in", third.Note);
-        Assert.Equal(6, third.Assets.Count);
+        Assert.Equal(6, third.Page(null, 0, 100).Total);
     }
 
     private static byte[] ReadShared(string path)

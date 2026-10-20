@@ -13,6 +13,7 @@ public sealed class PhotoIndex
     public const string VideosAlbum = "videos";
     public const string ScreenshotsAlbum = "screenshots";
     public const string LiveAlbum = "live";
+    public const string HiddenAlbum = "hidden";
     public const string UserAlbumPrefix = "album:";
     public const string FolderAlbumPrefix = "dcim:";
 
@@ -56,6 +57,9 @@ public sealed class PhotoIndex
     /// <summary>Bytes of video files on the phone (hidden and recently deleted included); null without Photos.sqlite.</summary>
     public long? VideoBytes { get; private init; }
 
+    /// <summary>Assets the user hid in Photos: listed only in the "hidden" album.</summary>
+    public int HiddenCount { get; private init; }
+
     /// <summary>True for any media file in DCIM, including the video halves of Live Photos.</summary>
     public bool IsKnownFile(string assetId) => _dcimFiles.Contains(assetId);
 
@@ -98,6 +102,7 @@ public sealed class PhotoIndex
         var assets = new List<PhotoAsset>();
         var covered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var idByPk = new Dictionary<long, string>();
+        var hidden = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         long? videoBytes = rows is null ? null : 0;
 
         if (rows is not null)
@@ -113,15 +118,19 @@ public sealed class PhotoIndex
                 var livePair = row.KindSubtype == 2 ? PairedVideo(path, files, actualCase) : null;
                 if (livePair is not null)
                     covered.Add(livePair);
-                if (row.Trashed || row.Hidden)
+                if (row.Trashed)
                     continue;
 
                 var id = actualCase.GetValueOrDefault(path) ?? path;
+                // Hidden photos stay out of the library and albums, as in the Photos app; they get their own album.
+                if (row.Hidden)
+                    hidden.Add(id);
                 var kind = row.Kind == 1 ? PhotoKind.Video
                     : row.KindSubtype == 2 ? PhotoKind.LivePhoto
                     : row.KindSubtype == 10 || row.DetectedScreenshot ? PhotoKind.Screenshot
                     : PhotoKind.Photo;
-                idByPk[row.Pk] = id;
+                if (!row.Hidden)
+                    idByPk[row.Pk] = id;
                 assets.Add(new PhotoAsset(
                     Id: id,
                     FileName: row.FileName,
@@ -177,14 +186,17 @@ public sealed class PhotoIndex
             albums.Add(new PhotoAlbum(id, name, kind, list.Count));
         }
         List<int> Where(Func<PhotoAsset, bool> predicate) =>
-            Enumerable.Range(0, assets.Count).Where(i => predicate(assets[i])).ToList();
+            Enumerable.Range(0, assets.Count).Where(i => !hidden.Contains(assets[i].Id) && predicate(assets[i])).ToList();
 
-        AddAlbum(AllAlbum, "All photos", AlbumKind.All, Enumerable.Range(0, assets.Count).ToList(), keepEmpty: true);
+        AddAlbum(AllAlbum, "All photos", AlbumKind.All, Where(_ => true), keepEmpty: true);
         if (rows is not null)
             AddAlbum(FavoritesAlbum, "Favorites", AlbumKind.Favorites, Where(a => a.IsFavorite));
         AddAlbum(VideosAlbum, "Videos", AlbumKind.Videos, Where(a => a.Kind == PhotoKind.Video));
         AddAlbum(ScreenshotsAlbum, "Screenshots", AlbumKind.Screenshots, Where(a => a.Kind == PhotoKind.Screenshot));
         AddAlbum(LiveAlbum, "Live Photos", AlbumKind.Live, Where(a => a.Kind == PhotoKind.LivePhoto));
+        // AlbumKind has no Hidden yet (proposed); User is the closest fit until it does.
+        AddAlbum(HiddenAlbum, "Hidden", AlbumKind.User,
+            Enumerable.Range(0, assets.Count).Where(i => hidden.Contains(assets[i].Id)).ToList());
 
         if (rows is not null && albumRows is not null)
         {
@@ -209,6 +221,7 @@ public sealed class PhotoIndex
             rows is null ? PhotoIndexMode.DcimOnly : PhotoIndexMode.Database, schemaVariant, fallbackReason, note)
         {
             VideoBytes = videoBytes,
+            HiddenCount = hidden.Count,
         };
     }
 
