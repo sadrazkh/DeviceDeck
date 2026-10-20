@@ -15,6 +15,8 @@ import type {
   Page,
   PhotoAlbum,
   PhotoAsset,
+  PhotoBackupCount,
+  PhotoBackupStatus,
   RebootTarget,
   Settings,
   StorageInfo,
@@ -82,6 +84,22 @@ export interface BridgeMethods {
   'shell.revealInExplorer': { params: { path: string }; result: Empty };
   'settings.get': { params: Empty; result: Settings };
   'settings.set': { params: Partial<Settings>; result: Settings };
+  // Photos backup and adding photos to an iPhone app (round 2).
+  'photos.newCount': { params: DeviceParams; result: PhotoBackupCount };
+  'photos.backupStatus': { params: DeviceParams; result: PhotoBackupStatus };
+  'photos.backupConfigure': {
+    params: DeviceParams & {
+      destination?: string;
+      folderPattern?: string;
+      convertHeic?: boolean;
+      includeHidden?: boolean;
+      useDefaults?: boolean;
+    };
+    result: PhotoBackupStatus;
+  };
+  'photos.backup': { params: DeviceParams; result: JobStarted };
+  'photos.backupForget': { params: DeviceParams; result: { forgotten: number } };
+  'photos.importToApp': { params: DeviceParams & { appId: string; files: string[] }; result: JobStarted };
 }
 
 export type MethodName = keyof BridgeMethods;
@@ -129,6 +147,12 @@ const methodTable = {
   'shell.revealInExplorer': true,
   'settings.get': true,
   'settings.set': true,
+  'photos.newCount': true,
+  'photos.backupStatus': true,
+  'photos.backupConfigure': true,
+  'photos.backup': true,
+  'photos.backupForget': true,
+  'photos.importToApp': true,
 } as const satisfies Record<MethodName, true>;
 
 export const METHOD_NAMES = Object.keys(methodTable) as MethodName[];

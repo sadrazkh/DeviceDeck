@@ -32,6 +32,7 @@ import {
   storage,
 } from './mock-data';
 import { assetsInAlbum, generateLibrary, toContractAsset, type MockAsset, type MockLibrary } from './photos';
+import { MockPhotoBackup } from './photosBackup';
 import { hashString } from './random';
 import { TransferEngine, type JobItem } from './transfers';
 
@@ -262,6 +263,20 @@ export class MockBackend {
     return handler((params ?? {}) as never);
   }
 
+  // Photos backup and adding photos to an iPhone app (round 2): see ./photosBackup.ts.
+  private readonly photoBackup = new MockPhotoBackup({
+    requireReady: (deviceId, capability) => this.requireReady(deviceId, capability),
+    library: (deviceId) => this.library(deviceId),
+    engine: () => this.engine,
+    settings: () => this.settings,
+    apps: (deviceId) => this.appLists.get(deviceId) ?? [],
+    fs: (deviceId) => this.fs(deviceId),
+    sizeOfLocal: (path) => this.sizeOfLocal(path),
+    now: () => this.now(),
+    fault,
+    badParams,
+  });
+
   readonly handlers: { [M in MethodName]: Handler<M> } = {
     'app.hello': () => ({ version: '0.1.0-mock', isWebView: false }),
     'drivers.status': () => this.driverList.map((d) => ({ ...d })),
@@ -475,6 +490,7 @@ export class MockBackend {
       this.settings = { ...this.settings, ...pickSettings(patch) };
       return { ...this.settings };
     },
+    ...this.photoBackup.handlers,
   };
 
   // ---------- helpers ----------
@@ -645,6 +661,9 @@ const SETTINGS_KEYS: (keyof Settings)[] = [
   'convertHeic',
   'fileCopyFolder',
   'conflictRule',
+  'photoBackupFolder',
+  'photoBackupPattern',
+  'photoBackupConvertHeic',
 ];
 
 function pickSettings(patch: Partial<Settings>): Partial<Settings> {

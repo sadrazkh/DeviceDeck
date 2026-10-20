@@ -321,6 +321,9 @@ export const defaultSettings: Settings = {
   convertHeic: false,
   fileCopyFolder: 'D:\\Phone files',
   conflictRule: 'ask',
+  photoBackupFolder: 'D:\\Phone backups',
+  photoBackupPattern: 'yyyy/MM',
+  photoBackupConvertHeic: false,
 };
 
 /** Folders shell.pickFolder hands back in turn (the mock has no real picker). */
