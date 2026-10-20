@@ -1,0 +1,17 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/DeviceDeck.Android/DeviceDeck.Android.csproj" />
+    <Project Path="src/DeviceDeck.Bridge/DeviceDeck.Bridge.csproj" />
+    <Project Path="src/DeviceDeck.Core/DeviceDeck.Core.csproj" />
+    <Project Path="src/DeviceDeck.Ios/DeviceDeck.Ios.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/DeviceDeck.Android.Tests/DeviceDeck.Android.Tests.csproj" />
+    <Project Path="tests/DeviceDeck.Bridge.Tests/DeviceDeck.Bridge.Tests.csproj" />
+    <Project Path="tests/DeviceDeck.Ios.Tests/DeviceDeck.Ios.Tests.csproj" />
+  </Folder>
+  <Folder Name="/tools/">
+    <Project Path="tools/AndroidProbe/AndroidProbe.csproj" />
+    <Project Path="tools/IosProbe/IosProbe.csproj" />
+  </Folder>
+</Solution>
