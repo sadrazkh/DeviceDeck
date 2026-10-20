@@ -309,11 +309,12 @@ export class MockBackend {
       this.requireReady(deviceId, 'photosDelete');
       const library = this.library(deviceId);
       const ids = new Set(assetIds);
-      const before = library.assets.length;
+      const before = library.assets.length + library.hidden.length;
       library.assets = library.assets.filter((a) => !ids.has(a.id));
+      library.hidden = library.hidden.filter((a) => !ids.has(a.id));
       for (const id of ids) library.byId.delete(id);
       this.libraries.set(deviceId, { ...library, albums: recount(library) });
-      return { deleted: before - library.assets.length };
+      return { deleted: before - library.assets.length - library.hidden.length };
     },
     'photos.import': ({ deviceId, files }) => {
       this.requireReady(deviceId, 'photosImport');

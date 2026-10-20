@@ -87,6 +87,7 @@ const iphoneRoots: Record<string, Spec[]> = {
     ['Manual — coffee machine.pdf', Math.round(12.6 * MB)],
     ['Budget 2026.xlsx', Math.round(220 * KB), { daysAgo: 3 }],
   ],
+  'app:com.goodiware.GoodReader': [],
   'app:com.firecore.infuse': [
     ['Movies', [
       ['A Separation (2011).mkv', Math.round(2.3 * GB)],

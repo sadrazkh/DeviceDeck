@@ -20,8 +20,9 @@ const SCREENS: ScreenCase[] = [
   { name: 'overview-limited', params: { mock: 'limited', screen: 'overview' }, ready: '[data-testid=screen-overview]' },
   { name: 'photos', params: { screen: 'photos' }, ready: '[data-testid=photo-grid] [role=gridcell]' },
   { name: 'photos-android', params: { screen: 'photos', device: 'android' }, ready: '[data-testid=photo-grid] [role=gridcell]' },
-  { name: 'files', params: { screen: 'files' }, ready: '[data-testid=root-app\\:org\\.videolan\\.vlc-ios]' },
+  { name: 'files', params: { screen: 'files' }, ready: '[data-testid=app-card-app\\:org\\.videolan\\.vlc-ios]' },
   { name: 'files-android', params: { screen: 'files', device: 'android' }, ready: '[data-testid=file-table] [role=row][aria-selected]' },
+  { name: 'app-documents', params: { screen: 'appDocuments' }, ready: '[data-testid=app-card-app\\:org\\.videolan\\.vlc-ios]' },
   { name: 'apps', params: { screen: 'apps' }, ready: '[data-testid=app-row]' },
   { name: 'apps-android', params: { screen: 'apps', device: 'android' }, ready: '[data-testid=app-row]' },
   { name: 'coming-next', params: { screen: 'backup' }, ready: '[data-testid=screen-backup]' },
@@ -72,6 +73,41 @@ test('top-tabs layout (direction C switch)', async ({ page }) => {
   await settle(page);
   await shot(page, 'overview-tabs-light');
   consoleWatch.assertClean();
+});
+
+for (const variant of ['light', 'rtl'] as const) {
+  test(`title bar keeps clear of the host's caption buttons (${variant})`, async ({ page }) => {
+    await page.goto(query(variant, { screen: 'overview' }));
+    await expect(page.getByTestId('screen-overview')).toBeVisible();
+    // What the WinUI host publishes; the buttons stay on the right in Persian too.
+    await page.evaluate(() => {
+      const s = document.documentElement.style;
+      s.setProperty('--dd-caption-left', '0px');
+      s.setProperty('--dd-caption-right', '188px');
+      s.setProperty('--dd-titlebar-height', '48px');
+    });
+    const width = page.viewportSize()!.width;
+    const controls = page.locator('header button');
+    const count = await controls.count();
+    expect(count).toBeGreaterThan(2);
+    for (let i = 0; i < count; i++) {
+      const box = await controls.nth(i).boundingBox();
+      if (box) expect(box.x + box.width, `button ${i}`).toBeLessThanOrEqual(width - 188);
+    }
+  });
+}
+
+test('iPhone battery health is labelled as an estimate; Android is not', async ({ page }) => {
+  await page.goto(query('light', { screen: 'overview' }));
+  const card = page.getByTestId('battery-card');
+  await expect(card).toContainText('Estimated health');
+  // Keyboard focus opens the tooltip at once (hover waits for the delay and the screen's fade-in).
+  await page.getByTestId('health-estimated-info').focus();
+  await expect(page.getByRole('tooltip')).toContainText('iOS Settings');
+  await page.goto(query('light', { screen: 'overview', device: 'android' }));
+  await expect(page.getByTestId('battery-card')).toContainText('health');
+  await expect(page.getByTestId('battery-card')).not.toContainText('Estimated');
+  await expect(page.getByTestId('health-estimated-info')).toHaveCount(0);
 });
 
 test('Persian mirrors the layout and uses Persian digits', async ({ page }) => {

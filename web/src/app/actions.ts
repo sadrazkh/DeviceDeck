@@ -125,6 +125,7 @@ export function useActions() {
       async copyToDevice(device: DeviceSummary, root: string, path: string, files: FileSource) {
         try {
           const { jobId } = await client.callWithFiles('files.copyToDevice', { deviceId: device.id, root, path }, files);
+          useUi.getState().rememberJobRoot(jobId, root);
           toast({ tone: 'info', title: t('files.copyStarted'), duration: 3000 });
           return jobId;
         } catch (error) {

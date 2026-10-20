@@ -37,7 +37,7 @@ export const NAV: NavEntry[] = [
   { section: 'overview', label: 'nav.overview', icon: GridRegular, iconSelected: GridFilled },
   { section: 'photos', label: 'nav.photos', icon: ImageMultipleRegular, iconSelected: ImageMultipleFilled, needs: 'photosRead' },
   { section: 'files', label: 'nav.files', icon: FolderRegular, iconSelected: FolderFilled, needs: 'files' },
-  { section: 'appDocuments', label: 'nav.appDocuments', icon: DocumentFolderRegular, iconSelected: DocumentFolderFilled, needs: 'files' },
+  { section: 'appDocuments', label: 'nav.appDocuments', icon: DocumentFolderRegular, iconSelected: DocumentFolderFilled, needs: 'appDocuments' },
   { section: 'apps', label: 'nav.apps', icon: AppsRegular, iconSelected: AppsFilled, needs: 'appsList' },
   { section: 'contacts', label: 'nav.contacts', icon: PeopleChatRegular, iconSelected: PeopleChatFilled, needs: 'contacts' },
   { section: 'backup', label: 'nav.backup', icon: ArchiveRegular, iconSelected: ArchiveFilled, needs: 'backup' },

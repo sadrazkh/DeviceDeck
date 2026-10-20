@@ -1,11 +1,22 @@
-import { ArrowExportRegular, ArrowImportRegular, DeleteRegular, DismissRegular, ImageMultipleRegular, ImageRegular } from '@fluentui/react-icons';
+import {
+  ArrowExportRegular,
+  ArrowImportRegular,
+  DeleteRegular,
+  DismissRegular,
+  EyeRegular,
+  ImageMultipleRegular,
+  ImageRegular,
+  LockClosedRegular,
+  LockOpenRegular,
+} from '@fluentui/react-icons';
+import { useQueryClient } from '@tanstack/react-query';
 import { AnimatePresence, motion } from 'framer-motion';
 import { Slider } from 'radix-ui';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { AlbumKind, DeviceSummary, PhotoAlbum, PhotoAsset } from '../../bridge/types';
 import { useActions } from '../../app/actions';
 import { useClient } from '../../app/bridgeContext';
-import { useAlbums, usePhotoLibrary } from '../../app/queries';
+import { keys, useAlbums, usePhotoLibrary } from '../../app/queries';
 import { Button } from '../../components/Button';
 import { ConfirmDialog } from '../../components/Dialog';
 import { DropOverlay, useFileDrop } from '../../components/DropZone';
@@ -40,10 +51,28 @@ const SMART_ALBUM_NAMES: Partial<Record<AlbumKind, MessageKey>> = {
   favorites: 'photos.album.favorites',
 };
 
-function AlbumList({ albums, current, onSelect, android }: { albums: PhotoAlbum[]; current: string; onSelect(id: string): void; android: boolean }) {
+/** The iPhone's Hidden album (id "hidden"; a "hidden" album kind is proposed for the contract). */
+export function isHiddenAlbum(album: Pick<PhotoAlbum, 'id' | 'kind'>): boolean {
+  return album.id === 'hidden' || (album.kind as string) === 'hidden';
+}
+
+function AlbumList({
+  albums,
+  current,
+  onSelect,
+  android,
+  hiddenRevealed,
+}: {
+  albums: PhotoAlbum[];
+  current: string;
+  onSelect(id: string): void;
+  android: boolean;
+  hiddenRevealed: boolean;
+}) {
   const { t, n } = useI18n();
-  const smart = albums.filter((a) => a.kind !== 'user' && a.kind !== 'folder');
-  const own = albums.filter((a) => a.kind === 'user' || a.kind === 'folder');
+  const hidden = albums.filter(isHiddenAlbum);
+  const smart = albums.filter((a) => a.kind !== 'user' && a.kind !== 'folder' && !isHiddenAlbum(a));
+  const own = albums.filter((a) => (a.kind === 'user' || a.kind === 'folder') && !isHiddenAlbum(a));
   const item = (album: PhotoAlbum) => {
     const label = SMART_ALBUM_NAMES[album.kind];
     return (
@@ -60,11 +89,35 @@ function AlbumList({ albums, current, onSelect, android }: { albums: PhotoAlbum[
       </button>
     );
   };
+  // Collapsed and locked by default: no count until the user reveals it.
+  const hiddenItem = (album: PhotoAlbum) => (
+    <button
+      key={album.id}
+      type="button"
+      className={styles.album}
+      aria-current={album.id === current}
+      onClick={() => onSelect(album.id)}
+      data-testid="album-hidden"
+      data-locked={!hiddenRevealed || undefined}
+    >
+      <span className={styles.albumIcon} aria-hidden>
+        {hiddenRevealed ? <LockOpenRegular /> : <LockClosedRegular />}
+      </span>
+      <span className={styles.albumName}>{t('photos.hidden')}</span>
+      {hiddenRevealed ? (
+        <span className={styles.albumCount}>{n(album.count)}</span>
+      ) : (
+        <span className="visually-hidden">{t('photos.hidden.locked')}</span>
+      )}
+    </button>
+  );
   return (
     <nav className={styles.albums} aria-label={t(android ? 'photos.folders' : 'photos.albums')}>
       {smart.map(item)}
       {own.length > 0 ? <div className={styles.albumsTitle}>{t(android ? 'photos.folders' : 'photos.myAlbums')}</div> : null}
       {own.map(item)}
+      {hidden.length > 0 ? <div className={styles.albumsDivider} role="separator" /> : null}
+      {hidden.map(hiddenItem)}
     </nav>
   );
 }
@@ -92,7 +145,14 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
   const setAlbum = useUi((s) => s.setAlbum);
   const indexProgress = useUi((s) => s.indexProgress[device.id]);
   const albums = useAlbums(device);
-  const library = usePhotoLibrary(device, albumId);
+  const queryClient = useQueryClient();
+  const hiddenRevealed = useUi((s) => s.hiddenRevealed[device.id] ?? false);
+  const setHiddenRevealed = useUi((s) => s.setHiddenRevealed);
+  const selectedAlbum = (albums.data ?? []).find((a) => a.id === albumId);
+  const hiddenSelected = isHiddenAlbum(selectedAlbum ?? { id: albumId, kind: 'user' });
+  const locked = hiddenSelected && !hiddenRevealed;
+  // A locked Hidden album requests nothing from the phone: no items, no thumbnails.
+  const library = usePhotoLibrary(device, albumId, { enabled: !locked });
   const [filter, setFilter] = useState<Filter>('all');
   const [tileTarget, setTileTarget] = useState(136);
   const [selection, setSelection] = useState<Selection>(emptySelection);
@@ -169,6 +229,14 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
     if (list.length > 0) setExporting(list);
   };
 
+  /** Locks the Hidden album again and forgets what was read from it. */
+  const lockHidden = () => {
+    setHiddenRevealed(device.id, false);
+    setViewer(null);
+    setSelection(emptySelection);
+    queryClient.removeQueries({ queryKey: keys.photos(device.id, albumId) });
+  };
+
   return (
     <ScreenLayout
       title={t('photos.title')}
@@ -176,6 +244,11 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
       subtitle={all && videos ? t('photos.subtitle', { photos: all.count - videos.count, videos: videos.count }) : ' '}
       actions={
         <>
+          {hiddenSelected && hiddenRevealed ? (
+            <Button icon={<LockClosedRegular />} onClick={lockHidden} data-testid="hidden-lock">
+              {t('photos.hidden.lock')}
+            </Button>
+          ) : null}
           <Segmented
             label={t('photos.filter')}
             value={filter}
@@ -231,9 +304,22 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
       fill
     >
       <div className={styles.layout}>
-        <AlbumList albums={albumList} current={albumId} onSelect={setAlbum} android={device.platform === 'android'} />
+        <AlbumList albums={albumList} current={albumId} onSelect={setAlbum} android={device.platform === 'android'} hiddenRevealed={hiddenRevealed} />
         <div className={styles.gridWrap} {...drop.bind}>
-          {loading ? (
+          {locked ? (
+            <div className={styles.lockedPanel} data-testid="hidden-locked">
+              <EmptyState
+                icon={<LockClosedRegular />}
+                title={t('photos.hidden.lockedTitle')}
+                body={t('photos.hidden.lockedBody')}
+                action={
+                  <Button variant="accent" icon={<EyeRegular />} onClick={() => setHiddenRevealed(device.id, true)} data-testid="hidden-reveal">
+                    {t('photos.hidden.reveal')}
+                  </Button>
+                }
+              />
+            </div>
+          ) : loading ? (
             <div className={styles.skeletonGrid} aria-busy>
               {Array.from({ length: 24 }, (_, i) => (
                 <Skeleton key={i} height="auto" radius="var(--radius-tile)" className={styles.skeletonTile} />

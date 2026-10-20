@@ -268,7 +268,7 @@ export function AppsScreen({ device }: { device: DeviceSummary }) {
                     <td className={`${styles.num} ${styles.hideNarrow}`}>{app.installedAt ? date(app.installedAt, 'short') : t('apps.never')}</td>
                     <td>
                       <div className={styles.actions}>
-                        {ios && app.fileSharing && caps.has('files') ? (
+                        {ios && app.fileSharing && caps.has('appDocuments') ? (
                           <Tooltip content={t('apps.openDocuments')}>
                             <Button
                               variant="subtle"
@@ -276,8 +276,8 @@ export function AppsScreen({ device }: { device: DeviceSummary }) {
                               icon={<FolderOpenRegular />}
                               aria-label={`${t('apps.openDocuments')}: ${app.name}`}
                               onClick={() => {
-                                useUi.getState().setFilesPlace({ root: `app:${app.id}`, path: '/' });
-                                useUi.getState().navigate('files');
+                                useUi.getState().setAppDocsPlace({ root: `app:${app.id}`, path: '/' });
+                                useUi.getState().navigate('appDocuments');
                               }}
                             />
                           </Tooltip>

@@ -94,8 +94,12 @@
   --motion-shift: 8px; /* how far things travel on enter; 0 under reduced motion */
 
   /* ---------- Layout ---------- */
-  --titlebar-height: 48px;
-  --caption-reserve: 140px; /* native minimise / maximise / close drawn by the host */
+  /* The host publishes where its native caption buttons (minimise, maximise, close) sit, in CSS px:
+     --dd-caption-left, --dd-caption-right, --dd-titlebar-height (src/DeviceDeck.Shell, PublishCaptionInsets).
+     They are physical sides: the buttons stay on the right in Persian too. Fallbacks are for a plain browser. */
+  --caption-inset-left: var(--dd-caption-left, 0px);
+  --caption-inset-right: var(--dd-caption-right, 140px);
+  --titlebar-height: max(48px, var(--dd-titlebar-height, 48px));
   --rail-width: 240px;
   --rail-width-compact: 64px;
   --tabs-height: 44px;

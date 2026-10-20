@@ -203,9 +203,9 @@ function useCommands(open: boolean): Command[] {
           hint: app.fileSharing ? t('apps.openDocuments') : app.id,
           icon: <AppsRegular />,
           run: () => {
-            if (app.fileSharing) {
-              ui.setFilesPlace({ root: `app:${app.id}`, path: '/' });
-              ui.navigate('files');
+            if (app.fileSharing && device.capabilities.includes('appDocuments')) {
+              ui.setAppDocsPlace({ root: `app:${app.id}`, path: '/' });
+              ui.navigate('appDocuments');
             } else ui.navigate('apps');
           },
         });

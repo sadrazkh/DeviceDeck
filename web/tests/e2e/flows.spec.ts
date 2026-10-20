@@ -52,6 +52,118 @@ test('first indexing shows "Reading 13,213 photos" with progress', async ({ page
   consoleWatch.assertClean();
 });
 
+for (const variant of ['light', 'rtl'] as const) {
+  test(`the Hidden album stays locked until Reveal, for this session only (${variant})`, async ({ page }) => {
+    const consoleWatch = watchConsole(page);
+    const rtl = variant === 'rtl';
+    await page.goto(rtl ? '/?latency=0&indexing=0&lang=fa&theme=light&screen=photos' : '/?latency=0&indexing=0&theme=light&screen=photos');
+    await expect(page.locator('[data-testid=photo-grid] [role=gridcell]').first()).toBeVisible();
+
+    // Count every photos.list call for the Hidden album.
+    await page.evaluate(() => {
+      const m = (window as unknown as { deviceDeckMock: { handlers: Record<string, (p: { albumId?: string }) => unknown> } }).deviceDeckMock;
+      const original = m.handlers['photos.list']!;
+      (window as unknown as { hiddenCalls: number }).hiddenCalls = 0;
+      m.handlers['photos.list'] = (p) => {
+        if (p.albumId === 'hidden') (window as unknown as { hiddenCalls: number }).hiddenCalls++;
+        return original(p);
+      };
+    });
+    const hiddenCalls = () => page.evaluate(() => (window as unknown as { hiddenCalls: number }).hiddenCalls);
+
+    const item = page.getByTestId('album-hidden');
+    await expect(item).toHaveAttribute('data-locked', 'true');
+    await expect(item).not.toContainText(rtl ? '۱٬۸۴۷' : '1,847');
+    await item.click();
+    await expect(page.getByTestId('hidden-locked')).toBeVisible();
+    await expect(page.locator('[data-testid=photo-grid]')).toHaveCount(0);
+    await settle(page);
+    await shot(page, `photos-hidden-locked-${variant}`);
+    expect(await hiddenCalls()).toBe(0);
+
+    await page.getByTestId('hidden-reveal').click();
+    await expect(page.locator('[data-testid=photo-grid] [role=gridcell]').first()).toBeVisible();
+    await expect(item).toContainText(rtl ? '۱٬۸۴۷' : '1,847');
+    expect(await hiddenCalls()).toBeGreaterThan(0);
+
+    await page.getByTestId('hidden-lock').click();
+    await expect(page.getByTestId('hidden-locked')).toBeVisible();
+    await expect(item).toHaveAttribute('data-locked', 'true');
+
+    // Reveal lasts for this session only: a fresh start is locked again.
+    await page.getByTestId('hidden-reveal').click();
+    await expect(item).not.toHaveAttribute('data-locked', 'true');
+    await page.reload();
+    await page.getByTestId('album-hidden').click();
+    await expect(page.getByTestId('hidden-locked')).toBeVisible();
+    consoleWatch.assertClean();
+  });
+}
+
+test('App documents: app cards, browse an app, drop files on a card', async ({ page }) => {
+  const consoleWatch = watchConsole(page);
+  await page.goto(query('light', { screen: 'appDocuments', queue: '0' }));
+  const vlc = page.getByTestId('app-card-app:org.videolan.vlc-ios');
+  const infuse = page.getByTestId('app-card-app:com.firecore.infuse');
+  const empty = page.getByTestId('app-card-app:com.goodiware.GoodReader');
+  await expect(vlc).toContainText('3 items');
+  await expect(vlc).toContainText('3.1 GB of app data');
+  await expect(empty).toContainText('Empty');
+
+  // A large copy in progress shows on its card.
+  await mock(
+    page,
+    `(() => {
+      const m = window.deviceDeckMock;
+      const film = m.registerLocalFile('Interstellar (2014).mkv', 9000000000);
+      m.handlers['files.copyToDevice']({ deviceId: '${IPHONE}', root: 'app:com.firecore.infuse', path: '/', files: [film] });
+    })()`,
+  );
+  await expect(infuse.getByTestId('app-card-copy')).toContainText('Interstellar (2014).mkv into Infuse');
+  await settle(page);
+  await shot(page, 'app-documents-copying-light');
+
+  // Files dropped on a card go straight into that app.
+  const dataTransfer = await page.evaluateHandle(() => {
+    const dt = new DataTransfer();
+    dt.items.add(new File([new Uint8Array(4096)], 'Lease 2027.pdf', { type: 'application/pdf' }));
+    return dt;
+  });
+  await empty.dispatchEvent('dragenter', { dataTransfer });
+  await expect(empty).toContainText('Drop to copy into GoodReader');
+  await empty.dispatchEvent('drop', { dataTransfer });
+  await expect(empty).toContainText('1 item', { timeout: 10_000 });
+
+  // Open an app: its files, with a way back to the grid.
+  await vlc.click();
+  const browser = page.getByTestId('file-browser');
+  await expect(browser).toContainText('Persepolis.mkv');
+  await expect(browser).toContainText('Subtitles');
+  await settle(page);
+  await shot(page, 'app-documents-vlc-light');
+  await page.getByTestId('crumb-exit').click();
+  await expect(page.getByTestId('app-grid')).toBeVisible();
+
+  // Apps that don't share files, on request, greyed with the reason.
+  await page.getByText('Show apps that don’t share files').click();
+  await expect(page.getByText('This app doesn’t share files with computers.').first()).toBeVisible();
+  consoleWatch.assertClean();
+});
+
+test('App documents is an iPhone section: greyed on Android', async ({ page }) => {
+  await page.goto(query('light', { screen: 'overview', device: 'android' }));
+  await expect(page.getByTestId('nav-appDocuments')).toBeDisabled();
+  await page.goto(query('light', { screen: 'overview' }));
+  await expect(page.getByTestId('nav-appDocuments')).toBeEnabled();
+});
+
+test('Apps → Open documents lands in App documents for that app', async ({ page }) => {
+  await page.goto(query('light', { screen: 'apps' }));
+  await page.getByRole('button', { name: 'Open documents: Infuse' }).click();
+  await expect(page.getByTestId('screen-appDocuments')).toBeVisible();
+  await expect(page.getByTestId('file-browser')).toContainText('Movies');
+});
+
 test('photo viewer opens on double-click and moves with the arrow keys', async ({ page }) => {
   const consoleWatch = watchConsole(page);
   await page.goto(query('dark', { screen: 'photos' }));
@@ -93,7 +205,7 @@ test('a pulled cable pauses transfers; plugging back resumes them', async ({ pag
 test('a name conflict asks once, then the copy finishes', async ({ page }) => {
   const consoleWatch = watchConsole(page);
   await page.goto(query('light', { screen: 'files', queue: '0' }));
-  await page.getByTestId('root-app:org.videolan.vlc-ios').click();
+  await page.getByTestId('app-card-app:org.videolan.vlc-ios').click();
   await expect(page.getByTestId('file-table')).toContainText('Persepolis.mkv');
   await mock(
     page,

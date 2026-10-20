@@ -55,6 +55,32 @@
   white-space: nowrap;
 }
 
+.albumIcon {
+  display: inline-flex;
+  flex: none;
+  font-size: var(--icon-size-small);
+  color: var(--color-text-secondary);
+}
+
+.album[data-locked] .albumName {
+  color: var(--color-text-secondary);
+}
+
+.albumsDivider {
+  height: 1px;
+  margin: var(--space-2) var(--space-3);
+  background: var(--color-stroke-divider);
+}
+
+.lockedPanel {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-card);
+  background: var(--color-surface-card);
+  border: 1px solid var(--color-stroke-card);
+}
+
 .albumCount {
   color: var(--color-text-tertiary);
   font-size: var(--type-caption-size);

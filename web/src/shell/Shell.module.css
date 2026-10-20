@@ -53,9 +53,9 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding-inline-start: var(--space-3);
-  /* Space for the native minimise / maximise / close buttons drawn by the host. */
-  padding-inline-end: var(--caption-reserve);
+  /* Physical sides on purpose: the host's caption buttons do not move in right-to-left. */
+  padding-left: calc(var(--caption-inset-left) + var(--space-3));
+  padding-right: calc(var(--caption-inset-right) + var(--space-2));
   min-width: 0;
 }
 
@@ -166,13 +166,14 @@
   background: var(--color-danger);
 }
 
-/* Stand-ins for the native caption buttons, shown only in a plain browser. */
+/* Stand-ins for the native caption buttons, shown only in a plain browser (always on the right, like Windows). */
 .captions {
   position: absolute;
   inset-block: 0;
-  inset-inline-end: 0;
-  width: var(--caption-reserve);
+  right: 0;
+  width: var(--caption-inset-right);
   display: flex;
+  direction: ltr;
   justify-content: flex-end;
   color: var(--color-text-secondary);
   pointer-events: none;

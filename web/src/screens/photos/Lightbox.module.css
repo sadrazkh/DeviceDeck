@@ -26,7 +26,9 @@
   display: flex;
   align-items: center;
   gap: var(--space-3);
-  padding-inline: var(--space-4) calc(var(--caption-reserve) + var(--space-2));
+  /* Keep clear of the host's caption buttons, which stay where they are in right-to-left. */
+  padding-left: calc(var(--caption-inset-left) + var(--space-4));
+  padding-right: calc(var(--caption-inset-right) + var(--space-2));
 }
 
 .barTitle {

@@ -12,6 +12,8 @@ export interface MockAsset extends PhotoAsset {
 
 export interface MockLibrary {
   assets: MockAsset[];
+  /** Items the user hid in Photos: only in the "hidden" album, as on a real iPhone. */
+  hidden: MockAsset[];
   byId: Map<string, MockAsset>;
   albums: PhotoAlbum[];
 }
@@ -47,7 +49,7 @@ function androidStamp(time: number) {
 
 export function generateLibrary(deviceId: string): MockLibrary {
   const spec = specs[deviceId];
-  if (!spec) return { assets: [], byId: new Map(), albums: [] };
+  if (!spec) return { assets: [], hidden: [], byId: new Map(), albums: [] };
   const rnd = createRandom(spec.seed);
   const total = spec.photos + spec.videos;
 
@@ -132,8 +134,45 @@ export function generateLibrary(deviceId: string): MockLibrary {
     };
   }
 
-  const byId = new Map(assets.map((a) => [a.id, a]));
-  return { assets, byId, albums: buildAlbums(assets, isIos, userAlbums, userAlbumIds) };
+  const hidden = isIos ? generateHidden(spec.seed, HIDDEN_COUNT) : [];
+  const byId = new Map([...assets, ...hidden].map((a) => [a.id, a]));
+  const albums = buildAlbums(assets, isIos, userAlbums, userAlbumIds);
+  if (isIos) {
+    // The iOS provider lists the Hidden album as id "hidden" (kind "user" until AlbumKind has Hidden).
+    albums.push({ id: HIDDEN_ALBUM_ID, name: 'Hidden', kind: 'user', count: hidden.length });
+  }
+  return { assets, hidden, byId, albums };
+}
+
+export const HIDDEN_ALBUM_ID = 'hidden';
+/** As many as the owner's own iPhone holds. */
+export const HIDDEN_COUNT = 1847;
+
+function generateHidden(seed: number, count: number): MockAsset[] {
+  const rnd = createRandom(seed * 31 + 7);
+  const items: MockAsset[] = [];
+  let time = LIBRARY_NEWEST - 3 * 86_400_000;
+  for (let i = 0; i < count; i++) {
+    time -= rnd.between(0.2, 30) * 3600 * 1000;
+    const video = rnd.chance(0.08);
+    const number = count - i;
+    items.push({
+      id: `ios-hidden-${number}`,
+      fileName: `IMG_H${pad(number, 4)}.${video ? 'MOV' : 'HEIC'}`,
+      kind: video ? 'video' : 'photo',
+      takenAt: new Date(time).toISOString(),
+      size: Math.round((video ? rnd.between(20, 120) : rnd.between(2, 5)) * MB),
+      width: video ? 1920 : 3024,
+      height: video ? 1080 : 4032,
+      durationSeconds: video ? Math.round(rnd.between(4, 60)) : null,
+      isFavorite: false,
+      inCloudOnly: false,
+      livePairId: null,
+      seed: (seed * 7_919 + number * 104_729) >>> 0,
+      albumIds: [HIDDEN_ALBUM_ID],
+    });
+  }
+  return items;
 }
 
 function buildAlbums(assets: MockAsset[], isIos: boolean, names: string[], ids: string[]): PhotoAlbum[] {
@@ -161,6 +200,7 @@ function buildAlbums(assets: MockAsset[], isIos: boolean, names: string[], ids: 
 
 export function assetsInAlbum(library: MockLibrary, albumId: string | null | undefined): MockAsset[] {
   if (!albumId || albumId === 'all') return library.assets;
+  if (albumId === HIDDEN_ALBUM_ID) return library.hidden;
   switch (albumId) {
     case 'screenshots':
       return library.assets.filter((a) => a.kind === 'screenshot');

@@ -222,6 +222,10 @@ export const en = {
   'overview.battery': 'Battery',
   'overview.health': 'health',
   'overview.healthLabel': 'Battery health {percent}',
+  'overview.healthEstimated': 'Estimated health',
+  'overview.healthEstimatedLabel': 'Estimated battery health {percent}',
+  'overview.healthEstimatedAbout': 'About estimated health',
+  'overview.healthEstimatedHint': 'Worked out from the battery’s capacity readings. iOS Settings › Battery › Battery Health may show a different number.',
   'overview.charging': 'Charging',
   'overview.onBattery': 'On battery',
   'overview.charge': 'Charge',
@@ -273,6 +277,12 @@ export const en = {
   'photos.album.live': 'Live Photos',
   'photos.album.favorites': 'Favourites',
   'photos.myAlbums': 'My albums',
+  'photos.hidden': 'Hidden',
+  'photos.hidden.locked': 'Locked',
+  'photos.hidden.lockedTitle': 'The Hidden album is locked',
+  'photos.hidden.lockedBody': 'Nothing in it is read from the phone until you reveal it. It locks again when DeviceDeck closes.',
+  'photos.hidden.reveal': 'Reveal',
+  'photos.hidden.lock': 'Lock again',
   'photos.filter': 'Show',
   'photos.filter.all': 'All',
   'photos.filter.photos': 'Photos',
@@ -384,6 +394,21 @@ export const en = {
   'files.noSharingApps': 'No app on this iPhone shares files with computers.',
   'files.copyStarted': 'Copy started',
 
+  // App documents
+  'appDocs.title': 'App documents',
+  'appDocs.subtitle': '{count, plural, one {# app shares files with this PC} other {# apps share files with this PC}}',
+  'appDocs.hint': 'Drop files on an app to copy them into it, or open it to see its files.',
+  'appDocs.items': '{count, plural, one {# item} other {# items}}',
+  'appDocs.empty': 'Empty',
+  'appDocs.dataSize': '{size} of app data',
+  'appDocs.dropOn': 'Drop to copy into {app}',
+  'appDocs.showOthers': 'Show apps that don’t share files',
+  'appDocs.others': 'Apps that don’t share files',
+  'appDocs.notSharing': 'This app doesn’t share files with computers.',
+  'appDocs.none.title': 'No app here shares files with computers',
+  'appDocs.none.body': 'Apps such as VLC, Documents or Infuse do. Install one on the iPhone, then come back.',
+  'appDocs.open': 'Open {app}',
+
   // Apps
   'apps.title': 'Apps',
   'apps.subtitle': '{count, plural, one {# app} other {# apps}}',
@@ -421,8 +446,6 @@ export const en = {
   // Coming next
   'coming.title': '{section} is coming next',
   'coming.body': 'This part of DeviceDeck is planned for a later phase.',
-  'coming.appDocuments': 'App documents already open in Files: each file-sharing app is a place there.',
-  'coming.openFiles': 'Open in Files',
 
   // Settings (basic)
   'settings.title': 'Settings',
