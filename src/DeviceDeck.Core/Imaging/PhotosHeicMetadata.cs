@@ -76,8 +76,9 @@ public static class PhotosHeicMetadata
             var tiff = data[(int)skip..];
             return IsTiff(tiff) ? tiff : null;
         }
-        catch (Exception ex) when (ex is IOException or EndOfStreamException or ArgumentOutOfRangeException or OverflowException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
+            // A file this parser can't follow (truncated, an iloc it doesn't support): no metadata, not a failed photo.
             return null;
         }
     }

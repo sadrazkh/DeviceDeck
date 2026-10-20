@@ -224,15 +224,16 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
             return null;
         }
 
-        await using var heic = new FileStream(heicPath, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, FileOptions.Asynchronous);
-        var jpeg = await transcoder.ToJpegAsync(heic, null, ct).ConfigureAwait(false);
-        if (jpeg is null)
+        // EXIF first: the Windows Runtime stream wrapper closes the stream it was given.
+        byte[]? exif;
+        await using (var file = new FileStream(heicPath, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16))
         {
-            return null;
+            exif = PhotosHeicMetadata.ReadExif(file);
         }
 
-        heic.Position = 0;
-        return PhotosHeicMetadata.ReadExif(heic) is { } exif ? PhotosHeicMetadata.WithExif(jpeg, exif) : jpeg;
+        await using var heic = new FileStream(heicPath, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 16, FileOptions.Asynchronous);
+        var jpeg = await transcoder.ToJpegAsync(heic, null, ct).ConfigureAwait(false);
+        return jpeg is null ? null : exif is null ? jpeg : PhotosHeicMetadata.WithExif(jpeg, exif);
     }
 
     private static void Place(Downloaded file, string destination, DateTimeOffset? takenAt, PhotoDestinationIndex index)

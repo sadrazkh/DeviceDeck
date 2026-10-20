@@ -131,6 +131,7 @@ internal sealed class FakeJpegTranscoder(bool works = true) : IImageTranscoder
         Calls++;
         using var copy = new MemoryStream();
         await source.CopyToAsync(copy, ct);
+        await source.DisposeAsync(); // as the Windows Runtime wrapper (AsRandomAccessStream) does
         return works ? TestJpeg.Make(3024, 4032, encoderExif: true, payload: BitConverter.ToInt64(System.Security.Cryptography.SHA256.HashData(copy.ToArray()))) : null;
     }
 }
