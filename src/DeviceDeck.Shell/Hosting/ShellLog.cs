@@ -17,6 +17,8 @@ internal static class ShellLog
 
     public static void Info(string message) => Write("info", message, null);
 
+    public static void Warn(string message) => Write("warn", message, null);
+
     public static void Error(string message, Exception? error = null) => Write("error", message, error);
 
     private static void Write(string level, string message, Exception? error)

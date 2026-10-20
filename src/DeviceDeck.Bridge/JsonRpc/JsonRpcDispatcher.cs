@@ -1,9 +1,16 @@
+using System.Diagnostics;
 using System.Text.Json;
 using System.Text.Json.Nodes;
 using DeviceDeck.Core.Abstractions;
 using DeviceDeck.Core.Serialization;
 
 namespace DeviceDeck.Bridge.JsonRpc;
+
+/// <summary>A call that ran past <see cref="JsonRpcDispatcher.SlowCallThreshold"/>.</summary>
+/// <param name="DeviceId">params.deviceId, when the call had one.</param>
+/// <param name="Finished">False for the "still running" report at the threshold, true once the call has ended.</param>
+/// <param name="Outcome">"ok" or the error's data.code / JSON-RPC code; null while still running.</param>
+public sealed record RpcSlowCall(string Method, string? DeviceId, TimeSpan Elapsed, bool Finished, string? Outcome);
 
 /// <summary>Per-call information the transport adds to a request.</summary>
 /// <param name="Files">Paths of the files the page sent with postMessageWithAdditionalObjects (already copied into params.files).</param>
@@ -28,6 +35,15 @@ public sealed class JsonRpcDispatcher
 
     /// <summary>Raised when a call fails with something other than a device or params error (for logging).</summary>
     public event EventHandler<(string Method, Exception Error)>? UnexpectedError;
+
+    /// <summary>
+    /// Raised for a call that runs longer than <see cref="SlowCallThreshold"/>: once when it crosses the threshold
+    /// (so a call that never returns still shows up) and once when it ends, with its duration.
+    /// </summary>
+    public event EventHandler<RpcSlowCall>? SlowCall;
+
+    /// <summary>When a call counts as slow. Zero or less turns the reports off.</summary>
+    public TimeSpan SlowCallThreshold { get; set; } = TimeSpan.FromSeconds(5);
 
     public JsonRpcDispatcher Register<TParams, TResult>(string method, Func<TParams, RpcCallContext, CancellationToken, Task<TResult>> handler)
         where TParams : class
@@ -161,6 +177,17 @@ public sealed class JsonRpcDispatcher
         }
 
         object? result;
+        var deviceId = parameters["deviceId"] is JsonValue device && device.TryGetValue<string>(out var text) ? text : null;
+        var watch = new CallWatch(method, deviceId, SlowCallThreshold);
+        using var watchdog = watch.Threshold > TimeSpan.Zero && SlowCall is not null
+            ? new Timer(_ =>
+            {
+                if (Interlocked.CompareExchange(ref watch.Ended, 0, 0) == 0)
+                {
+                    SlowCall?.Invoke(this, new RpcSlowCall(method, deviceId, Stopwatch.GetElapsedTime(watch.Started), Finished: false, Outcome: null));
+                }
+            }, null, watch.Threshold, Timeout.InfiniteTimeSpan)
+            : null;
         try
         {
             using var doc = JsonDocument.Parse(parameters.ToJsonString());
@@ -174,8 +201,11 @@ public sealed class JsonRpcDispatcher
                 UnexpectedError?.Invoke(this, (method, ex));
             }
 
+            ReportIfSlow(watch, error.Data?.Code ?? error.Code.ToString(System.Globalization.CultureInfo.InvariantCulture));
             return hasId ? Failure(id, error) : null;
         }
+
+        ReportIfSlow(watch, "ok");
 
         if (!hasId)
         {
@@ -188,6 +218,25 @@ public sealed class JsonRpcDispatcher
             ["id"] = id,
             ["result"] = result is null ? null : JsonSerializer.SerializeToNode(result, result.GetType(), DeviceDeckJson.Options),
         };
+    }
+
+    private sealed class CallWatch(string method, string? deviceId, TimeSpan threshold)
+    {
+        public readonly string Method = method;
+        public readonly string? DeviceId = deviceId;
+        public readonly TimeSpan Threshold = threshold;
+        public readonly long Started = Stopwatch.GetTimestamp();
+        public int Ended;
+    }
+
+    private void ReportIfSlow(CallWatch watch, string outcome)
+    {
+        Interlocked.Exchange(ref watch.Ended, 1);
+        var elapsed = Stopwatch.GetElapsedTime(watch.Started);
+        if (watch.Threshold > TimeSpan.Zero && elapsed >= watch.Threshold)
+        {
+            SlowCall?.Invoke(this, new RpcSlowCall(watch.Method, watch.DeviceId, elapsed, Finished: true, outcome));
+        }
     }
 
     /// <summary>Exception → JSON-RPC error, per the contract's Errors section.</summary>
