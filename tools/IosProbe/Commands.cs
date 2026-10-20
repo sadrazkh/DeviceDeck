@@ -47,6 +47,23 @@ internal static class Commands
         ["docs"] = new(["bundleId"], (d, c, ct) => ListFolderAsync(d, IosDevice.AppRootPrefix + c.Positional[0], c.OptionalArg(1) ?? "/", ct)),
         ["pull"] = new(["root", "path", "dest"], (d, c, ct) => PullAsync(d, c.Positional[0], c.Positional[1], c.Positional[2], ct)),
         ["push"] = new(["root", "local-file", "path"], (d, c, ct) => PushAsync(d, c.Positional[0], c.Positional[1], c.Positional[2], ct)),
+        ["mkdir"] = new(["root", "path"], async (d, c, ct) =>
+        {
+            await using var fs = await d.OpenFileSystemAsync(c.Positional[0], ct);
+            await fs.CreateDirectoryAsync(c.Positional[1], ct);
+            Console.WriteLine($"Created {c.Positional[0]}:{c.Positional[1]}");
+        }),
+        ["rm"] = new(["root", "path"], async (d, c, ct) =>
+        {
+            await using var fs = await d.OpenFileSystemAsync(c.Positional[0], ct);
+            var entry = await fs.StatAsync(c.Positional[1], ct)
+                        ?? throw new DeviceException(DeviceErrorCodes.PathNotFound, $"{c.Positional[0]}:{c.Positional[1]} does not exist.");
+            if (entry.IsDirectory && !c.Has("recursive"))
+                throw new CliException("That is a folder; add --recursive to delete it and everything in it.");
+            await fs.DeleteAsync(c.Positional[1], c.Has("recursive"), ct);
+            var gone = await fs.StatAsync(c.Positional[1], ct) is null;
+            Console.WriteLine(gone ? $"Deleted {c.Positional[0]}:{c.Positional[1]}" : "The phone still lists it after the delete.");
+        }, NeedsYes: true),
         ["apps"] = new([], (d, c, ct) => AppsAsync(d, c.Has("system"), ct)),
         ["icon"] = new(["bundleId", "out.png"], (d, c, ct) => IconAsync(d, c.Positional[0], c.Positional[1], ct)),
         ["install"] = new(["app.ipa"], (d, c, ct) => InstallAsync(d, c.Positional[0], ct)),

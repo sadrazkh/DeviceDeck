@@ -23,6 +23,8 @@ internal sealed class Cli
           ls <root> <path>                    list a folder
           pull <root> <path> <dest>           copy a file off the phone (dest = file or folder)
           push <root> <local-file> <path>     copy a file onto the phone (path = file or existing folder)
+          mkdir <root> <path>                 create a folder
+          rm <root> <path> --yes [--recursive]   delete a file (or a folder with --recursive)
           docs <bundleId> [path]              list an app's Documents (house_arrest)
 
         Apps
@@ -61,7 +63,7 @@ internal sealed class Cli
     public IReadOnlyList<string> Positional { get; }
     public IReadOnlyDictionary<string, string?> Options { get; }
 
-    private static readonly HashSet<string> Flags = ["reveal", "system", "yes"];
+    private static readonly HashSet<string> Flags = ["reveal", "system", "yes", "recursive"];
 
     public static Cli Parse(string[] args)
     {

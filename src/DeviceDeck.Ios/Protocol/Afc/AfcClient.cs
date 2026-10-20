@@ -13,7 +13,7 @@ public sealed class AfcClient(Stream stream) : IAsyncDisposable
     public const int ReadChunk = 1024 * 1024;
 
     /// <summary>Bytes sent per FileWrite.</summary>
-    public const int WriteChunk = 256 * 1024;
+    public const int WriteChunk = 1024 * 1024;
 
     /// <summary>Largest reply we accept; a ReadChunk plus slack.</summary>
     private const ulong MaxPacket = 8 * 1024 * 1024;
