@@ -1,0 +1,5 @@
+*.bplist binary
+*.sqlite binary
+*.png binary
+*.jpg binary
+*.bin binary
