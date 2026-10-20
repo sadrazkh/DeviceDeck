@@ -14,7 +14,7 @@ namespace DeviceDeck.Ios.Device;
 /// (public values → pair record → session → service probe) and keeps <see cref="Summary"/> current:
 /// Connecting → AwaitingTrust / Locked / Ready. Every operation opens its own service connection.
 /// </summary>
-public sealed class IosDevice : IDevice, IAsyncDisposable
+public sealed partial class IosDevice : IDevice, IAsyncDisposable
 {
     public const string MediaRoot = "media";
     public const string AppRootPrefix = "app:";
