@@ -101,7 +101,7 @@ export const backupEn = {
   'backup.new.start': 'Start backup',
   'backup.new.background': 'Keep running in the background',
   'backup.new.done.title': 'Backup finished',
-  'backup.new.done.body': '{device} is backed up on this PC ({size} copied this time).',
+  'backup.new.done.body': '{device} is backed up on this PC.',
   'backup.new.failed.title': 'The backup didn’t finish',
   'backup.prune.title': 'Delete older backups?',
   'backup.prune.body':
@@ -370,7 +370,7 @@ export const backupFa: Record<BackupMessageKey, string> = {
   'backup.new.start': 'شروع پشتیبان‌گیری',
   'backup.new.background': 'ادامه در پس‌زمینه',
   'backup.new.done.title': 'پشتیبان‌گیری تمام شد',
-  'backup.new.done.body': 'از {device} روی این رایانه پشتیبان گرفته شد (این بار {size} کپی شد).',
+  'backup.new.done.body': 'از {device} روی این رایانه پشتیبان گرفته شد.',
   'backup.new.failed.title': 'پشتیبان‌گیری تمام نشد',
   'backup.prune.title': 'پشتیبان‌های قدیمی‌تر حذف شوند؟',
   'backup.prune.body': 'طبق تنظیمات، {keep} پشتیبان تازه‌تر نگه داشته می‌شود. حذف {count} پشتیبان قدیمی‌ترِ زیر {size} آزاد می‌کند:',

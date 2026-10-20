@@ -132,8 +132,9 @@ export function NewBackupDialog({
     body = (
       <div className={styles.steps} data-testid="backup-done">
         <Banner tone="success" title={t('backup.new.done.title')}>
-          {t('backup.new.done.body', { device: device.name, size: bytes(job.bytes) })}
+          {t('backup.new.done.body', { device: device.name })}
         </Banner>
+        {job.error ? <Banner tone="warning">{job.error.message}</Banner> : null}
         {plan && plan.backups.length > 0 ? (
           <div className={styles.steps} data-testid="backup-prune">
             <strong>{t('backup.prune.title')}</strong>

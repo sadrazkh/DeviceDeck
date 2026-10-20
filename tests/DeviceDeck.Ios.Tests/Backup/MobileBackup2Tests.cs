@@ -316,9 +316,19 @@ public sealed class MobileBackup2Tests : IAsyncLifetime
     [Fact]
     public async Task Backup_state_comes_from_the_backup_domain()
     {
-        _phone.Domains[IosBackupRunner.BackupDomain] = new PlistDict { ["WillEncrypt"] = true, ["CloudBackupEnabled"] = false };
+        // What an iPhone 16 on iOS 27 answers (read from the owner's phone, October 2026).
+        _phone.Domains[IosBackupRunner.BackupDomain] = new PlistDict
+        {
+            ["CloudBackupEnabled"] = true,
+            ["RequiresEncryption"] = 0L,
+            ["Version"] = "2.0",
+            ["WillEncrypt"] = false,
+        };
         var device = await ReadyAsync();
-        Assert.Equal(new BackupDeviceState(true, false), await device.GetBackupStateAsync(Ct));
+        Assert.Equal(new BackupDeviceState(Encrypted: false, CloudBackupEnabled: true), await device.GetBackupStateAsync(Ct));
+
+        _phone.Domains[IosBackupRunner.BackupDomain]["WillEncrypt"] = true;
+        Assert.True((await device.GetBackupStateAsync(Ct)).Encrypted);
     }
 
     [Fact]

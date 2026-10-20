@@ -345,6 +345,23 @@ public sealed class BackupReadingTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task A_backup_in_a_deep_folder_is_read_like_any_other()
+    {
+        // Its databases end up past 260 characters. DeviceDeck.exe isn't long-path aware, so there SQLite's own file
+        // calls fail at that length (seen in the app); the test runner is, so this only checks deep folders work.
+        var deep = Path.Combine(_dir, new string('d', 120), new string('e', 60));
+        var settings = new SettingsStore(Path.Combine(_dir, "deep-settings.json"));
+        settings.Update(new JsonObject { ["backupFolder"] = deep });
+        await using var service = new BackupService(_hub, settings, new IosBackupFormat(), new BackupServiceOptions { AppleBackupFolders = [] });
+        service.Start();
+        var folder = new BackupFixtureBuilder().AddStandardContent().Build(Path.Combine(deep, Udid));
+        Assert.Contains(Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories), f => f.Length > 260);
+
+        Assert.Equal(4, (await service.GetContactsAsync("dd:" + Udid, Ct)).Count);
+        Assert.Equal(3, (await service.GetConversationsAsync("dd:" + Udid, Ct)).Count);
+    }
+
+    [Fact]
     public void Text_inside_attributedBody_is_found()
     {
         Assert.Equal("Short", MessageStore.TypedStreamText(BackupSamples.TypedStream("Short")));

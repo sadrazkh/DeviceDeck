@@ -11,6 +11,9 @@ namespace DeviceDeck.Core.Backups;
 public sealed class SqliteImage : IDisposable
 {
     private const int DeserializeReadOnly = 4;
+
+    /// <summary>SQLite opens files with Windows' MAX_PATH limit (260 with the terminator); stay clear of it.</summary>
+    private const int MaxSqlitePath = 240;
     private GCHandle _pin;
 
     private SqliteImage(SqliteConnection connection, GCHandle pin)
@@ -21,10 +24,19 @@ public sealed class SqliteImage : IDisposable
 
     public SqliteConnection Connection { get; }
 
-    /// <summary>Opens a file read-only and immutable: SQLite neither writes nor locks it, and makes no journal next to it.</summary>
+    /// <summary>
+    /// Opens a file read-only and immutable: SQLite neither writes nor locks it, and makes no journal next to it.
+    /// A path too long for SQLite's own file calls (MAX_PATH) is read into memory instead.
+    /// </summary>
     public static SqliteImage OpenFile(string path)
     {
-        var uri = new Uri(Path.GetFullPath(path)).AbsoluteUri + "?immutable=1";
+        var full = Path.GetFullPath(path);
+        if (full.Length >= MaxSqlitePath)
+        {
+            return FromBytes(File.ReadAllBytes(full));
+        }
+
+        var uri = new Uri(full).AbsoluteUri + "?immutable=1";
         var connection = new SqliteConnection(new SqliteConnectionStringBuilder
         {
             DataSource = uri,

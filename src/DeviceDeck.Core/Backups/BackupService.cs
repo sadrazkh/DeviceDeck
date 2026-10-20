@@ -587,7 +587,20 @@ public sealed class BackupService : IAsyncDisposable
         }
 
         CloseSessions(live);
-        var copy = await Task.Run(() => _library.Snapshot(live, udid, header.Date ?? _time.GetUtcNow(), ct), ct).ConfigureAwait(false);
+        string? copy = null;
+        try
+        {
+            copy = await Task.Run(() => _library.Snapshot(live, udid, header.Date ?? _time.GetUtcNow(), ct), ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // The backup itself is complete; only its dated copy is missing, so the next backup updates it in place.
+            lock (_gate)
+            {
+                job.Warning = new BackupJobError(DeviceErrorCodes.PermissionDenied, "The backup finished, but DeviceDeck couldn't keep a dated copy of it: " + ex.Message);
+            }
+        }
+
         var plan = await Task.Run(() => PlanPrune(job.DeviceId!), ct).ConfigureAwait(false);
         lock (_gate)
         {

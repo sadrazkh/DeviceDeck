@@ -223,7 +223,19 @@ internal sealed class BackupLibrary(IIosBackupFormat? ios, Func<string> deviceDe
         }
 
         var partial = Path.Combine(Root, name + ".partial");
-        if (!HardLinks.Mirror(liveFolder, partial, path => path.EndsWith(".ddpart", StringComparison.Ordinal), ct))
+        bool linked;
+        try
+        {
+            linked = HardLinks.Mirror(liveFolder, partial, path => path.EndsWith(".ddpart", StringComparison.Ordinal), ct);
+        }
+        catch
+        {
+            // Half a copy is no copy: it goes, and the folder the phone wrote stays as it is.
+            Directory.Delete(partial, recursive: true);
+            throw;
+        }
+
+        if (!linked)
         {
             Directory.Delete(partial, recursive: true);
             lock (_gate)

@@ -26,7 +26,7 @@ internal static partial class HardLinks
         try
         {
             File.WriteAllBytes(probe, [1]);
-            var linked = CreateHardLink(probe + ".link", probe, IntPtr.Zero);
+            var linked = CreateHardLink(Extended(probe + ".link"), Extended(probe), IntPtr.Zero);
             if (linked)
             {
                 File.Delete(probe + ".link");
@@ -99,7 +99,7 @@ internal static partial class HardLinks
             return false;
         }
 
-        if (CreateHardLink(link, existing, IntPtr.Zero))
+        if (CreateHardLink(Extended(link), Extended(existing), IntPtr.Zero))
         {
             return true;
         }
@@ -111,6 +111,21 @@ internal static partial class HardLinks
         }
 
         throw new IOException($"Could not link {link}: {Marshal.GetPInvokeErrorMessage(error)}", error);
+    }
+
+    /// <summary>
+    /// The path with "\\?\" in front, so it may be longer than 260 characters. .NET's own file calls add it
+    /// themselves; a backup's files sit a few levels below a folder the user chose, which can already be deep.
+    /// </summary>
+    internal static string Extended(string path)
+    {
+        var full = Path.GetFullPath(path);
+        if (full.StartsWith(@"\\?\", StringComparison.Ordinal))
+        {
+            return full;
+        }
+
+        return full.StartsWith(@"\\", StringComparison.Ordinal) ? @"\\?\UNC\" + full[2..] : @"\\?\" + full;
     }
 
     [LibraryImport("kernel32.dll", EntryPoint = "CreateHardLinkW", SetLastError = true, StringMarshalling = StringMarshalling.Utf16)]

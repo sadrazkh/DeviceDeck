@@ -133,6 +133,23 @@ public sealed class BackupBridgeTests
     }
 
     [Fact]
+    public async Task A_deep_backup_folder_still_gets_dated_copies()
+    {
+        await using var host = await TestHost.StartAsync(Iphone());
+        // Files of a dated copy end up well past 260 characters here.
+        var deep = Path.Combine(host.Root, new string('x', 110), new string('y', 90));
+        await host.ResultAsync("settings.set", new { backupFolder = deep });
+
+        var job = await FinishedAsync(host, await host.ResultAsync("backup.start", new { deviceId = TestPhones.IphoneId }));
+        Assert.Null(job["error"]);
+        Assert.StartsWith("dd:test-iphone-", (string?)job["backupId"]);
+        var copy = Path.Combine(deep, ((string)job["backupId"]!)[3..]);
+        Assert.Contains(Directory.EnumerateFiles(copy, "*", SearchOption.AllDirectories), f => f.Length > 260);
+        var notes = (await host.ResultAsync("backup.files", new { backupId = (string)job["backupId"]!, domain = "HomeDomain", path = "Library/Notes" }))!.AsArray();
+        Assert.Equal("notes.txt", (string?)Assert.Single(notes)!["name"]);
+    }
+
+    [Fact]
     public async Task Extract_and_exports_write_files_on_the_pc()
     {
         await using var host = await TestHost.StartAsync(Iphone());
