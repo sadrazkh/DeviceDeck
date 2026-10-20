@@ -224,7 +224,9 @@ internal sealed class CountingKeepAwake : KeepAwakeBase
 
 internal static class Wait
 {
-    public static async Task UntilAsync(Func<bool> condition, string what, int timeoutMs = 10_000)
+    // 30 s by default: GitHub's windows runner can stall for many seconds under load; a condition that comes true
+    // quickly returns at once, so passing tests are not slowed down.
+    public static async Task UntilAsync(Func<bool> condition, string what, int timeoutMs = 30_000)
     {
         var deadline = DateTime.UtcNow.AddMilliseconds(timeoutMs);
         while (!condition())
@@ -238,6 +240,6 @@ internal static class Wait
         }
     }
 
-    public static Task ForStateAsync(TransferQueue queue, string jobId, TransferState state, int timeoutMs = 10_000) =>
+    public static Task ForStateAsync(TransferQueue queue, string jobId, TransferState state, int timeoutMs = 30_000) =>
         UntilAsync(() => queue.Get(jobId)?.State == state, $"job {jobId} to reach {state} (now {queue.Get(jobId)?.State})", timeoutMs);
 }

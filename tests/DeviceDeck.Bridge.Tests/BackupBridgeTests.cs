@@ -79,7 +79,7 @@ public sealed class BackupBridgeTests
         {
             job = host.Backups.Jobs().Where(j => j.Id == id).Select(j => System.Text.Json.JsonSerializer.SerializeToNode(j, Core.Serialization.DeviceDeckJson.Options)!.AsObject()).Single();
             return (string?)job["state"] is "done" or "failed" or "cancelled";
-        }, $"job {id}", 20_000);
+        }, $"job {id}", 40_000);
         if (state is not null)
         {
             Assert.True((string?)job!["state"] == state, job.ToJsonString());
@@ -198,16 +198,18 @@ public sealed class BackupBridgeTests
     [Fact]
     public async Task Pulled_cable_pauses_the_backup_until_the_same_phone_is_back()
     {
-        await using var host = await TestHost.StartAsync(null, null, TimeSpan.FromSeconds(2), Iphone());
+        // An 8 s fake backup and a 30 s wait: on GitHub's slower runner a 2 s backup could start late and be over
+        // before the transferring phase was seen, so the cable was never pulled mid-way.
+        await using var host = await TestHost.StartAsync(null, null, TimeSpan.FromSeconds(8), Iphone());
         var started = await host.ResultAsync("backup.start", new { deviceId = TestPhones.IphoneId });
         var jobId = (string)started!["id"]!;
-        await Wait.UntilAsync(() => host.Backups.Jobs().Single(j => j.Id == jobId).Phase == BackupPhase.Transferring, "transferring");
+        await Wait.UntilAsync(() => host.Backups.Jobs().Single(j => j.Id == jobId).Phase == BackupPhase.Transferring, "transferring", 30_000);
 
         var busy = await host.CallAsync("backup.start", new { deviceId = TestPhones.IphoneId });
         Assert.Equal("busy", (string?)busy["error"]!["data"]!["code"]);
 
         await host.ResultAsync("dev.disconnect", new { deviceId = TestPhones.IphoneId });
-        await Wait.UntilAsync(() => host.Backups.Jobs().Single(j => j.Id == jobId).State == BackupJobState.WaitingForDevice, "waiting for the phone");
+        await Wait.UntilAsync(() => host.Backups.Jobs().Single(j => j.Id == jobId).State == BackupJobState.WaitingForDevice, "waiting for the phone", 30_000);
         var waiting = Assert.Single((await host.ResultAsync("backup.list"))!.AsArray(), b => (string?)b!["state"] == "inProgress");
         Assert.Equal("dd:test-iphone", (string?)waiting!["id"]);
 
