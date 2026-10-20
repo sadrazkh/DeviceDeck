@@ -33,10 +33,10 @@ internal sealed class IosAppManager(IosDevice device) : IAppManager
     public Task InstallAsync(IReadOnlyList<string> localPaths, IProgress<InstallProgress>? progress, CancellationToken ct)
     {
         if (localPaths.Count != 1 || !localPaths[0].EndsWith(".ipa", StringComparison.OrdinalIgnoreCase))
-            throw new DeviceException(DeviceErrorCodes.InstallFailed, "An iPhone app is installed from exactly one .ipa file.");
+            return Task.FromException(new DeviceException(DeviceErrorCodes.InstallFailed, "An iPhone app is installed from exactly one .ipa file."));
         var local = localPaths[0];
         if (!File.Exists(local))
-            throw new DeviceException(DeviceErrorCodes.PathNotFound, $"'{local}' does not exist.");
+            return Task.FromException(new DeviceException(DeviceErrorCodes.PathNotFound, $"'{local}' does not exist."));
 
         return device.UseAsync(async c =>
         {
@@ -75,7 +75,7 @@ internal sealed class IosAppManager(IosDevice device) : IAppManager
     });
 
     public Task<IReadOnlyList<string>> ExportAsync(string appId, string destinationFolder, CancellationToken ct) =>
-        throw IosErrors.NotSupported("iPhone apps cannot be copied off the phone.");
+        Task.FromException<IReadOnlyList<string>>(IosErrors.NotSupported("iPhone apps cannot be copied off the phone."));
 
     internal static AppInfo ToAppInfo(PlistDict a)
     {

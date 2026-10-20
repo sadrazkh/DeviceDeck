@@ -9,7 +9,11 @@ internal sealed class FakePhone
     private readonly Dictionary<int, string> _servicePorts = [];
     private int _nextPort = 49152;
 
-    public FakePhone(string udid) => Udid = udid;
+    public FakePhone(string udid)
+    {
+        Udid = udid;
+        Values["DevicePublicKey"] = System.Text.Encoding.ASCII.GetBytes(TestPairing.DeviceKey.ExportRSAPublicKeyPem());
+    }
 
     public string Udid { get; }
 
@@ -19,7 +23,13 @@ internal sealed class FakePhone
     public PlistDict Values { get; set; } = PlistSerializer.ParseDict(Fixture.Bytes("Plist", "lockdown_getvalue_all.xml"));
 
     /// <summary>What GetValue gives without a session (before pairing).</summary>
-    public HashSet<string> UnpairedKeys { get; } = ["DeviceName", "ProductType", "ProductVersion", "BuildVersion", "DeviceClass", "UniqueDeviceID"];
+    public HashSet<string> UnpairedKeys { get; } = ["DeviceName", "ProductType", "ProductVersion", "BuildVersion", "DeviceClass", "UniqueDeviceID", "DevicePublicKey"];
+
+    /// <summary>Answers to successive Pair requests: a lockdown error, or null to accept.</summary>
+    public Queue<string?> PairReplies { get; } = new();
+
+    /// <summary>The PairRecord of the accepted Pair request.</summary>
+    public PlistDict? AcceptedPairRecord { get; private set; }
 
     public Dictionary<string, PlistDict> Domains { get; } = [];
 
@@ -100,6 +110,22 @@ internal sealed class FakePhone
                 case "StopSession":
                     session = false;
                     break;
+                case "Pair":
+                {
+                    var record = msg.GetDict("PairRecord");
+                    var answer = PairReplies.Count > 0 ? PairReplies.Dequeue() : null;
+                    if (record is null)
+                        reply["Error"] = "InvalidPairRecord";
+                    else if (answer is not null)
+                        reply["Error"] = answer;
+                    else
+                    {
+                        AcceptedPairRecord = record;
+                        ExpectedHostId = record.GetString("HostID");
+                        reply["EscrowBag"] = new byte[] { 0xE5, 0xC0 };
+                    }
+                    break;
+                }
                 case "StartService":
                     if (!session)
                         reply["Error"] = "InvalidSession";

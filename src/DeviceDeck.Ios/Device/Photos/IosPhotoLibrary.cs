@@ -59,7 +59,8 @@ internal sealed class IosPhotoLibrary(IosDevice device, string cacheDirectory) :
 
     public Task<byte[]?> GetThumbnailAsync(string assetId, int size, CancellationToken ct)
     {
-        var id = ValidateId(assetId);
+        if (TryValidateId(assetId, out var id) is { } invalid)
+            return Task.FromException<byte[]?>(invalid);
         return device.UseAsync<byte[]?>(async c =>
         {
             await using var afc = await c.StartAfcAsync(ct).ConfigureAwait(false);
@@ -101,7 +102,8 @@ internal sealed class IosPhotoLibrary(IosDevice device, string cacheDirectory) :
 
     public Task ReadOriginalAsync(string assetId, Stream destination, IProgress<long>? progress, CancellationToken ct)
     {
-        var id = ValidateId(assetId);
+        if (TryValidateId(assetId, out var id) is { } invalid)
+            return Task.FromException(invalid);
         return device.UseAsync(async c =>
         {
             await using var afc = await c.StartAfcAsync(ct).ConfigureAwait(false);
@@ -110,10 +112,10 @@ internal sealed class IosPhotoLibrary(IosDevice device, string cacheDirectory) :
     }
 
     public Task DeleteAsync(IReadOnlyList<string> assetIds, CancellationToken ct) =>
-        throw IosErrors.NotSupported("Deleting photos on an iPhone is not supported; the library is read-only over USB.");
+        Task.FromException(IosErrors.NotSupported("Deleting photos on an iPhone is not supported; the library is read-only over USB."));
 
     public Task ImportAsync(string fileName, Stream source, long length, IProgress<long>? progress, CancellationToken ct) =>
-        throw IosErrors.NotSupported("Adding photos to an iPhone's library is not supported over USB.");
+        Task.FromException(IosErrors.NotSupported("Adding photos to an iPhone's library is not supported over USB."));
 
     /// <summary>The current index, rebuilt when older than a minute or when <paramref name="refresh"/> is set.</summary>
     public async Task<PhotoIndex> GetIndexAsync(bool refresh, CancellationToken ct)
@@ -237,11 +239,11 @@ internal sealed class IosPhotoLibrary(IosDevice device, string cacheDirectory) :
     private static bool NeedsStat(PhotoAsset a) => !a.InCloudOnly && (a.Size == 0 || a.TakenAt is null);
 
     /// <summary>Asset ids are DCIM paths; anything else (or anything climbing out) is refused.</summary>
-    private static string ValidateId(string assetId)
+    private static DeviceException? TryValidateId(string assetId, out string id)
     {
-        var id = (assetId ?? "").Replace('\\', '/').TrimStart('/');
+        id = (assetId ?? "").Replace('\\', '/').TrimStart('/');
         if (!id.StartsWith("DCIM/", StringComparison.OrdinalIgnoreCase) || id.Split('/').Any(p => p is ".." or "." or ""))
-            throw new DeviceException(DeviceErrorCodes.NotFound, $"'{assetId}' is not a photo on this iPhone.");
-        return id;
+            return new DeviceException(DeviceErrorCodes.NotFound, $"'{assetId}' is not a photo on this iPhone.");
+        return null;
     }
 }

@@ -10,7 +10,7 @@ internal sealed class IosDeviceActions(IosDevice device) : IDeviceActions
     public Task RebootAsync(RebootTarget target, CancellationToken ct)
     {
         if (target != RebootTarget.System)
-            throw IosErrors.NotSupported("An iPhone can only be restarted normally from here.");
+            return Task.FromException(IosErrors.NotSupported("An iPhone can only be restarted normally from here."));
         return device.UseAsync(async c =>
         {
             await using var relay = await c.StartServiceAsync(ServiceNames.DiagnosticsRelay, ct).ConfigureAwait(false);
@@ -25,5 +25,5 @@ internal sealed class IosDeviceActions(IosDevice device) : IDeviceActions
     });
 
     public Task<byte[]> TakeScreenshotAsync(CancellationToken ct) =>
-        throw IosErrors.NotSupported("Screenshots of an iPhone need Developer Mode; they come in a later version.");
+        Task.FromException<byte[]>(IosErrors.NotSupported("Screenshots of an iPhone need Developer Mode; they come in a later version."));
 }
