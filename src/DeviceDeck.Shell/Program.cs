@@ -26,6 +26,12 @@ public static partial class Program
             return 0;
         }
 
+        if (args.Contains(QuitArgument, StringComparer.OrdinalIgnoreCase))
+        {
+            // "DeviceDeck.exe --quit" with nothing running: nothing to do.
+            return 0;
+        }
+
         Application.Start(callback =>
         {
             SynchronizationContext.SetSynchronizationContext(new DispatcherQueueSynchronizationContext(DispatcherQueue.GetForCurrentThread()));
@@ -66,13 +72,22 @@ public static partial class Program
         try
         {
             WinRT.ComWrappersSupport.InitializeComWrappers();
-            Microsoft.Windows.AppNotifications.AppNotificationManager.Default.UnregisterAll();
+            Desktop.AppIdentity.Forget();
         }
         catch (Exception)
         {
             // Nothing registered, or the runtime isn't usable here; the uninstall goes on.
         }
     }
+
+    /// <summary>"DeviceDeck.exe --quit": the running copy quits for good, also from the notification area (scripts, tests).</summary>
+    public const string QuitArgument = "--quit";
+
+    /// <summary>Was this redirected launch "DeviceDeck.exe --quit"?</summary>
+    public static bool IsQuit(AppActivationArguments activation) =>
+        activation.Kind == ExtendedActivationKind.Launch &&
+        activation.Data is Windows.ApplicationModel.Activation.ILaunchActivatedEventArgs launch &&
+        launch.Arguments.Split(' ', StringSplitOptions.RemoveEmptyEntries).Contains(QuitArgument, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>Raised in the first instance when a later launch was redirected to it.</summary>
     public static event EventHandler<AppActivationArguments>? Reactivated;
@@ -106,6 +121,10 @@ public static partial class Program
         });
         var handles = new[] { done.WaitHandle.SafeWaitHandle.DangerousGetHandle() };
         _ = CoWaitForMultipleObjects(0, 10_000, 1, handles, out _);
+        if (IsQuit(args))
+        {
+            return true;
+        }
 
         try
         {

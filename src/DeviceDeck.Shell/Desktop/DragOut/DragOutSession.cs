@@ -50,6 +50,7 @@ internal sealed class DragOutSession
     }
 
     private readonly object _gate = new();
+    private readonly object _enqueueGate = new();
     private readonly TransferQueue _queue;
     private readonly DragOutRegistry _registry;
     private readonly Func<IReadOnlyList<DragOutFile>> _resolve;
@@ -119,23 +120,33 @@ internal sealed class DragOutSession
     public void EnsureJob()
     {
         var files = Files;
-        lock (_gate)
+        // File Explorer may ask for two files' contents at once, on two threads: one job only.
+        lock (_enqueueGate)
         {
-            if (_jobId is not null || _closed)
+            lock (_gate)
             {
-                return;
+                if (_jobId is not null || _closed)
+                {
+                    return;
+                }
             }
-        }
 
-        var request = new DragOutRequest(Id, Source, Root, files.Where(f => !f.IsDirectory)
-            .OrderBy(f => f.ItemIndex)
-            .Select(f => new DragOutRequestItem(f.Source!, f.Name, f.Size ?? 0))
-            .ToArray());
-        Directory.CreateDirectory(StagingFolder);
-        var job = _queue.EnqueueAsync(DeviceId, TransferKind.DragOut, request, ConflictRule.Replace, CancellationToken.None).GetAwaiter().GetResult();
-        lock (_gate)
-        {
-            _jobId ??= job.Id;
+            var request = new DragOutRequest(Id, Source, Root, files.Where(f => !f.IsDirectory)
+                .OrderBy(f => f.ItemIndex)
+                .Select(f => new DragOutRequestItem(f.Source!, f.Name, f.Size ?? 0))
+                .ToArray());
+            Directory.CreateDirectory(StagingFolder);
+            var job = _queue.EnqueueAsync(DeviceId, TransferKind.DragOut, request, ConflictRule.Replace, CancellationToken.None).GetAwaiter().GetResult();
+            lock (_gate)
+            {
+                _jobId = job.Id;
+            }
+
+            // A small job can finish before its id is known here; catch up with where it is now.
+            if (_queue.Get(job.Id) is { State: TransferState.Done or TransferState.Failed or TransferState.Cancelled } finished)
+            {
+                OnJobUpdated(finished);
+            }
         }
     }
 

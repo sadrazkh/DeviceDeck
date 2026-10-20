@@ -17,6 +17,7 @@ public sealed class DeviceNotifierTests
         await using var host = await DragHost.StartAsync();
         var notifications = new RecordingNotificationService();
         using var notifier = new DeviceNotifier(host.Hub, Settings(host), notifications, () => false);
+        notifier.Arm();
         Assert.Empty(notifications.Shown); // already there at start: not news
 
         host.Fake.Disconnect(DragHost.PhoneId);
@@ -35,6 +36,21 @@ public sealed class DeviceNotifierTests
     }
 
     [Fact]
+    public async Task Phones_found_while_starting_are_not_news()
+    {
+        await using var host = await DragHost.StartAsync();
+        var notifications = new RecordingNotificationService();
+        using var notifier = new DeviceNotifier(host.Hub, Settings(host), notifications, () => false);
+
+        // Not armed yet: the providers are still starting.
+        host.Fake.Disconnect(DragHost.PhoneId);
+        host.Fake.Reconnect(DragHost.PhoneId);
+        notifier.Arm();
+        host.Fake.SetState(DragHost.PhoneId, DeviceState.Ready);
+        Assert.Empty(notifications.Shown);
+    }
+
+    [Fact]
     public async Task Nothing_while_the_window_is_in_front_or_when_turned_off()
     {
         await using var host = await DragHost.StartAsync();
@@ -42,6 +58,7 @@ public sealed class DeviceNotifierTests
         var inFront = true;
         var settings = Settings(host);
         using var notifier = new DeviceNotifier(host.Hub, settings, notifications, () => inFront);
+        notifier.Arm();
 
         host.Fake.Disconnect(DragHost.PhoneId);
         host.Fake.Reconnect(DragHost.PhoneId);
@@ -62,6 +79,7 @@ public sealed class DeviceNotifierTests
         var settings = Settings(host);
         settings.Update(new JsonObject { ["language"] = "fa" });
         using var notifier = new DeviceNotifier(host.Hub, settings, notifications, () => false);
+        notifier.Arm();
 
         host.Fake.Disconnect(DragHost.PhoneId);
         host.Fake.Reconnect(DragHost.PhoneId);

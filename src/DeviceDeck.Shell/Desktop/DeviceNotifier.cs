@@ -9,6 +9,7 @@ namespace DeviceDeck.Shell.Desktop;
 /// "Nima's iPhone connected · Open" when a phone becomes ready while the window isn't in front (hidden in the tray,
 /// minimised, or another app on top), and "… is waiting for you" while it shows Trust / Allow USB debugging.
 /// Once per connection; settings.notifyOnConnect turns it off. Unplugging removes the notification.
+/// Phones that show up while the providers first start (before <see cref="Arm"/>) were there already: not news.
 /// </summary>
 internal sealed class DeviceNotifier : IDisposable
 {
@@ -19,6 +20,7 @@ internal sealed class DeviceNotifier : IDisposable
     private readonly Lock _gate = new();
     private readonly HashSet<string> _ready = new(StringComparer.Ordinal);
     private readonly HashSet<string> _waiting = new(StringComparer.Ordinal);
+    private bool _armed;
 
     public DeviceNotifier(DeviceHub hub, SettingsStore settings, INotificationService notifications, Func<bool> windowInFront)
     {
@@ -29,7 +31,7 @@ internal sealed class DeviceNotifier : IDisposable
         lock (_gate)
         {
             // Phones already there when the window opened are not news.
-            foreach (var device in hub.ListDevices().Where(d => d.State == DeviceState.Ready))
+            foreach (var device in hub.ListDevices())
             {
                 _ready.Add(device.Id);
             }
@@ -39,6 +41,15 @@ internal sealed class DeviceNotifier : IDisposable
     }
 
     public static string TagFor(string deviceId) => "device:" + deviceId;
+
+    /// <summary>The providers' first start is over: from now on a phone that connects is news.</summary>
+    public void Arm()
+    {
+        lock (_gate)
+        {
+            _armed = true;
+        }
+    }
 
     private void OnDeviceChanged(object? sender, DeviceChangedEventArgs e)
     {
@@ -64,6 +75,13 @@ internal sealed class DeviceNotifier : IDisposable
         AppNotification? notification = null;
         lock (_gate)
         {
+            if (!_armed)
+            {
+                // Found while starting (an iPhone may take a few seconds more to be ready): already there.
+                _ready.Add(device.Id);
+                return;
+            }
+
             if (device.State == DeviceState.Ready && _ready.Add(device.Id))
             {
                 _waiting.Remove(device.Id);

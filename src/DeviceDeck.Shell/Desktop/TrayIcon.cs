@@ -24,6 +24,7 @@ internal sealed unsafe class TrayIcon : IDisposable
     private readonly string _iconPath;
     private readonly nint _window;
     private nint _icon;
+    private nint _balloonIcon;
     private bool _added;
     private string _tooltip;
 
@@ -66,11 +67,18 @@ internal sealed unsafe class TrayIcon : IDisposable
     /// <summary>A balloon; on Windows 10 and 11 it appears as a toast from DeviceDeck.</summary>
     public void ShowBalloon(string title, string body)
     {
+        if (_balloonIcon == 0)
+        {
+            // NIIF_LARGE_ICON wants an icon of SM_CXICON size; the tray's small one is refused.
+            var size = Tray.GetSystemMetricsForDpi(Tray.SM_CXICON, Tray.GetDpiForSystem());
+            _balloonIcon = Tray.LoadImage(0, _iconPath, Tray.IMAGE_ICON, size, size, Tray.LR_LOADFROMFILE);
+        }
+
         var data = NewData(Tray.NIF_INFO);
         NotifyIconData.Copy(title, data.InfoTitle, 64);
         NotifyIconData.Copy(string.IsNullOrEmpty(body) ? " " : body, data.Info, 256);
-        data.InfoFlags = Tray.NIIF_USER | Tray.NIIF_LARGE_ICON | Tray.NIIF_RESPECT_QUIET_TIME;
-        data.BalloonIcon = _icon;
+        data.InfoFlags = Tray.NIIF_USER | Tray.NIIF_RESPECT_QUIET_TIME | (_balloonIcon != 0 ? Tray.NIIF_LARGE_ICON : 0);
+        data.BalloonIcon = _balloonIcon != 0 ? _balloonIcon : _icon;
         if (!Tray.ShellNotifyIcon(Tray.NIM_MODIFY, ref data))
         {
             ShellLog.Warn("The tray balloon could not be shown.");
@@ -231,6 +239,12 @@ internal sealed unsafe class TrayIcon : IDisposable
         {
             Tray.DestroyIcon(_icon);
             _icon = 0;
+        }
+
+        if (_balloonIcon != 0)
+        {
+            Tray.DestroyIcon(_balloonIcon);
+            _balloonIcon = 0;
         }
     }
 }

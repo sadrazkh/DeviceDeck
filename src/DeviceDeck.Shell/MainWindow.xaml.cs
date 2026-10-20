@@ -111,6 +111,9 @@ public sealed partial class MainWindow : Window
         _ = InitializeWebViewAsync();
     }
 
+    /// <summary>Called once the providers have started: phones that connect from now on get a notification.</summary>
+    public void ArmNotifications() => _deviceNotifier.Arm();
+
     /// <summary>For a second launch: show this window instead.</summary>
     public void BringToFront()
     {
