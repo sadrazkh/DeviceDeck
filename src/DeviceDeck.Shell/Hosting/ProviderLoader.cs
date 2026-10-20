@@ -5,7 +5,7 @@ using DeviceDeck.Core.Fake;
 namespace DeviceDeck.Shell.Hosting;
 
 /// <summary>
-/// Picks the device providers from DEVICEDECK_PROVIDERS: "fake" (default), "real" (iPhone + Android),
+/// Picks the device providers from DEVICEDECK_PROVIDERS: "real" (default: iPhone + Android), "fake" (the sample phones),
 /// "ios", "android", or a '+'-joined mix such as "real+fake". Real providers are found by reflection in
 /// DeviceDeck.Ios.dll and DeviceDeck.Android.dll: every public IDeviceProvider with a constructor whose
 /// parameters each have a default or are an options class with a parameterless constructor
@@ -24,7 +24,7 @@ internal static class ProviderLoader
     public static IReadOnlyList<IDeviceProvider> Load(FakeOptions fakeOptions, out FakeDeviceProvider? fake)
     {
         var setting = Environment.GetEnvironmentVariable(Variable);
-        var wanted = (string.IsNullOrWhiteSpace(setting) ? "fake" : setting)
+        var wanted = (string.IsNullOrWhiteSpace(setting) ? "real" : setting)
             .Split(['+', ',', ' '], StringSplitOptions.RemoveEmptyEntries)
             .SelectMany(part => part.Equals("real", StringComparison.OrdinalIgnoreCase) || part.Equals("all", StringComparison.OrdinalIgnoreCase)
                 ? part.Equals("all", StringComparison.OrdinalIgnoreCase) ? ["ios", "android", "fake"] : ["ios", "android"]
