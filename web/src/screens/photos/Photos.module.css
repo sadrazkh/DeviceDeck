@@ -183,7 +183,7 @@
   box-shadow: inset 0 0 0 3px var(--color-accent);
 }
 
-.tile[data-active] {
+.grid:focus-visible .tile[data-active] {
   outline: 2px solid var(--color-focus);
   outline-offset: 1px;
 }

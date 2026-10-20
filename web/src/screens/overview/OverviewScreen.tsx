@@ -26,7 +26,7 @@ import { ErrorBanner } from '../../components/ErrorState';
 import { Menu, type MenuEntry } from '../../components/Menu';
 import { StorageBar } from '../../components/StorageBar';
 import { Badge, Banner, Card, LinearProgress, Ring, Skeleton, Tooltip } from '../../components/ui';
-import { useI18n } from '../../i18n';
+import { useI18n, type MessageKey } from '../../i18n';
 import { jobFraction } from '../../state/transfers';
 import { useUi } from '../../state/ui';
 import { progressLine } from '../../shell/TransferDrawer';
@@ -108,11 +108,28 @@ function BatteryCard({ battery, loading, error, onRetry }: { battery: BatteryInf
   );
 }
 
+const DETAIL_LABELS: Record<string, MessageKey> = {
+  model: 'details.model',
+  serial: 'details.serial',
+  imei: 'details.imei',
+  udid: 'details.udid',
+  wifi: 'details.wifi',
+  bluetooth: 'details.bluetooth',
+  carrier: 'details.carrier',
+};
+
+/** Known rows get the page's own words; anything else keeps the host's label. */
+function detailLabel(row: DetailRow, platform: DeviceSummary['platform'], t: ReturnType<typeof useI18n>['t']): string {
+  if (row.key === 'os') return t(platform === 'ios' ? 'details.os.ios' : 'details.os.android');
+  const key = DETAIL_LABELS[row.key];
+  return key ? t(key) : row.label;
+}
+
 function mask(value: string): string {
   return value.replace(/[^\s:-]/g, '•');
 }
 
-function DetailsCard({ rows, loading }: { rows: DetailRow[] | undefined; loading: boolean }) {
+function DetailsCard({ rows, loading, platform }: { rows: DetailRow[] | undefined; loading: boolean; platform: DeviceSummary['platform'] }) {
   const { t } = useI18n();
   const [revealed, setRevealed] = useState<Set<string>>(new Set());
   const [copied, setCopied] = useState<string | null>(null);
@@ -139,7 +156,7 @@ function DetailsCard({ rows, loading }: { rows: DetailRow[] | undefined; loading
             const hidden = row.sensitive && !revealed.has(row.key);
             return (
               <div key={row.key} className={styles.detailRow}>
-                <dt className={styles.detailLabel}>{row.label}</dt>
+                <dt className={styles.detailLabel}>{detailLabel(row, platform, t)}</dt>
                 <dd className={styles.detailValue} title={hidden ? undefined : row.value}>
                   {hidden ? mask(row.value) : row.value}
                 </dd>
@@ -359,7 +376,7 @@ export function OverviewScreen({ device }: { device: DeviceSummary }) {
         {caps.has('battery') ? (
           <BatteryCard battery={battery.data} loading={battery.isPending} error={battery.error} onRetry={() => void battery.refetch()} />
         ) : null}
-        <DetailsCard rows={details.data?.rows} loading={details.isPending} />
+        <DetailsCard rows={details.data?.rows} loading={details.isPending} platform={device.platform} />
         <ActivityCard device={device} />
       </div>
 

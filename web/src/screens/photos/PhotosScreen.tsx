@@ -94,7 +94,7 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
   const albums = useAlbums(device);
   const library = usePhotoLibrary(device, albumId);
   const [filter, setFilter] = useState<Filter>('all');
-  const [tileTarget, setTileTarget] = useState(150);
+  const [tileTarget, setTileTarget] = useState(136);
   const [selection, setSelection] = useState<Selection>(emptySelection);
   const [viewer, setViewer] = useState<number | null>(null);
   const [exporting, setExporting] = useState<PhotoAsset[] | null>(null);
