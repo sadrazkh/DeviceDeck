@@ -20,6 +20,7 @@ public sealed class DeviceHub : IAsyncDisposable
     private readonly List<(IDeviceProvider Provider, Exception Error)> _startFailures = [];
     private IReadOnlyList<DriverStatus>? _lastDrivers;
     private CancellationTokenSource? _driverPoll;
+    private Task? _disposing;
     private bool _started;
 
     public DeviceHub(IEnumerable<IDeviceProvider> providers)
@@ -287,7 +288,29 @@ public sealed class DeviceHub : IAsyncDisposable
     // Records compare by value, but Capabilities etc. are value types, so record equality is exactly what we want.
     private static bool SameSummary(DeviceSummary a, DeviceSummary b) => a == b;
 
+    /// <summary>How long one provider may take to stop (close its connections, stop its adb server) before the hub gives up on it.</summary>
+    public TimeSpan ProviderStopTimeout { get; init; } = TimeSpan.FromSeconds(10);
+
+    /// <summary>Raised during <see cref="DisposeAsync"/> for a provider that threw or ran past <see cref="ProviderStopTimeout"/> (a <see cref="TimeoutException"/>).</summary>
+    public event EventHandler<(string ProviderId, Exception Error)>? ProviderStopFailed;
+
+    /// <summary>
+    /// Stops every provider, all at once, and returns only when each has finished its DisposeAsync,
+    /// failed, or run out of time. Safe to call twice.
+    /// </summary>
     public async ValueTask DisposeAsync()
+    {
+        Task stopping;
+        lock (_gate)
+        {
+            _disposing ??= StopAllAsync();
+            stopping = _disposing;
+        }
+
+        await stopping.ConfigureAwait(false);
+    }
+
+    private async Task StopAllAsync()
     {
         if (_driverPoll is not null)
         {
@@ -300,16 +323,22 @@ public sealed class DeviceHub : IAsyncDisposable
             provider.DeviceChanged -= OnProviderDeviceChanged;
         }
 
-        foreach (var provider in _providers)
+        await Task.WhenAll(_providers.Select(StopOneAsync)).ConfigureAwait(false);
+    }
+
+    private async Task StopOneAsync(IDeviceProvider provider)
+    {
+        try
         {
-            try
-            {
-                await provider.DisposeAsync().ConfigureAwait(false);
-            }
-            catch (Exception)
-            {
-                // Shutting down: one provider failing to stop must not keep the others running.
-            }
+            // Off the caller's thread, so a provider that blocks inside DisposeAsync can't hold up the others.
+            await Task.Run(async () => await provider.DisposeAsync().ConfigureAwait(false))
+                .WaitAsync(ProviderStopTimeout)
+                .ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            // Shutting down: one provider failing to stop must not keep the others running.
+            ProviderStopFailed?.Invoke(this, (provider.Id, ex));
         }
     }
 }

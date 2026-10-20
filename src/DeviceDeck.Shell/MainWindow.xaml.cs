@@ -218,8 +218,7 @@ public sealed partial class MainWindow : Window
         {
         }
 
-        // The queue stops its workers (jobs stay "running" on disk and resume next start).
-        Task.Run(async () => await _host.DisposeAsync()).Wait(TimeSpan.FromSeconds(6));
+        // The host itself (queue, providers) is stopped by Program.Main once the message loop has ended.
     }
 
     private async Task InitializeWebViewAsync()
@@ -265,6 +264,9 @@ public sealed partial class MainWindow : Window
             };
             _bridge = new BridgeHost(_transport, _host.BridgeServices(new ShellServices(DispatcherQueue, AppWindow.Id)));
             _bridge.Dispatcher.UnexpectedError += (_, e) => ShellLog.Error($"{e.Method} failed.", e.Error);
+            _bridge.Dispatcher.SlowCall += (_, call) => ShellLog.Warn(call.Finished
+                ? $"Slow call: {call.Method}{(call.DeviceId is null ? "" : $" on {call.DeviceId}")} took {call.Elapsed.TotalSeconds:0.0} s ({call.Outcome})."
+                : $"Slow call: {call.Method}{(call.DeviceId is null ? "" : $" on {call.DeviceId}")} still running after {call.Elapsed.TotalSeconds:0.0} s.");
 
             if (_content.Folder is { } folder)
             {

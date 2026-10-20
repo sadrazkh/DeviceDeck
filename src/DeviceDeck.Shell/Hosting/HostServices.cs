@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Reflection;
 using DeviceDeck.Bridge;
 using DeviceDeck.Bridge.Images;
@@ -58,6 +59,7 @@ internal sealed class HostServices : IAsyncDisposable
         var devMode = Environment.GetEnvironmentVariable("DEVICEDECK_DEV") == "1";
         var providers = ProviderLoader.Load(new FakeOptions(), out var fake);
         var hub = new DeviceHub(providers);
+        hub.ProviderStopFailed += (_, e) => ShellLog.Error($"Provider {e.ProviderId} did not stop cleanly.", e.Error);
         var store = new SqliteTransferStore(paths.TransfersDatabase);
         var transcoder = new WicImageTranscoder();
         var transfers = new TransferQueue(hub, store, TransferHandlers.All(transcoder), new WindowsKeepAwake());
@@ -102,11 +104,34 @@ internal sealed class HostServices : IAsyncDisposable
         });
     }
 
+    /// <summary>
+    /// Stops the transfer workers (their jobs resume next start), closes the database, then stops every provider
+    /// (connections, the private adb server). Each step runs even when the one before it fails.
+    /// </summary>
     public async ValueTask DisposeAsync()
     {
-        await Transfers.DisposeAsync().ConfigureAwait(false);
-        Store.Dispose();
-        await Hub.DisposeAsync().ConfigureAwait(false);
-        ShellLog.Info("DeviceDeck stopped.");
+        var clock = Stopwatch.StartNew();
+        await StepAsync("transfer queue", async () => await Transfers.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);
+        await StepAsync("transfer store", () =>
+        {
+            Store.Dispose();
+            return Task.CompletedTask;
+        }).ConfigureAwait(false);
+        await StepAsync("device providers", async () => await Hub.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);
+        ShellLog.Info($"DeviceDeck stopped in {clock.Elapsed.TotalSeconds:0.0} s.");
+    }
+
+    private static async Task StepAsync(string what, Func<Task> step)
+    {
+        var clock = Stopwatch.StartNew();
+        try
+        {
+            await step().ConfigureAwait(false);
+            ShellLog.Info($"Stopped {what} in {clock.ElapsedMilliseconds} ms.");
+        }
+        catch (Exception ex)
+        {
+            ShellLog.Error($"Stopping {what} failed after {clock.ElapsedMilliseconds} ms.", ex);
+        }
     }
 }

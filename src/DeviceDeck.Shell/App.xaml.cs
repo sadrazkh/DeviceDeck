@@ -6,7 +6,9 @@ namespace DeviceDeck.Shell;
 public partial class App : Application
 {
     private MainWindow? _window;
-    private HostServices? _host;
+
+    /// <summary>The running host, for Program.Main to stop after the last window has closed.</summary>
+    internal static HostServices? Host { get; private set; }
 
     public App()
     {
@@ -22,10 +24,11 @@ public partial class App : Application
 
     protected override async void OnLaunched(LaunchActivatedEventArgs args)
     {
-        _host = HostServices.Create();
-        _window = new MainWindow(_host);
+        var host = HostServices.Create();
+        Host = host;
+        _window = new MainWindow(host);
         Program.Reactivated += (_, _) => _window.DispatcherQueue.TryEnqueue(_window.BringToFront);
         _window.Activate();
-        await _host.StartAsync();
+        await host.StartAsync();
     }
 }

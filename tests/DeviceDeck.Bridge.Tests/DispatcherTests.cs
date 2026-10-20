@@ -178,6 +178,64 @@ public sealed class DispatcherTests
         Assert.Equal("abc", (string?)node["params"]!["deviceId"]);
     }
 
+    private sealed record SlowParams(string DeviceId, int Ms);
+
+    private static (JsonRpcDispatcher Rpc, List<RpcSlowCall> Reports) Slow(TimeSpan threshold)
+    {
+        var rpc = new JsonRpcDispatcher { SlowCallThreshold = threshold };
+        rpc.Register<SlowParams, object>("device.storage", async (p, ct) =>
+        {
+            await Task.Delay(p.Ms, ct);
+            return new { ok = true };
+        });
+        rpc.Register<SlowParams, object>("device.battery", async (p, ct) =>
+        {
+            await Task.Delay(p.Ms, ct);
+            throw new DeviceException(DeviceErrorCodes.Locked, "Unlock the iPhone.");
+        });
+        var reports = new List<RpcSlowCall>();
+        rpc.SlowCall += (_, r) =>
+        {
+            lock (reports)
+            {
+                reports.Add(r);
+            }
+        };
+        return (rpc, reports);
+    }
+
+    [Fact]
+    public async Task Slow_calls_are_reported_while_running_and_when_they_end()
+    {
+        var (rpc, reports) = Slow(TimeSpan.FromMilliseconds(150));
+        var reply = await Call(rpc, """{"jsonrpc":"2.0","id":1,"method":"device.storage","params":{"deviceId":"iphone-1","ms":450}}""");
+        Assert.True((bool)reply["result"]!["ok"]!);
+
+        Assert.Equal(2, reports.Count);
+        var running = reports[0];
+        Assert.Equal(("device.storage", "iphone-1", false, (string?)null), (running.Method, running.DeviceId, running.Finished, running.Outcome));
+        Assert.InRange(running.Elapsed.TotalMilliseconds, 140, 440);
+        var ended = reports[1];
+        Assert.Equal(("device.storage", "iphone-1", true, "ok"), (ended.Method, ended.DeviceId, ended.Finished, ended.Outcome));
+        Assert.True(ended.Elapsed.TotalMilliseconds >= 440, $"reported {ended.Elapsed.TotalMilliseconds} ms");
+    }
+
+    [Fact]
+    public async Task A_slow_failure_reports_its_error_code_and_fast_calls_report_nothing()
+    {
+        var (rpc, reports) = Slow(TimeSpan.FromMilliseconds(150));
+        await Call(rpc, """{"jsonrpc":"2.0","id":1,"method":"device.storage","params":{"deviceId":"a","ms":10}}""");
+        Assert.Empty(reports);
+
+        var failed = await Call(rpc, """{"jsonrpc":"2.0","id":2,"method":"device.battery","params":{"deviceId":"a","ms":300}}""");
+        Assert.Equal("device_locked", (string?)failed["error"]!["data"]!["code"]);
+        Assert.Equal("device_locked", reports.Single(r => r.Finished).Outcome);
+
+        var (off, none) = Slow(TimeSpan.Zero);
+        await Call(off, """{"jsonrpc":"2.0","id":3,"method":"device.storage","params":{"deviceId":"a","ms":200}}""");
+        Assert.Empty(none);
+    }
+
     [Fact]
     public void Registering_a_method_twice_fails()
     {

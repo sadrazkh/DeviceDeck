@@ -69,6 +69,95 @@ public sealed class HubTests
         Assert.Equal(DriverState.Ready, drivers.Single(d => d.ProviderId == "fake").State);
     }
 
+    /// <summary>A provider whose DisposeAsync does whatever the test says (wait, throw, hang, block) and records it.</summary>
+    private sealed class StoppingProvider(string id, Func<ValueTask> stop) : IDeviceProvider
+    {
+        public string Id => id;
+        public IReadOnlyList<IDevice> Devices => [];
+        public int Stops { get; private set; }
+        public bool Stopped { get; private set; }
+        public DateTime StartedStoppingAt { get; private set; }
+
+        public event EventHandler<DeviceChangedEventArgs>? DeviceChanged { add { } remove { } }
+
+        public Task StartAsync(CancellationToken ct) => Task.CompletedTask;
+
+        public Task<DriverStatus> GetDriverStatusAsync(CancellationToken ct) => Task.FromResult(new DriverStatus(id, DriverState.Ready, null, null));
+
+        public async ValueTask DisposeAsync()
+        {
+            Stops++;
+            StartedStoppingAt = DateTime.UtcNow;
+            await stop();
+            Stopped = true;
+        }
+    }
+
+    [Fact]
+    public async Task Disposing_the_hub_waits_until_every_provider_has_stopped()
+    {
+        var fast = new StoppingProvider("fast", () => ValueTask.CompletedTask);
+        var slowA = new StoppingProvider("slowA", async () => await Task.Delay(400));
+        var slowB = new StoppingProvider("slowB", async () => await Task.Delay(400));
+        var broken = new StoppingProvider("broken", () => throw new InvalidOperationException("adb would not die"));
+        var hub = new DeviceHub([fast, slowA, broken, slowB]) { DriverPollInterval = TimeSpan.Zero };
+        var failures = new List<(string, Exception)>();
+        hub.ProviderStopFailed += (_, e) => failures.Add(e);
+        await hub.StartAsync(CancellationToken.None);
+
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        await hub.DisposeAsync();
+
+        Assert.True(fast.Stopped && slowA.Stopped && slowB.Stopped, "every provider finished its DisposeAsync before the hub returned");
+        Assert.True(clock.ElapsedMilliseconds >= 380, $"returned after {clock.ElapsedMilliseconds} ms, before the slow providers finished");
+        Assert.True(clock.ElapsedMilliseconds < 780, $"took {clock.ElapsedMilliseconds} ms: providers were stopped one after another");
+        var failure = Assert.Single(failures);
+        Assert.Equal("broken", failure.Item1);
+        Assert.IsType<InvalidOperationException>(failure.Item2);
+    }
+
+    [Fact]
+    public async Task A_provider_that_never_stops_is_given_up_on_and_does_not_hold_the_others()
+    {
+        var hung = new StoppingProvider("hung", () => new ValueTask(new TaskCompletionSource().Task));
+        var blocking = new StoppingProvider("blocking", () =>
+        {
+            Thread.Sleep(300); // blocks inside DisposeAsync instead of awaiting
+            return ValueTask.CompletedTask;
+        });
+        var fine = new StoppingProvider("fine", async () => await Task.Delay(50));
+        var hub = new DeviceHub([hung, blocking, fine]) { DriverPollInterval = TimeSpan.Zero, ProviderStopTimeout = TimeSpan.FromMilliseconds(600) };
+        var failures = new List<(string Id, Exception Error)>();
+        hub.ProviderStopFailed += (_, e) => failures.Add(e);
+        await hub.StartAsync(CancellationToken.None);
+
+        var clock = System.Diagnostics.Stopwatch.StartNew();
+        await hub.DisposeAsync().AsTask().WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(fine.Stopped);
+        Assert.True(blocking.Stopped);
+        Assert.False(hung.Stopped);
+        Assert.True(fine.StartedStoppingAt - blocking.StartedStoppingAt < TimeSpan.FromMilliseconds(200), "a blocking provider delayed the next one");
+        var failure = Assert.Single(failures);
+        Assert.Equal("hung", failure.Id);
+        Assert.IsType<TimeoutException>(failure.Error);
+        Assert.InRange(clock.ElapsedMilliseconds, 550, 3000);
+    }
+
+    [Fact]
+    public async Task Disposing_twice_stops_each_provider_once()
+    {
+        var provider = new StoppingProvider("once", async () => await Task.Delay(100));
+        var hub = new DeviceHub([provider]) { DriverPollInterval = TimeSpan.Zero };
+        await hub.StartAsync(CancellationToken.None);
+
+        await Task.WhenAll(hub.DisposeAsync().AsTask(), hub.DisposeAsync().AsTask());
+        await hub.DisposeAsync();
+
+        Assert.Equal(1, provider.Stops);
+        Assert.True(provider.Stopped);
+    }
+
     [Fact]
     public async Task Unusable_states_map_to_their_error_codes()
     {
