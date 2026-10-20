@@ -1,0 +1,69 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>ActivationState</key>
+	<string>Activated</string>
+	<key>BasebandVersion</key>
+	<string>2.40.01</string>
+	<key>BluetoothAddress</key>
+	<string>a4:c3:61:00:11:22</string>
+	<key>BuildVersion</key>
+	<string>22A3354</string>
+	<key>CPUArchitecture</key>
+	<string>arm64e</string>
+	<key>CarrierBundleInfoArray</key>
+	<array>
+		<dict>
+			<key>CFBundleIdentifier</key>
+			<string>com.apple.Irancell_ir</string>
+			<key>CFBundleVersion</key>
+			<string>60.0</string>
+			<key>IntegratedCircuitCardIdentity</key>
+			<string>8998000000000000000</string>
+			<key>InternationalMobileSubscriberIdentity</key>
+			<string>432350000000000</string>
+			<key>MCC</key>
+			<string>432</string>
+			<key>MNC</key>
+			<string>35</string>
+		</dict>
+	</array>
+	<key>DeviceClass</key>
+	<string>iPhone</string>
+	<key>DeviceColor</key>
+	<string>1</string>
+	<key>DeviceEnclosureColor</key>
+	<string>#e3e4df</string>
+	<key>DeviceName</key>
+	<string>Test iPhone</string>
+	<key>HardwareModel</key>
+	<string>D37AP</string>
+	<key>InternationalMobileEquipmentIdentity</key>
+	<string>356000000000001</string>
+	<key>InternationalMobileEquipmentIdentity2</key>
+	<string>356000000000019</string>
+	<key>ModelNumber</key>
+	<string>MYE73</string>
+	<key>PasswordProtected</key>
+	<true/>
+	<key>PhoneNumber</key>
+	<string>+98 912 000 0000</string>
+	<key>ProductName</key>
+	<string>iPhone OS</string>
+	<key>ProductType</key>
+	<string>iPhone17,3</string>
+	<key>ProductVersion</key>
+	<string>18.0</string>
+	<key>RegionInfo</key>
+	<string>ZD/A</string>
+	<key>SerialNumber</key>
+	<string>F2LXK000N70F</string>
+	<key>TimeZone</key>
+	<string>Asia/Tehran</string>
+	<key>UniqueDeviceID</key>
+	<string>00008140-000A1B2C3D4E801E</string>
+	<key>WiFiAddress</key>
+	<string>a4:c3:61:00:11:23</string>
+</dict>
+</plist>

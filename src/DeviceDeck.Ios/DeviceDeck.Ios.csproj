@@ -8,6 +8,16 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <RootNamespace>DeviceDeck.Ios</RootNamespace>
   </PropertyGroup>
+
+  <ItemGroup>
+    <!-- MIT. Reads a temp copy of the phone's Photos.sqlite, read-only. -->
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="10.0.13" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="DeviceDeck.Ios.Tests" />
+  </ItemGroup>
 
 </Project>

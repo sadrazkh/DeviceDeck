@@ -22,4 +22,8 @@
     <ProjectReference Include="..\..\src\DeviceDeck.Ios\DeviceDeck.Ios.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="Fixtures\**\*" Exclude="Fixtures\**\*.py" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>
