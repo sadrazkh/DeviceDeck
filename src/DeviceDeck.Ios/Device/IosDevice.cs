@@ -209,7 +209,10 @@ public sealed class IosDevice : IDevice, IAsyncDisposable
             await using var lockdown = await connector.OpenSessionAsync(ct).ConfigureAwait(false);
             _values = await lockdown.GetAllValuesAsync(null, ct).ConfigureAwait(false);
             // A phone that has not been unlocked since boot accepts the session but refuses services.
-            await lockdown.StartServiceAsync(ServiceNames.Afc, ct).ConfigureAwait(false);
+            // Connect to the started service and close it: a service started and never connected to is
+            // reaped by the phone later, and that was seen taking a live AFC connection down with it.
+            var probe = await lockdown.StartServiceAsync(ServiceNames.Afc, ct).ConfigureAwait(false);
+            await (await connector.ConnectPortAsync(probe.Port, ct).ConfigureAwait(false)).DisposeAsync().ConfigureAwait(false);
             return DeviceState.Ready;
         }
         catch (DeviceException ex) when (ex.Code == DeviceErrorCodes.Locked)

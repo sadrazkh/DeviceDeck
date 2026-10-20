@@ -26,8 +26,9 @@ public sealed class PhotoIndex
     private readonly HashSet<string> _dcimFiles;
 
     private PhotoIndex(List<PhotoAsset> assets, List<PhotoAlbum> albums, Dictionary<string, List<int>> members,
-        HashSet<string> dcimFiles, PhotoIndexMode mode, string? schemaVariant, string? fallbackReason)
+        HashSet<string> dcimFiles, PhotoIndexMode mode, string? schemaVariant, string? fallbackReason, string? note)
     {
+        Note = note;
         Assets = assets;
         Albums = albums;
         _albumMembers = members;
@@ -48,6 +49,9 @@ public sealed class PhotoIndex
 
     /// <summary>Why the plain DCIM listing was used instead of Photos.sqlite.</summary>
     public string? FallbackReason { get; }
+
+    /// <summary>How Photos.sqlite was obtained (copied or reused, sizes, speed), for diagnostics.</summary>
+    public string? Note { get; }
 
     /// <summary>True for any media file in DCIM, including the video halves of Live Photos.</summary>
     public bool IsKnownFile(string assetId) => _dcimFiles.Contains(assetId);
@@ -84,7 +88,7 @@ public sealed class PhotoIndex
     /// <param name="dcimFiles">Every media file under DCIM, as "DCIM/&lt;folder&gt;/&lt;name&gt;".</param>
     /// <param name="rows">Photos.sqlite assets, or null to index DCIM alone.</param>
     public static PhotoIndex Build(IReadOnlyCollection<string> dcimFiles, IReadOnlyList<PhotoRow>? rows, IReadOnlyList<AlbumRow>? albumRows,
-        string? schemaVariant = null, string? fallbackReason = null)
+        string? schemaVariant = null, string? fallbackReason = null, string? note = null)
     {
         var files = new HashSet<string>(dcimFiles, StringComparer.OrdinalIgnoreCase);
         var actualCase = dcimFiles.ToDictionary(f => f, f => f, StringComparer.OrdinalIgnoreCase);
@@ -196,7 +200,7 @@ public sealed class PhotoIndex
         }
 
         return new PhotoIndex(assets, albums, members, files,
-            rows is null ? PhotoIndexMode.DcimOnly : PhotoIndexMode.Database, schemaVariant, fallbackReason);
+            rows is null ? PhotoIndexMode.DcimOnly : PhotoIndexMode.Database, schemaVariant, fallbackReason, note);
     }
 
     private static string? PairedVideo(string imagePath, HashSet<string> files, Dictionary<string, string> actualCase)

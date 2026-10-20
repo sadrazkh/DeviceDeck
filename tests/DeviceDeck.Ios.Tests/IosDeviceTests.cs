@@ -364,10 +364,11 @@ public sealed class IosDeviceTests : IAsyncLifetime
         phone.Icons["com.example.docs"] = [0x89, 0x50, 0x4E, 0x47];
         var device = await AttachAsync(phone);
         int Connections(string service) => phone.Log.Count(l => l == "service:" + service);
+        var afcBefore = Connections("com.apple.afc"); // the handshake's lock probe connects once
 
         var thumbs = await Task.WhenAll(Enumerable.Range(0, 20).Select(_ => device.Photos.GetThumbnailAsync("DCIM/100APPLE/IMG_0001.JPG", 256, Ct)));
         Assert.All(thumbs, t => Assert.NotNull(t));
-        Assert.Equal(1, Connections("com.apple.afc"));
+        Assert.Equal(afcBefore + 1, Connections("com.apple.afc"));
 
         var icons = await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => device.Apps.GetIconAsync("com.example.docs", Ct)));
         Assert.All(icons, i => Assert.Equal(4, i!.Length));
@@ -376,7 +377,56 @@ public sealed class IosDeviceTests : IAsyncLifetime
         // afcd hangs up mid-way: the next call reconnects once and still succeeds.
         phone.Media.HangUpAfterOperations = phone.Media.Operations.Count + 1;
         Assert.NotNull(await device.Photos.GetThumbnailAsync("DCIM/100APPLE/IMG_0001.JPG", 256, Ct));
-        Assert.Equal(2, Connections("com.apple.afc"));
+        Assert.Equal(afcBefore + 2, Connections("com.apple.afc"));
+    }
+
+    [Fact]
+    public async Task Photos_sqlite_copy_reuses_the_main_file_and_survives_a_dropped_connection()
+    {
+        var phone = PairedPhone();
+        var live = Path.Combine(_dir, "live.sqlite");
+        await using var writer = new SqliteConnection($"Data Source={live};Pooling=False");
+        writer.Open();
+        await using (var cmd = writer.CreateCommand())
+        {
+            cmd.CommandText = "PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;" + Fixture.Text("Photos", "ios17.sql");
+            cmd.ExecuteNonQuery();
+        }
+        var mainBytes = ReadShared(live);
+        var walBytes = ReadShared(live + "-wal");
+        var t0 = new DateTimeOffset(2026, 10, 20, 9, 0, 0, TimeSpan.Zero);
+        phone.Media.AddFile("/PhotoData/Photos.sqlite", mainBytes, t0);
+        phone.Media.AddFile("/PhotoData/Photos.sqlite-wal", walBytes, t0);
+        foreach (var f in PhotosTests.DcimFiles)
+            phone.Media.AddFile("/" + f, [1]);
+        // The first copy loses its connection half-way and is retried on a fresh one.
+        phone.Media.HangUpWhileReading = "/PhotoData/Photos.sqlite";
+        var device = await AttachAsync(phone);
+        var library = (Device.Photos.IosPhotoLibrary)device.Photos;
+
+        var first = await library.GetIndexAsync(refresh: true, Ct);
+        Assert.Equal(Device.Photos.PhotoIndexMode.Database, first.Mode);
+        Assert.Contains("WAL", first.Note);
+        Assert.Contains("attempt 2", first.Note);
+        Assert.Equal(6, first.Assets.Count);
+
+        // Nothing changed on the phone: the cached copy is reused.
+        var second = await library.GetIndexAsync(refresh: true, Ct);
+        Assert.StartsWith("reused the cached copy", second.Note);
+
+        // Only the WAL changed (Photos appended to it): only the WAL is copied again.
+        phone.Media.AddFile("/PhotoData/Photos.sqlite-wal", walBytes, t0.AddMinutes(1));
+        var third = await library.GetIndexAsync(refresh: true, Ct);
+        Assert.Matches(@"^copied [0-9.]+ KB WAL in", third.Note);
+        Assert.Equal(6, third.Assets.Count);
+    }
+
+    private static byte[] ReadShared(string path)
+    {
+        using var f = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite | FileShare.Delete);
+        using var m = new MemoryStream();
+        f.CopyTo(m);
+        return m.ToArray();
     }
 
     [Fact]

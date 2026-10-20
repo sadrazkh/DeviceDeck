@@ -22,6 +22,9 @@ internal sealed class FakeAfcServer
     /// <summary>Hang up (once) as soon as this many operations have been served in total, like a dying afcd.</summary>
     public int? HangUpAfterOperations { get; set; }
 
+    /// <summary>Hang up (once) on the first FileRead of this path, like a connection dropping mid-copy.</summary>
+    public string? HangUpWhileReading { get; set; }
+
     public FakeAfcServer AddFile(string path, byte[] content, DateTimeOffset? modified = null)
     {
         lock (_gate)
@@ -80,6 +83,12 @@ internal sealed class FakeAfcServer
                 if (HangUpAfterOperations is { } limit && Operations.Count >= limit)
                 {
                     HangUpAfterOperations = null;
+                    return;
+                }
+                if (op == AfcOperation.FileRead && HangUpWhileReading is { } hangPath
+                    && _open.TryGetValue(BinaryPrimitives.ReadUInt64LittleEndian(headerData), out var reading) && reading.Path == hangPath)
+                {
+                    HangUpWhileReading = null;
                     return;
                 }
                 Operations.Add(op);

@@ -124,7 +124,11 @@ public sealed class IosPhotoLibrary(IosDevice device, string cacheDirectory) : I
         {
             if (!refresh && _index is not null && DateTime.UtcNow - _indexBuiltUtc < IndexLifetime)
                 return _index;
-            _index = await device.UseMediaAfcAsync(afc => BuildIndexAsync(afc, ct), ct).ConfigureAwait(false);
+            var files = await device.UseMediaAfcAsync(afc => ListDcimAsync(afc, ct), ct).ConfigureAwait(false);
+            var database = await device.UseAsync(c => LoadDatabaseAsync(c, ct)).ConfigureAwait(false);
+            _index = database.Rows is null
+                ? PhotoIndex.Build(files, null, null, fallbackReason: database.Note)
+                : PhotoIndex.Build(files, database.Rows, database.Albums, database.Variant, note: database.Note);
             _indexBuiltUtc = DateTime.UtcNow;
             return _index;
         }
@@ -146,34 +150,56 @@ public sealed class IosPhotoLibrary(IosDevice device, string cacheDirectory) : I
         }
     }
 
-    private async Task<PhotoIndex> BuildIndexAsync(AfcClient afc, CancellationToken ct)
-    {
-        var files = await ListDcimAsync(afc, ct).ConfigureAwait(false);
+    private sealed record DatabaseResult(IReadOnlyList<PhotoRow>? Rows, IReadOnlyList<AlbumRow>? Albums, string? Variant, string Note);
 
-        string? reason;
-        try
+    /// <summary>
+    /// Copies Photos.sqlite (on its own AFC connection, so a 150 MB copy does not hold up thumbnails) and reads it.
+    /// A dropped connection, or the database changing under the copy, is retried; anything else falls back to DCIM.
+    /// </summary>
+    private async Task<DatabaseResult> LoadDatabaseAsync(DeviceConnector c, CancellationToken ct)
+    {
+        const int attempts = 3;
+        Exception? last = null;
+        for (var attempt = 1; attempt <= attempts; attempt++)
         {
-            var local = await CopyDatabaseAsync(afc, ct).ConfigureAwait(false);
-            if (local is null)
+            try
             {
-                reason = "The phone has no /PhotoData/Photos.sqlite.";
-            }
-            else
-            {
+                var sw = System.Diagnostics.Stopwatch.StartNew();
+                string? local;
+                string copied;
+                await using (var afc = await c.StartAfcAsync(ct).ConfigureAwait(false))
+                    (local, copied) = await CopyDatabaseAsync(afc, ct).ConfigureAwait(false);
+                if (local is null)
+                    return new DatabaseResult(null, null, null, "The phone has no /PhotoData/Photos.sqlite.");
                 using var db = PhotosDatabase.Open(local);
-                return PhotoIndex.Build(files, db.ReadAssets(), db.ReadAlbums(), db.Schema.Variant);
+                var rows = db.ReadAssets();
+                var albums = db.ReadAlbums();
+                var retried = attempt > 1 ? $", attempt {attempt} (before: {last?.GetType().Name}: {last?.Message})" : "";
+                return new DatabaseResult(rows, albums, db.Schema.Variant, $"{copied}; ready in {sw.Elapsed.TotalSeconds:0.0} s{retried}");
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested && IsRetryable(ex))
+            {
+                last = ex;
+                if (ex is SqliteException)
+                    DeleteCache(); // a torn copy: start again from scratch
+            }
+            catch (DeviceException ex) when (ex.Code is DeviceErrorCodes.PermissionDenied or DeviceErrorCodes.PathNotFound or DeviceErrorCodes.Protocol)
+            {
+                return new DatabaseResult(null, null, null, "Photos.sqlite could not be copied: " + ex.Message);
+            }
+            catch (Exception ex) when (ex is NotSupportedException or InvalidOperationException)
+            {
+                return new DatabaseResult(null, null, null, "Photos.sqlite could not be read: " + ex.Message);
             }
         }
-        catch (DeviceException ex) when (ex.Code is DeviceErrorCodes.PermissionDenied or DeviceErrorCodes.PathNotFound or DeviceErrorCodes.Protocol)
-        {
-            reason = "Photos.sqlite could not be copied: " + ex.Message;
-        }
-        catch (Exception ex) when (ex is SqliteException or NotSupportedException or InvalidOperationException or IOException)
-        {
-            reason = "Photos.sqlite could not be read: " + ex.Message;
-        }
-        return PhotoIndex.Build(files, null, null, fallbackReason: reason);
+        return new DatabaseResult(null, null, null, $"Photos.sqlite could not be copied or read after {attempts} attempts: {last?.Message}");
     }
+
+    /// <summary>Connection drops, a database that changed while it was copied, and a copy SQLite cannot read.</summary>
+    private static bool IsRetryable(Exception ex) =>
+        ex is EndOfStreamException or DatabaseChangedException or SqliteException
+        || ex is IOException { InnerException: System.Net.Sockets.SocketException }
+        || ex is DeviceException { Code: DeviceErrorCodes.Disconnected };
 
     /// <summary>Every media file in /DCIM/*/, as "DCIM/&lt;folder&gt;/&lt;name&gt;".</summary>
     private static async Task<List<string>> ListDcimAsync(AfcClient afc, CancellationToken ct)
@@ -200,31 +226,62 @@ public sealed class IosPhotoLibrary(IosDevice device, string cacheDirectory) : I
     }
 
     /// <summary>
-    /// Copies Photos.sqlite and its -wal into the cache (only when they changed on the phone) and returns the
-    /// local path, or null when the phone has none. The -shm index is not copied; SQLite rebuilds it.
+    /// Brings the cached copy of Photos.sqlite and its -wal up to date and returns its path (null when the phone
+    /// has none) with a note of what was copied. The 150 MB main file is copied only when it changed on the phone;
+    /// usually only the few-MB WAL has. The -shm index is never copied; SQLite rebuilds it from the WAL.
     /// </summary>
-    private async Task<string?> CopyDatabaseAsync(AfcClient afc, CancellationToken ct)
+    private async Task<(string? Path, string Copied)> CopyDatabaseAsync(AfcClient afc, CancellationToken ct)
     {
         var main = await afc.GetFileInfoAsync(PhotosDb, ct).ConfigureAwait(false);
         if (main is null)
-            return null;
+            return (null, "");
         var wal = await afc.GetFileInfoAsync(PhotosDb + "-wal", ct).ConfigureAwait(false);
-        var stamp = $"{main.Size}:{main.Modified?.UtcTicks}:{wal?.Size}:{wal?.Modified?.UtcTicks}";
+        var mainStamp = Stamp(main);
+        var walStamp = wal is null ? "none" : Stamp(wal);
 
         Directory.CreateDirectory(CacheDirectory);
         var local = Path.Combine(CacheDirectory, "Photos.sqlite");
         var stampFile = Path.Combine(CacheDirectory, "Photos.stamp");
-        if (File.Exists(local) && File.Exists(stampFile) && await File.ReadAllTextAsync(stampFile, ct).ConfigureAwait(false) == stamp)
-            return local;
+        var stored = File.Exists(stampFile) ? await File.ReadAllLinesAsync(stampFile, ct).ConfigureAwait(false) : [];
+        var haveMain = File.Exists(local) && stored.Length == 2 && stored[0] == mainStamp;
+        var haveWal = haveMain && stored[1] == walStamp && (wal is null || File.Exists(local + "-wal"));
 
-        foreach (var stale in new[] { local, local + "-wal", local + "-shm", stampFile })
-            File.Delete(stale);
-        await CopyAsync(afc, PhotosDb, local, ct).ConfigureAwait(false);
+        // The wal-index is only a cache of the WAL; a stale one must not outlive the WAL it described.
+        File.Delete(local + "-shm");
+        if (haveMain && haveWal)
+            return (local, "reused the cached copy");
+
+        File.Delete(stampFile);
+        var copied = new List<string>();
+        var sw = System.Diagnostics.Stopwatch.StartNew();
+        if (!haveMain)
+        {
+            File.Delete(local);
+            await CopyAsync(afc, PhotosDb, local, ct).ConfigureAwait(false);
+            copied.Add(SizeText(main.Size));
+        }
+        File.Delete(local + "-wal");
         if (wal is not null)
+        {
             await CopyAsync(afc, PhotosDb + "-wal", local + "-wal", ct).ConfigureAwait(false);
-        await File.WriteAllTextAsync(stampFile, stamp, ct).ConfigureAwait(false);
-        return local;
+            copied.Add(SizeText(wal.Size) + " WAL");
+        }
+
+        // A checkpoint during the copy rewrites the main file and restarts the WAL: the two copies would not match.
+        var after = await afc.GetFileInfoAsync(PhotosDb, ct).ConfigureAwait(false);
+        if (after is null || Stamp(after) != mainStamp)
+            throw new DatabaseChangedException();
+
+        await File.WriteAllLinesAsync(stampFile, [mainStamp, walStamp], ct).ConfigureAwait(false);
+        var seconds = sw.Elapsed.TotalSeconds;
+        var bytes = (haveMain ? 0 : main.Size) + (wal?.Size ?? 0);
+        var rate = seconds > 0 ? bytes / seconds / 1e6 : 0;
+        return (local, $"copied {string.Join(" + ", copied)} in {seconds:0.0} s ({rate:0.0} MB/s)");
     }
+
+    private static string Stamp(AfcFileInfo info) => $"{info.Size}:{info.Modified?.UtcTicks}";
+
+    private static string SizeText(long bytes) => bytes >= 1_000_000 ? $"{bytes / 1e6:0.0} MB" : $"{bytes / 1e3:0.0} KB";
 
     private static async Task CopyAsync(AfcClient afc, string devicePath, string localPath, CancellationToken ct)
     {
@@ -233,6 +290,8 @@ public sealed class IosPhotoLibrary(IosDevice device, string cacheDirectory) : I
             await afc.ReadFileAsync(devicePath, file, null, ct).ConfigureAwait(false);
         File.Move(temp, localPath, overwrite: true);
     }
+
+    private sealed class DatabaseChangedException() : IOException("Photos.sqlite changed on the phone while it was being copied.");
 
     private static bool NeedsStat(PhotoAsset a) => !a.InCloudOnly && (a.Size == 0 || a.TakenAt is null);
 

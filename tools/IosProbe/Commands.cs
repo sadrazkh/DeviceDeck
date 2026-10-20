@@ -294,7 +294,7 @@ internal static class Commands
         var library = (IosPhotoLibrary)device.Photos;
         var index = await library.GetIndexAsync(refresh: true, ct);
         Console.WriteLine(index.Mode == PhotoIndexMode.Database
-            ? $"Index: Photos.sqlite ({index.SchemaVariant} schema), {index.Assets.Count} assets, built in {sw.Elapsed.TotalSeconds:0.0} s."
+            ? $"Index: Photos.sqlite ({index.SchemaVariant} schema; {index.Note}), {index.Assets.Count} assets, built in {sw.Elapsed.TotalSeconds:0.0} s."
             : $"Index: DCIM listing only ({index.FallbackReason}), {index.Assets.Count} assets, built in {sw.Elapsed.TotalSeconds:0.0} s.");
         Console.WriteLine();
         Out.Table(["Album id", "Name", "Kind", "Count"], index.Albums.Select(a => new[] { a.Id, a.Name, a.Kind.ToString(), a.Count.ToString() }));
