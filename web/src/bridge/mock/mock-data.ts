@@ -53,6 +53,7 @@ export const ANDROID_CAPABILITIES: DeviceCapability[] = [
   'photosDelete',
   'photosImport',
   'files',
+  'appDocuments',
   'appsList',
   'appsInstall',
   'appsUninstall',
