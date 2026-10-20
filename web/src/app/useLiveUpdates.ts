@@ -22,6 +22,13 @@ function invalidateAfter(queryClient: ReturnType<typeof useQueryClient>, job: Tr
     case 'photosImport':
       void queryClient.invalidateQueries({ queryKey: ['photos.list', id] });
       void queryClient.invalidateQueries({ queryKey: keys.albums(id) });
+      void queryClient.invalidateQueries({ queryKey: ['photos.backupStatus', id] });
+      break;
+    case 'photosBackup':
+      void queryClient.invalidateQueries({ queryKey: ['photos.backupStatus', id] });
+      break;
+    case 'photosToApp':
+      void queryClient.invalidateQueries({ queryKey: ['files.list', id] });
       break;
     case 'appInstall':
       void queryClient.invalidateQueries({ queryKey: ['apps.list', id] });

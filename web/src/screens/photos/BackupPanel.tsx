@@ -1,0 +1,275 @@
+import {
+  ArrowResetRegular,
+  CheckmarkCircleRegular,
+  CloudOffRegular,
+  FolderOpenRegular,
+  LockClosedRegular,
+  PauseRegular,
+  PlayRegular,
+} from '@fluentui/react-icons';
+import { useState } from 'react';
+import type { DeviceSummary, PhotoBackupRun, PhotoBackupStatus, TransferJob } from '../../bridge/types';
+import { useActions } from '../../app/actions';
+import { useTransfers } from '../../app/queries';
+import { Button } from '../../components/Button';
+import { ConfirmDialog, Dialog } from '../../components/Dialog';
+import { ErrorBanner } from '../../components/ErrorState';
+import { Banner, LinearProgress, Segmented, Skeleton, Switch } from '../../components/ui';
+import { useI18n, type I18n } from '../../i18n';
+import { jobFraction } from '../../state/transfers';
+import { useUi } from '../../state/ui';
+import { PATTERN_PRESETS, exampleFolder, useBackupActions, useBackupStatus, useConfigureBackup } from './backupQueries';
+import styles from './Backup.module.css';
+
+function runSummary(run: PhotoBackupRun, i18n: I18n): string {
+  const { t } = i18n;
+  const parts = [t('photos.backup.run.copied', { count: run.copied })];
+  if (run.duplicates > 0) parts.push(t('photos.backup.run.duplicates', { count: run.duplicates }));
+  if (run.failed > 0) parts.push(t('photos.backup.run.failed', { count: run.failed }));
+  if (run.keptHeic > 0) parts.push(t('photos.backup.run.keptHeic', { count: run.keptHeic }));
+  if (run.state === 'cancelled') parts.push(t('photos.backup.run.cancelled'));
+  return parts.join(' · ');
+}
+
+/** "N new since the last backup", where they go, the options, the last run and the button. */
+export function BackupPanel({ device, open, onOpenChange }: { device: DeviceSummary; open: boolean; onOpenChange(open: boolean): void }) {
+  const i18n = useI18n();
+  const { t, bytes, date } = i18n;
+  const status = useBackupStatus(device);
+  const configure = useConfigureBackup(device);
+  const backup = useBackupActions(device);
+  const actions = useActions();
+  const transfers = useTransfers();
+  const [busy, setBusy] = useState(false);
+  const [confirmForget, setConfirmForget] = useState(false);
+
+  const data = status.data;
+  const activeJob: TransferJob | undefined = data?.activeJobId ? transfers.data?.find((j) => j.id === data.activeJobId) : undefined;
+  const running = activeJob && !['done', 'failed', 'cancelled'].includes(activeJob.state) ? activeJob : undefined;
+  const count = data?.count;
+
+  const start = async () => {
+    if (!data) return;
+    setBusy(true);
+    const jobId = await backup.start(data.options.destination);
+    setBusy(false);
+    if (jobId) useUi.getState().setDrawerOpen(true);
+  };
+
+  const pickDestination = async () => {
+    const picked = await actions.pickFolder(t('photos.backup.destination'));
+    if (picked) configure.mutate({ destination: picked });
+  };
+
+  return (
+    <>
+      <Dialog
+        open={open}
+        onOpenChange={onOpenChange}
+        wide
+        title={t('photos.backup.title')}
+        description={t('photos.backup.lead', { device: device.name })}
+        footerStart={
+          data && data.backedUp > 0 ? (
+            <Button variant="subtle" icon={<ArrowResetRegular />} onClick={() => setConfirmForget(true)} data-testid="backup-forget">
+              {t('photos.backup.forget')}
+            </Button>
+          ) : undefined
+        }
+        footer={
+          <>
+            <Button onClick={() => onOpenChange(false)}>{t('common.close')}</Button>
+            {running ? (
+              running.state === 'paused' ? (
+                <Button variant="accent" icon={<PlayRegular />} onClick={() => void actions.transfer('resume', running.id)} data-testid="backup-resume">
+                  {t('transfers.resume')}
+                </Button>
+              ) : (
+                <Button icon={<PauseRegular />} onClick={() => void actions.transfer('pause', running.id)} data-testid="backup-pause">
+                  {t('transfers.pause')}
+                </Button>
+              )
+            ) : (
+              <Button
+                variant="accent"
+                onClick={() => void start()}
+                loading={busy}
+                disabled={!count || count.newCount === 0}
+                data-testid="backup-start"
+              >
+                {count && count.newCount > 0 ? t('photos.backup.start', { count: count.newCount }) : t('photos.backup.upToDate')}
+              </Button>
+            )}
+          </>
+        }
+      >
+        {status.error ? <ErrorBanner error={status.error} onRetry={() => void status.refetch()} /> : null}
+        {!data ? (
+          status.error ? null : (
+            <div className={styles.loading} aria-busy>
+              <Skeleton height={44} width="60%" />
+              <Skeleton height={16} width="40%" />
+              <Skeleton height={36} />
+            </div>
+          )
+        ) : (
+          <Body data={data} device={device} running={running} onPick={() => void pickDestination()} configure={configure.mutate} i18n={i18n} />
+        )}
+        {data?.lastRun && data.lastRun.state !== 'running' ? (
+          <div className={styles.lastRun} data-testid="backup-last-run">
+            <span className={styles.label}>{t('photos.backup.lastRun')}</span>
+            <span>
+              {date(data.lastRun.finishedAt ?? data.lastRun.startedAt)} — {runSummary(data.lastRun, i18n)}
+            </span>
+            {data.lastRun.copied > 0 ? <span className="t-caption t-secondary num">{bytes(data.lastRun.bytes)}</span> : null}
+          </div>
+        ) : null}
+        {data && data.backedUp > 0 ? (
+          <p className={styles.fine}>{t('photos.backup.remembered', { count: data.backedUp, device: device.name })}</p>
+        ) : null}
+      </Dialog>
+      <ConfirmDialog
+        open={confirmForget}
+        onOpenChange={setConfirmForget}
+        title={t('photos.backup.forget.title', { device: device.name })}
+        body={t('photos.backup.forget.body')}
+        confirmLabel={t('photos.backup.forget.confirm')}
+        onConfirm={async () => {
+          setConfirmForget(false);
+          await backup.forget();
+        }}
+      />
+    </>
+  );
+}
+
+function Body({
+  data,
+  device,
+  running,
+  onPick,
+  configure,
+  i18n,
+}: {
+  data: PhotoBackupStatus;
+  device: DeviceSummary;
+  running: TransferJob | undefined;
+  onPick(): void;
+  configure(patch: { folderPattern?: string; convertHeic?: boolean; includeHidden?: boolean; useDefaults?: boolean }): void;
+  i18n: I18n;
+}) {
+  const { t, n, bytes, percent } = i18n;
+  const actions = useActions();
+  // The Hidden album's size stays private until it is revealed on the Photos screen.
+  const hiddenRevealed = useUi((s) => s.hiddenRevealed[device.id] ?? false);
+  const { count, options } = data;
+  const today = new Date();
+  const presets: string[] = PATTERN_PRESETS.includes(options.folderPattern as (typeof PATTERN_PRESETS)[number])
+    ? [...PATTERN_PRESETS]
+    : [...PATTERN_PRESETS, options.folderPattern];
+
+  return (
+    <div className={styles.body}>
+      <div className={styles.hero} data-testid="backup-count">
+        {count.newCount > 0 ? (
+          <>
+            <span className={styles.big}>{n(count.newCount)}</span>
+            <span className={styles.heroText}>
+              <span className={styles.heroTitle}>{t('photos.backup.new')}</span>
+              <span className="t-caption t-secondary num">
+                {t('photos.backup.newDetail', { photos: count.newPhotos, videos: count.newVideos })}
+                {count.newBytes > 0 ? ` · ${t('photos.backup.about', { size: bytes(count.newBytes) })}` : ''}
+              </span>
+            </span>
+          </>
+        ) : (
+          <>
+            <span className={styles.doneIcon} aria-hidden>
+              <CheckmarkCircleRegular />
+            </span>
+            <span className={styles.heroText}>
+              <span className={styles.heroTitle}>{t('photos.backup.allDone')}</span>
+              <span className="t-caption t-secondary">{t('photos.backup.allDoneDetail', { device: device.name })}</span>
+            </span>
+          </>
+        )}
+      </div>
+
+      {running ? (
+        <div className={styles.progress} data-testid="backup-progress">
+          <LinearProgress value={jobFraction(running)} label={running.title} />
+          <span className="t-caption t-secondary num">
+            {percent(jobFraction(running))} · {t('transfers.items', { done: n(running.doneItems), total: n(running.totalItems) })}
+            {running.state === 'paused' ? ` · ${t('transfers.state.paused')}` : ''}
+            {running.state === 'waitingForDevice' ? ` · ${t('transfers.state.waitingForDevice', { device: device.name })}` : ''}
+          </span>
+        </div>
+      ) : null}
+
+      {count.cloudOnly > 0 ? (
+        <Banner icon={<CloudOffRegular />}>{t('photos.backup.cloudOnly', { count: count.cloudOnly })}</Banner>
+      ) : null}
+      {count.hiddenLeftOut > 0 ? (
+        <Banner icon={<LockClosedRegular />}>
+          {hiddenRevealed ? t('photos.backup.hiddenLeftOut', { count: count.hiddenLeftOut }) : t('photos.backup.hiddenLeftOutLocked')}
+        </Banner>
+      ) : null}
+
+      <div className={styles.section}>
+        <span className={styles.label}>{t('photos.backup.destination')}</span>
+        <div className={styles.destination}>
+          <span className={styles.path} title={options.destination} data-testid="backup-destination">
+            {options.destination}
+          </span>
+          <Button icon={<FolderOpenRegular />} onClick={onPick} disabled={!!running} data-testid="backup-change-destination">
+            {t('common.change')}
+          </Button>
+          <Button variant="subtle" onClick={() => void actions.revealInExplorer(options.destination)}>
+            {t('common.showInExplorer')}
+          </Button>
+        </div>
+      </div>
+
+      <div className={styles.section}>
+        <span className={styles.label}>{t('photos.backup.folders')}</span>
+        <Segmented
+          label={t('photos.backup.folders')}
+          value={options.folderPattern === '' ? 'none' : options.folderPattern}
+          onChange={(v) => configure({ folderPattern: v === 'none' ? '' : v })}
+          options={presets.map((p) => ({
+            value: p === '' ? 'none' : p,
+            label: p === '' ? t('photos.backup.oneFolder') : <span className="num">{`⁦${exampleFolder(p, today)}⁩`}</span>,
+          }))}
+        />
+      </div>
+
+      <div className={styles.section}>
+        <Switch checked={options.convertHeic} onChange={(convertHeic) => configure({ convertHeic })} label={t('photos.backup.convertHeic')} />
+        <span className={styles.hint}>{t('photos.backup.convertHeicHint')}</span>
+        {options.convertHeic && data.heicConversion === 'missingCodec' ? (
+          <Banner tone="warning" title={t('photos.backup.codecMissing.title')}>
+            {t('photos.backup.codecMissing.body')}
+          </Banner>
+        ) : null}
+      </div>
+
+      {device.platform === 'ios' ? (
+        <div className={styles.section}>
+          <Switch checked={options.includeHidden} onChange={(includeHidden) => configure({ includeHidden })} label={t('photos.backup.includeHidden')} />
+          <span className={styles.hint}>{t('photos.backup.includeHiddenHint')}</span>
+        </div>
+      ) : null}
+
+      <p className={styles.fine}>
+        {t('photos.backup.how')}{' '}
+        {data.customized ? (
+          <Button variant="link" onClick={() => configure({ useDefaults: true })} data-testid="backup-use-defaults">
+            {t('photos.backup.useDefaults')}
+          </Button>
+        ) : (
+          t('photos.backup.fromSettings')
+        )}
+      </p>
+    </div>
+  );
+}

@@ -57,6 +57,15 @@ public sealed class PhotoIndex
     /// <summary>Assets the user hid in Photos: listed only in the "hidden" album.</summary>
     public int HiddenCount { get; private init; }
 
+    private IReadOnlyDictionary<string, string> Uuids { get; init; } = new Dictionary<string, string>();
+
+    private IReadOnlySet<string> HiddenIds { get; init; } = new HashSet<string>();
+
+    /// <summary>The asset's ZUUID in Photos.sqlite (stable for the life of the photo), or null without the database.</summary>
+    public string? UuidOf(string assetId) => Uuids.GetValueOrDefault(assetId);
+
+    public bool IsHidden(string assetId) => HiddenIds.Contains(assetId);
+
     /// <summary>True for any media file in DCIM, including the video halves of Live Photos.</summary>
     public bool IsKnownFile(string assetId) => _dcimFiles.Contains(assetId);
 
@@ -100,6 +109,7 @@ public sealed class PhotoIndex
         var covered = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var idByPk = new Dictionary<long, string>();
         var hidden = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var uuids = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         if (rows is not null)
         {
@@ -119,6 +129,8 @@ public sealed class PhotoIndex
                 // Hidden photos stay out of the library and albums, as in the Photos app; they get their own album.
                 if (row.Hidden)
                     hidden.Add(id);
+                if (row.Uuid is { Length: > 0 } uuid)
+                    uuids[id] = uuid;
                 var kind = row.Kind == 1 ? PhotoKind.Video
                     : row.KindSubtype == 2 ? PhotoKind.LivePhoto
                     : row.KindSubtype == 10 || row.DetectedScreenshot ? PhotoKind.Screenshot
@@ -215,6 +227,8 @@ public sealed class PhotoIndex
             rows is null ? PhotoIndexMode.DcimOnly : PhotoIndexMode.Database, schemaVariant, fallbackReason, note)
         {
             HiddenCount = hidden.Count,
+            Uuids = uuids,
+            HiddenIds = hidden,
         };
     }
 

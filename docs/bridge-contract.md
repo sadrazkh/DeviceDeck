@@ -160,3 +160,105 @@ type FolderUsage = {
   files: number; folders: number; bytes: number;                             // totals
 };
 ```
+## Photos backup and adding photos (round 2)
+
+Incremental backup of a phone's photos and videos to a PC folder, the count of new photos for the
+"phone connected" notification, and adding photos to an iPhone app that shares files.
+
+### Methods
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `photos.newCount` | `{ deviceId }` | `PhotoBackupCount` |
+| `photos.backupStatus` | `{ deviceId }` | `PhotoBackupStatus` |
+| `photos.backupConfigure` | `{ deviceId, destination?, folderPattern?, convertHeic?, includeHidden?, useDefaults? }` | `PhotoBackupStatus` |
+| `photos.backup` | `{ deviceId }` | `{ jobId }` (the job already queued or running for that phone, if any) |
+| `photos.backupForget` | `{ deviceId }` | `{ forgotten: number }` |
+| `photos.importToApp` | `{ deviceId, appId, files: string[] }` | `{ jobId }` |
+
+- **What counts as new.** Each phone has its own record (`photo-backup.db` in the app's data folder) of the
+  photos copied from it, by a stable identity: the iPhone's Photos.sqlite `ZUUID` (the DCIM path when the
+  database can't be read), on Android the file's path plus its size (an edited photo is a new version).
+  A photo whose identity changed is still recognised by its phone path, or by name + size + date taken.
+  A Live Photo counts once. Photos only in iCloud are counted apart (`cloudOnly`) and never copied; the
+  iPhone's Hidden album is left out (`hiddenLeftOut`) unless `includeHidden` is on.
+- **Backup job** (`kind: "photosBackup"`, through the transfer queue: pause, resume, cancel, waits for an
+  unplugged phone, carries on after a restart). One item per photo; a Live Photo's still and video are one
+  item and are written under one name (`IMG_0001.HEIC` + `IMG_0001.MOV`). Files go into date folders under
+  the destination by `folderPattern` (taken date in the PC's time zone; no date → `Undated`).
+  Never asks about conflicts:
+  - bytes already anywhere in the destination (same size, then same SHA-256) are not written again, only
+    remembered (`duplicates` in the run);
+  - a different file under the same name makes `IMG_0001 (1).HEIC` (both halves of a Live Photo move together);
+  - files are written as `<name>.ddpart` and renamed, then get the photo's date as created/modified time.
+- **HEIC → JPG** (`convertHeic`): Windows Imaging Component decodes HEIC only with the Microsoft Store's
+  *HEIF Image Extensions* (and *HEVC Video Extensions*). The JPEG (quality 0.92, sRGB, pixels upright) gets
+  the photo's EXIF from the HEIC — date, camera, GPS, Apple's maker note — with Orientation 1 and the JPEG's
+  pixel size. **Fallback:** without the codec the file is kept as HEIC, the run counts it in `keptHeic`, and
+  `heicConversion` turns `missingCodec`; the UI says how to get the extensions. Videos and JPEGs are copied as they are.
+- **Options per phone.** `photos.backupConfigure` saves a phone's own options; a field left out keeps its
+  value, `useDefaults: true` clears them all first. A phone without its own options uses Settings:
+  destination = `photoBackupFolder` + `\<phone name>`, `photoBackupPattern`, `photoBackupConvertHeic`,
+  `includeHidden` false. The destination is pinned to the phone on its first backup.
+- `photos.backupForget` forgets the record only; files on the PC are never touched. The next backup reads
+  every photo again and remembers the ones already in the folder without writing them.
+- **`photos.importToApp`** (`kind: "photosToApp"`): there is no supported way to write into an iPhone's
+  Photos library over USB. This copies PC pictures and videos (a folder brings its pictures and videos,
+  flattened) into the Documents of an app that shares files (`AppInfo.fileSharing`, file root `app:<appId>`),
+  e.g. Documents by Readdle or LocalSend. A taken name gets `(1)`; nothing in the app is replaced. The user
+  opens that app on the iPhone (or Files › On My iPhone › the app) and saves them to Photos from there.
+  Android keeps `photos.import` (into `DCIM/DeviceDeck`, scanned into the gallery).
+
+### Host-side call for the notification
+
+`HostServices.PhotoBackup` is a `DeviceDeck.Core.Photos.PhotoBackupService`:
+`CountNewAsync(deviceId, ct)` returns the same `PhotoBackupCount` as `photos.newCount` without a bridge round
+trip. Call it once the device is `ready`; it throws `DeviceException` like any provider call (`device_locked`
+for a locked iPhone). On an iPhone the first call after plugging in reads the photo index (seconds; the
+Photos screen and the backup reuse it for a minute). `StartAsync(deviceId, ct)` starts (or returns) the
+backup job, and the `RunFinished` event fires once per finished run.
+
+### Shapes
+
+```ts
+type PhotoBackupCount = {
+  deviceId: string;
+  newCount: number; newPhotos: number; newVideos: number;   // newCount = newPhotos + newVideos
+  newBytes: number;          // sizes the phone already reported (an iPhone's newest few may show 0)
+  cloudOnly: number;         // new, but only in iCloud: not copyable over USB, not in newCount
+  hiddenLeftOut: number;     // new, in the iPhone's Hidden album, left out by the options
+};
+
+type PhotoBackupOptions = {
+  destination: string;       // full PC folder
+  folderPattern: string;     // "" or yyyy, MM, dd joined by / - _ . or a space; "/" = sub-folder. Default "yyyy/MM"
+  convertHeic: boolean;
+  includeHidden: boolean;
+};
+
+type PhotoBackupRun = {
+  jobId: string; destination: string;
+  state: "running" | "done" | "failed" | "cancelled";
+  planned: number;           // photos the run set out to copy
+  copied: number;            // written to the PC
+  duplicates: number;        // already in the destination, now remembered
+  failed: number; bytes: number;
+  keptHeic: number;          // HEIC kept because this PC couldn't convert
+  startedAt: string; finishedAt: string | null;
+};
+
+type PhotoBackupStatus = {
+  deviceId: string;
+  count: PhotoBackupCount;
+  options: PhotoBackupOptions;
+  customized: boolean;       // the phone has options of its own (false = Settings)
+  backedUp: number;          // photos this PC remembers copying from the phone
+  lastRun: PhotoBackupRun | null;
+  activeJobId: string | null; // a backup queued, running, paused or waiting for the phone
+  heicConversion: "available" | "missingCodec" | "unknown";
+};
+```
+
+`TransferJob.kind` gains `"photosBackup"` and `"photosToApp"`. `Settings` gains
+`photoBackupFolder: string` (default `Pictures\DeviceDeck Backup`), `photoBackupPattern: string`
+(default `"yyyy/MM"`) and `photoBackupConvertHeic: boolean` (default `false`).
