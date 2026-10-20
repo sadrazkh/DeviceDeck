@@ -59,6 +59,9 @@ internal sealed class FakePhone
     /// <summary>Install: the progress statuses to send before Complete, or an Error to fail with.</summary>
     public string? InstallError { get; set; }
 
+    /// <summary>More services by name, served by the test (mobilebackup2 and notification_proxy in the backup tests).</summary>
+    public Dictionary<string, Func<Stream, CancellationToken, Task>> ExtraServices { get; } = new(StringComparer.Ordinal);
+
     public bool HasPort(int port) => port == LockdownPort || _servicePorts.ContainsKey(port);
 
     public Task ServePortAsync(int port, Stream s, CancellationToken ct) =>
@@ -206,6 +209,10 @@ internal sealed class FakePhone
                     };
                     await Wire.WritePlistAsync(s, reply, ct);
                 }
+                return;
+            default:
+                if (ExtraServices.TryGetValue(service, out var serve))
+                    await serve(s, ct);
                 return;
         }
     }
