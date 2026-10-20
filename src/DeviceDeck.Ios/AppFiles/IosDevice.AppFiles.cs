@@ -1,5 +1,10 @@
+using System.Collections.Concurrent;
 using DeviceDeck.Core.Abstractions;
 using DeviceDeck.Core.AppFiles;
+using DeviceDeck.Ios.AppFiles;
+using DeviceDeck.Ios.Protocol;
+using DeviceDeck.Ios.Protocol.Afc;
+using DeviceDeck.Ios.Protocol.Services;
 
 namespace DeviceDeck.Ios.Device;
 
@@ -9,6 +14,9 @@ namespace DeviceDeck.Ios.Device;
 /// </summary>
 public sealed partial class IosDevice : IAppFilesSource
 {
+    /// <summary>One house_arrest connection per app for listings and small changes; see <see cref="AppDocumentsFileSystem"/>.</summary>
+    private readonly ConcurrentDictionary<string, SharedConnection<AfcClient>> _appDocuments = new(StringComparer.Ordinal);
+
     public async Task<AppFilesOverview> GetAppFilesAsync(CancellationToken ct)
     {
         var roots = await GetFileRootsAsync(ct).ConfigureAwait(false);
@@ -24,5 +32,36 @@ public sealed partial class IosDevice : IAppFilesSource
     {
         await using var fs = await OpenFileSystemAsync(rootKey, ct).ConfigureAwait(false);
         return await AppFilesHelpers.MeasureAsync(fs, paths, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>An app's Documents. Opens the app's shared connection now, so a missing app fails here as it always did.</summary>
+    private async Task<IDeviceFileSystem> OpenAppDocumentsAsync(string bundleId, CancellationToken ct)
+    {
+        var shared = _appDocuments.GetOrAdd(bundleId, id =>
+            new SharedConnection<AfcClient>(t => UseAsync(c => VendDocumentsAsync(c, id, t)), afc => afc.IsBroken, serialize: false));
+        var fs = new AppDocumentsFileSystem(shared, t => UseAsync(c => VendDocumentsAsync(c, bundleId, t)));
+        await fs.WarmAsync(ct).ConfigureAwait(false);
+        return fs;
+    }
+
+    private static async Task<AfcClient> VendDocumentsAsync(DeviceConnector c, string bundleId, CancellationToken ct)
+    {
+        var connection = await c.StartServiceAsync(ServiceNames.HouseArrest, ct).ConfigureAwait(false);
+        try
+        {
+            return await HouseArrestClient.VendDocumentsAsync(connection, bundleId, ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            await connection.DisposeAsync().ConfigureAwait(false);
+            throw;
+        }
+    }
+
+    private async Task DisposeAppDocumentsAsync()
+    {
+        foreach (var shared in _appDocuments.Values)
+            await shared.DisposeAsync().ConfigureAwait(false);
+        _appDocuments.Clear();
     }
 }

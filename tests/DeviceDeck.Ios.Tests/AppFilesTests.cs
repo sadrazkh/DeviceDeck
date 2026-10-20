@@ -25,6 +25,7 @@ public sealed class AppFilesTests : IAsyncLifetime
     private DeviceHub? _hub;
     private SqliteTransferStore? _store;
     private TransferQueue? _queue;
+    private FakePhone? _phone;
 
     public AppFilesTests()
     {
@@ -63,7 +64,7 @@ public sealed class AppFilesTests : IAsyncLifetime
     private async Task<IosDevice> StartAsync()
     {
         _mux.PairRecords[Udid] = TestPairing.StoredRecordXml();
-        var phone = new FakePhone(Udid) { ExpectedHostId = TestPairing.HostId };
+        var phone = _phone = new FakePhone(Udid) { ExpectedHostId = TestPairing.HostId };
         phone.Apps.Add(App(Vlc, "VLC", fileSharing: true));
         phone.Apps.Add(App("com.example.docs", "Documents", fileSharing: true));
         phone.Apps.Add(App("com.example.game", "Game", fileSharing: false));
@@ -119,6 +120,37 @@ public sealed class AppFilesTests : IAsyncLifetime
             [new PathUsage("/", 2, 1, 302_000), new PathUsage("/Subtitles", 1, 0, 2_000), new PathUsage("/Persepolis.mkv", 1, 0, 300_000), new PathUsage("/gone", 0, 0, 0)],
             usage.Items);
         Assert.Equal((2, 1, 302_000L), (usage.Files, usage.Folders, usage.Bytes)); // nested paths count once
+    }
+
+    [Fact]
+    public async Task Listings_share_one_house_arrest_connection_per_app_and_contents_use_their_own()
+    {
+        var device = await StartAsync();
+        var phone = _phone!;
+        int HouseArrests() => phone.Log.Count(l => l == "service:com.apple.mobile.house_arrest");
+
+        for (var i = 0; i < 3; i++)
+        {
+            await using var fs = await device.OpenFileSystemAsync("app:" + Vlc, Ct);
+            await foreach (var _ in fs.ListAsync("/", Ct))
+            {
+            }
+            Assert.NotNull(await fs.StatAsync("/Subtitles", Ct));
+        }
+        Assert.Equal(1, HouseArrests());
+
+        await using (var fs = await device.OpenFileSystemAsync("app:" + Vlc, Ct))
+        {
+            using var film = new MemoryStream();
+            await fs.ReadAsync("/Persepolis.mkv", film, null, Ct);
+            Assert.Equal(300_000, film.Length);
+            await fs.WriteAsync("/new.bin", new MemoryStream(new byte[5_000]), 5_000, null, Ct);
+            await fs.DeleteAsync("/new.bin", recursive: false, Ct);
+        }
+        Assert.Equal(2, HouseArrests()); // one more for the contents, closed with that file system
+
+        Assert.Equal(DeviceErrorCodes.NotFound,
+            (await Assert.ThrowsAsync<DeviceException>(() => device.OpenFileSystemAsync("app:com.example.game", Ct))).Code);
     }
 
     [Fact]
