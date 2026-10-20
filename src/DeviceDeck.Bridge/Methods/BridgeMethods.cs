@@ -3,6 +3,8 @@ using System.Text.Json.Nodes;
 using DeviceDeck.Bridge.Images;
 using DeviceDeck.Bridge.JsonRpc;
 using DeviceDeck.Core.Abstractions;
+using DeviceDeck.Core.Battery;
+using DeviceDeck.Core.Cleanup;
 using DeviceDeck.Core.Fake;
 using DeviceDeck.Core.Hub;
 using DeviceDeck.Core.Settings;
@@ -22,6 +24,10 @@ public sealed class BridgeServices
 
     /// <summary>When set, dev.* methods simulate a pulled cable on the fake phones.</summary>
     public FakeDeviceProvider? DevFake { get; init; }
+
+    // Clean-up and battery history (round 2): cleanup.* and battery.* are registered only when set.
+    public CleanupService? Cleanup { get; init; }
+    public BatteryRecorder? Battery { get; init; }
 }
 
 /// <summary>Registers every method of docs/bridge-contract.md on a dispatcher.</summary>
@@ -205,6 +211,10 @@ public static class BridgeMethods
                 ?? throw new ArgumentException("params must be an object of settings.");
             return Task.FromResult(s.Settings.Update(patch));
         });
+
+        // Clean-up and battery history (round 2).
+        CleanupMethods.Register(rpc, s);
+        BatteryMethods.Register(rpc, s);
 
         if (s.DevFake is { } fake)
         {
