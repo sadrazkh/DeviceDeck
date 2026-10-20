@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
 import { Direction, Tooltip as RadixTooltip } from 'radix-ui';
 import type { CSSProperties } from 'react';
 import { useSelectedDevice } from '../app/queries';
@@ -82,18 +82,20 @@ export function AppShell() {
             {nav === 'rail' ? <NavRail /> : null}
             <main className={styles.content} id="content" data-testid="content">
               <div className={styles.layer}>
-                <AnimatePresence mode="wait" initial={false}>
-                  <motion.div
-                    key={screenKey}
-                    className={styles.screen}
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    exit={{ opacity: 0 }}
-                    transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
-                  >
-                    <Screen />
-                  </motion.div>
-                </AnimatePresence>
+                {/*
+                  A screen fades in when it opens; the one it replaces goes at once. (AnimatePresence's "wait" mounted the
+                  new screen right away and again once the old one had faded out, which dropped whatever the user had
+                  started in between: an open rename, a typed search.)
+                */}
+                <motion.div
+                  key={screenKey}
+                  className={styles.screen}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ duration: 0.2, ease: [0.2, 0, 0, 1] }}
+                >
+                  <Screen />
+                </motion.div>
               </div>
             </main>
           </div>
