@@ -15,6 +15,7 @@ public sealed class PlistConnection : IAsyncDisposable
 
     private Stream _stream;
     private bool _detached;
+    private bool _broken;
 
     public PlistConnection(Stream stream) => _stream = stream;
 
@@ -22,25 +23,45 @@ public sealed class PlistConnection : IAsyncDisposable
 
     public bool IsTls { get; private set; }
 
+    /// <summary>True once a send or receive failed part-way; a later reply could belong to an earlier request.</summary>
+    public bool IsBroken => _broken;
+
     public async Task SendAsync(PlistDict message, CancellationToken ct)
     {
         var body = PlistSerializer.ToXml(message);
         var frame = new byte[4 + body.Length];
         BinaryPrimitives.WriteUInt32BigEndian(frame, (uint)body.Length);
         body.CopyTo(frame, 4);
-        await _stream.WriteAsync(frame, ct).ConfigureAwait(false);
-        await _stream.FlushAsync(ct).ConfigureAwait(false);
+        try
+        {
+            await _stream.WriteAsync(frame, ct).ConfigureAwait(false);
+            await _stream.FlushAsync(ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            _broken = true;
+            throw;
+        }
     }
 
     public async Task<PlistDict> ReceiveAsync(CancellationToken ct)
     {
-        var header = new byte[4];
-        await _stream.ReadExactlyAsync(header, ct).ConfigureAwait(false);
-        var length = BinaryPrimitives.ReadUInt32BigEndian(header);
-        if (length == 0 || length > MaxMessageBytes)
-            throw new FormatException($"Plist message length {length} is out of range.");
-        var body = new byte[length];
-        await _stream.ReadExactlyAsync(body, ct).ConfigureAwait(false);
+        byte[] body;
+        try
+        {
+            var header = new byte[4];
+            await _stream.ReadExactlyAsync(header, ct).ConfigureAwait(false);
+            var length = BinaryPrimitives.ReadUInt32BigEndian(header);
+            if (length == 0 || length > MaxMessageBytes)
+                throw new FormatException($"Plist message length {length} is out of range.");
+            body = new byte[length];
+            await _stream.ReadExactlyAsync(body, ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            _broken = true;
+            throw;
+        }
         return PlistSerializer.ParseDict(body);
     }
 

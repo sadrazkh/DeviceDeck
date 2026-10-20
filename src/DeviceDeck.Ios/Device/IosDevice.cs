@@ -2,6 +2,7 @@ using DeviceDeck.Core.Abstractions;
 using DeviceDeck.Ios.Device.Photos;
 using DeviceDeck.Ios.Plist;
 using DeviceDeck.Ios.Protocol;
+using DeviceDeck.Ios.Protocol.Afc;
 using DeviceDeck.Ios.Protocol.Lockdown;
 using DeviceDeck.Ios.Protocol.Services;
 using DeviceDeck.Ios.Protocol.Usbmux;
@@ -31,6 +32,7 @@ public sealed class IosDevice : IDevice, IAsyncDisposable
     private PlistDict _values = new();
     private IosPairing.Attempt? _pendingPairing;
     private bool _pairingDenied;
+    private readonly SharedConnection<AfcClient> _mediaAfc;
     private Task _loop = Task.CompletedTask;
     private bool _gone;
 
@@ -42,6 +44,7 @@ public sealed class IosDevice : IDevice, IAsyncDisposable
         _options = options;
         _onChanged = onChanged;
         Summary = LockdownMapping.Summary(udid, _values, ConnectionKind.Usb, DeviceState.Connecting);
+        _mediaAfc = new SharedConnection<AfcClient>(ct => Connector().StartAfcAsync(ct), afc => afc.IsBroken, serialize: false);
         Photos = new IosPhotoLibrary(this, Path.Combine(options.CacheDirectory, SafeFolderName(udid)));
         Apps = new IosAppManager(this);
         Actions = new IosDeviceActions(this);
@@ -123,6 +126,9 @@ public sealed class IosDevice : IDevice, IAsyncDisposable
         catch (OperationCanceledException)
         {
         }
+        await _mediaAfc.DisposeAsync().ConfigureAwait(false);
+        if (Apps is IosAppManager apps)
+            await apps.DisposeAsync().ConfigureAwait(false);
         _pairRecord?.Dispose();
         _pairRecord = null;
         if (Photos is IosPhotoLibrary photos)
@@ -315,6 +321,10 @@ public sealed class IosDevice : IDevice, IAsyncDisposable
             throw;
         }
     }
+
+    /// <summary>Runs <paramref name="operation"/> on the device's shared Media AFC connection (photos, thumbnails).</summary>
+    internal Task<T> UseMediaAfcAsync<T>(Func<AfcClient, Task<T>> operation, CancellationToken ct) =>
+        UseAsync(_ => _mediaAfc.UseAsync(operation, ct));
 
     internal Task UseAsync(Func<DeviceConnector, Task> operation) =>
         UseAsync<bool>(async c =>

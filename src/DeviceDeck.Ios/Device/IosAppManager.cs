@@ -7,9 +7,13 @@ using DeviceDeck.Ios.Protocol.Services;
 namespace DeviceDeck.Ios.Device;
 
 /// <summary>Apps through installation_proxy; icons through springboardservices; .ipa upload through AFC PublicStaging.</summary>
-internal sealed class IosAppManager(IosDevice device) : IAppManager
+internal sealed class IosAppManager(IosDevice device) : IAppManager, IAsyncDisposable
 {
     private const string StagingFolder = "/PublicStaging";
+
+    // One springboardservices connection for all icons; requests on it are strictly one at a time.
+    private readonly SharedConnection<PlistConnection> _springboard = new(
+        ct => device.Connector().StartServiceAsync(ServiceNames.SpringBoard, ct), c => c.IsBroken, serialize: true);
 
     public Task<IReadOnlyList<AppInfo>> ListAsync(bool includeSystem, CancellationToken ct) => device.UseAsync<IReadOnlyList<AppInfo>>(async c =>
     {
@@ -24,11 +28,10 @@ internal sealed class IosAppManager(IosDevice device) : IAppManager
             .ToList();
     });
 
-    public Task<byte[]?> GetIconAsync(string appId, CancellationToken ct) => device.UseAsync(async c =>
-    {
-        await using var springboard = await c.StartServiceAsync(ServiceNames.SpringBoard, ct).ConfigureAwait(false);
-        return await SpringBoardClient.GetIconPngDataAsync(springboard, appId, ct).ConfigureAwait(false);
-    });
+    public Task<byte[]?> GetIconAsync(string appId, CancellationToken ct) =>
+        device.UseAsync(_ => _springboard.UseAsync(sb => SpringBoardClient.GetIconPngDataAsync(sb, appId, ct), ct));
+
+    public ValueTask DisposeAsync() => _springboard.DisposeAsync();
 
     public Task InstallAsync(IReadOnlyList<string> localPaths, IProgress<InstallProgress>? progress, CancellationToken ct)
     {

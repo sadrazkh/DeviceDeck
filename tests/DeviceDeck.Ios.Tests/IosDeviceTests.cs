@@ -340,6 +340,30 @@ public sealed class IosDeviceTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task Thumbnails_and_icons_share_one_connection_and_survive_a_dropped_one()
+    {
+        var phone = PairedPhone();
+        phone.Media.AddFile("/DCIM/100APPLE/IMG_0001.JPG", [1]);
+        phone.Media.AddFile("/PhotoData/Thumbnails/V2/DCIM/100APPLE/IMG_0001.JPG/5005.JPG", PhotosTests.TinyJpeg(480, 360));
+        phone.Icons["com.example.docs"] = [0x89, 0x50, 0x4E, 0x47];
+        var device = await AttachAsync(phone);
+        int Connections(string service) => phone.Log.Count(l => l == "service:" + service);
+
+        var thumbs = await Task.WhenAll(Enumerable.Range(0, 20).Select(_ => device.Photos.GetThumbnailAsync("DCIM/100APPLE/IMG_0001.JPG", 256, Ct)));
+        Assert.All(thumbs, t => Assert.NotNull(t));
+        Assert.Equal(1, Connections("com.apple.afc"));
+
+        var icons = await Task.WhenAll(Enumerable.Range(0, 10).Select(_ => device.Apps.GetIconAsync("com.example.docs", Ct)));
+        Assert.All(icons, i => Assert.Equal(4, i!.Length));
+        Assert.Equal(1, Connections("com.apple.springboardservices"));
+
+        // afcd hangs up mid-way: the next call reconnects once and still succeeds.
+        phone.Media.HangUpAfterOperations = phone.Media.Operations.Count + 1;
+        Assert.NotNull(await device.Photos.GetThumbnailAsync("DCIM/100APPLE/IMG_0001.JPG", 256, Ct));
+        Assert.Equal(2, Connections("com.apple.afc"));
+    }
+
+    [Fact]
     public async Task Photos_fall_back_to_dcim_when_the_database_is_unreadable()
     {
         var phone = PairedPhone();

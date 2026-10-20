@@ -19,6 +19,9 @@ internal sealed class FakeAfcServer
 
     public int MaxReadSeen { get; private set; }
 
+    /// <summary>Hang up (once) as soon as this many operations have been served in total, like a dying afcd.</summary>
+    public int? HangUpAfterOperations { get; set; }
+
     public FakeAfcServer AddFile(string path, byte[] content, DateTimeOffset? modified = null)
     {
         lock (_gate)
@@ -74,6 +77,11 @@ internal sealed class FakeAfcServer
             AfcPacket reply;
             lock (_gate)
             {
+                if (HangUpAfterOperations is { } limit && Operations.Count >= limit)
+                {
+                    HangUpAfterOperations = null;
+                    return;
+                }
                 Operations.Add(op);
                 reply = Handle(op, number, headerData, payload);
             }

@@ -22,6 +22,9 @@ public sealed class AfcClient(Stream stream) : IAsyncDisposable
     private ulong _packetNumber;
     private bool _broken;
 
+    /// <summary>True once a request was cut off half-way; the connection must be replaced.</summary>
+    public bool IsBroken => _broken;
+
     public async Task<IReadOnlyList<string>> ReadDirectoryAsync(string path, CancellationToken ct)
     {
         var reply = await RequestAsync(AfcOperation.ReadDir, AfcPacket.Path(path), default, path, ct).ConfigureAwait(false);

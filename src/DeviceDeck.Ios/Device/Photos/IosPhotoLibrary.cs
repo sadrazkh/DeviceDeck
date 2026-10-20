@@ -39,9 +39,8 @@ public sealed class IosPhotoLibrary(IosDevice device, string cacheDirectory) : I
             return page;
 
         // Size and date for files Photos.sqlite did not describe: one stat each, only for this page.
-        return await device.UseAsync(async c =>
+        return await device.UseMediaAfcAsync(async afc =>
         {
-            await using var afc = await c.StartAfcAsync(ct).ConfigureAwait(false);
             var items = new List<PhotoAsset>(page.Items.Count);
             foreach (var asset in page.Items)
             {
@@ -54,16 +53,15 @@ public sealed class IosPhotoLibrary(IosDevice device, string cacheDirectory) : I
                 items.Add(filled);
             }
             return new Page<PhotoAsset>(items, page.Total);
-        }).ConfigureAwait(false);
+        }, ct).ConfigureAwait(false);
     }
 
     public Task<byte[]?> GetThumbnailAsync(string assetId, int size, CancellationToken ct)
     {
         if (TryValidateId(assetId, out var id) is { } invalid)
             return Task.FromException<byte[]?>(invalid);
-        return device.UseAsync<byte[]?>(async c =>
+        return device.UseMediaAfcAsync<byte[]?>(async afc =>
         {
-            await using var afc = await c.StartAfcAsync(ct).ConfigureAwait(false);
             IReadOnlyList<string> names;
             try
             {
@@ -97,13 +95,14 @@ public sealed class IosPhotoLibrary(IosDevice device, string cacheDirectory) : I
                 }
             }
             return best;
-        });
+        }, ct);
     }
 
     public Task ReadOriginalAsync(string assetId, Stream destination, IProgress<long>? progress, CancellationToken ct)
     {
         if (TryValidateId(assetId, out var id) is { } invalid)
             return Task.FromException(invalid);
+        // Not retried on a dead connection: part of the file may already be in destination.
         return device.UseAsync(async c =>
         {
             await using var afc = await c.StartAfcAsync(ct).ConfigureAwait(false);
@@ -125,7 +124,7 @@ public sealed class IosPhotoLibrary(IosDevice device, string cacheDirectory) : I
         {
             if (!refresh && _index is not null && DateTime.UtcNow - _indexBuiltUtc < IndexLifetime)
                 return _index;
-            _index = await device.UseAsync(c => BuildIndexAsync(c, ct)).ConfigureAwait(false);
+            _index = await device.UseMediaAfcAsync(afc => BuildIndexAsync(afc, ct), ct).ConfigureAwait(false);
             _indexBuiltUtc = DateTime.UtcNow;
             return _index;
         }
@@ -147,9 +146,8 @@ public sealed class IosPhotoLibrary(IosDevice device, string cacheDirectory) : I
         }
     }
 
-    private async Task<PhotoIndex> BuildIndexAsync(DeviceConnector c, CancellationToken ct)
+    private async Task<PhotoIndex> BuildIndexAsync(AfcClient afc, CancellationToken ct)
     {
-        await using var afc = await c.StartAfcAsync(ct).ConfigureAwait(false);
         var files = await ListDcimAsync(afc, ct).ConfigureAwait(false);
 
         string? reason;
