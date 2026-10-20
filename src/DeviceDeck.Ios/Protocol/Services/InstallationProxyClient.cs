@@ -26,8 +26,20 @@ public static class InstallationProxyClient
         "ProfileValidated",
     ];
 
+    /// <summary>Enough to name apps and find the file-sharing ones, without the slow size calculation.</summary>
+    public static readonly string[] LightAttributes =
+    [
+        "CFBundleIdentifier",
+        "CFBundleDisplayName",
+        "CFBundleName",
+        "ApplicationType",
+        "UIFileSharingEnabled",
+    ];
+
     /// <param name="applicationType">"User", "System" or "Any".</param>
-    public static async Task<IReadOnlyList<PlistDict>> BrowseAsync(PlistConnection connection, string applicationType, CancellationToken ct)
+    /// <param name="attributes">Defaults to <see cref="BrowseAttributes"/>.</param>
+    public static async Task<IReadOnlyList<PlistDict>> BrowseAsync(PlistConnection connection, string applicationType, CancellationToken ct,
+        IReadOnlyList<string>? attributes = null)
     {
         await connection.SendAsync(new PlistDict
         {
@@ -35,7 +47,7 @@ public static class InstallationProxyClient
             ["ClientOptions"] = new PlistDict
             {
                 ["ApplicationType"] = applicationType,
-                ["ReturnAttributes"] = BrowseAttributes.Cast<object>().ToList(),
+                ["ReturnAttributes"] = (attributes ?? BrowseAttributes).Cast<object>().ToList(),
             },
         }, ct).ConfigureAwait(false);
 
