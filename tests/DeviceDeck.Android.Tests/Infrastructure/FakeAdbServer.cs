@@ -359,8 +359,14 @@ internal sealed partial class FakeAdbServer : IAsyncDisposable
         await stream.WriteAsync(packet, ct);
     }
 
+    private int _disposed;
+
     public async ValueTask DisposeAsync()
     {
+        if (Interlocked.Exchange(ref _disposed, 1) == 1)
+        {
+            return;
+        }
         await _stop.CancelAsync();
         _listener.Stop();
         try
