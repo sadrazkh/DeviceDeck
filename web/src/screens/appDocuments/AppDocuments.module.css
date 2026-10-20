@@ -159,3 +159,114 @@ button.card:hover {
   box-shadow: var(--shadow-card);
   overflow: hidden;
 }
+
+/* ---------- App files (round 2) ---------- */
+.actions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+}
+
+.search {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  height: var(--control-height);
+  width: 220px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-input);
+  border: 1px solid var(--color-stroke-control);
+  border-bottom-color: var(--color-stroke-control-strong);
+  background: var(--color-surface-input);
+  color: var(--color-text-secondary);
+}
+
+.search:focus-within {
+  border-bottom: 2px solid var(--color-stroke-input-active);
+}
+
+.search svg {
+  flex: none;
+  font-size: var(--icon-size-small);
+}
+
+.search input {
+  flex: 1;
+  min-width: 0;
+  height: 100%;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--color-text-primary);
+}
+
+.iconGlyph {
+  display: grid;
+  place-items: center;
+  width: 48px;
+  height: 48px;
+  flex: none;
+  border-radius: 12px;
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-text);
+  font-size: 26px;
+}
+
+.crumbGlyph {
+  display: inline-flex;
+  font-size: var(--icon-size-small);
+  color: var(--color-text-secondary);
+}
+
+.folders {
+  color: var(--color-text-tertiary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-1);
+}
+
+.chipsLabel {
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+}
+
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-1);
+  max-width: 160px;
+  height: 26px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-full);
+  border: 1px dashed var(--color-accent-stroke);
+  background: var(--color-surface-card);
+  color: var(--color-text-primary);
+  font-size: var(--type-caption-size);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  transition: background-color var(--motion-fast) var(--ease-standard);
+}
+
+.chip svg {
+  flex: none;
+  color: var(--color-accent-text);
+}
+
+.chip[data-over] {
+  border-style: solid;
+  border-color: var(--color-accent);
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.chip[data-over] svg {
+  color: var(--color-on-accent);
+}

@@ -20,6 +20,7 @@ import type {
   StorageInfo,
   TransferJob,
 } from './types';
+import type { AppFilesOverview, FolderUsage } from './appFiles';
 
 type DeviceParams = { deviceId: string };
 
@@ -82,6 +83,9 @@ export interface BridgeMethods {
   'shell.revealInExplorer': { params: { path: string }; result: Empty };
   'settings.get': { params: Empty; result: Settings };
   'settings.set': { params: Partial<Settings>; result: Settings };
+  // App files (round 2)
+  'appFiles.list': { params: DeviceParams; result: AppFilesOverview };
+  'appFiles.measure': { params: DeviceParams & { root: string; paths: string[] }; result: FolderUsage };
 }
 
 export type MethodName = keyof BridgeMethods;
@@ -129,6 +133,9 @@ const methodTable = {
   'shell.revealInExplorer': true,
   'settings.get': true,
   'settings.set': true,
+  // App files (round 2)
+  'appFiles.list': true,
+  'appFiles.measure': true,
 } as const satisfies Record<MethodName, true>;
 
 export const METHOD_NAMES = Object.keys(methodTable) as MethodName[];

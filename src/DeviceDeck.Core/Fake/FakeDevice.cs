@@ -3,7 +3,7 @@ using DeviceDeck.Core.Abstractions;
 namespace DeviceDeck.Core.Fake;
 
 /// <summary>One simulated phone. It survives a simulated unplug, so deletions and installs are still there when it returns.</summary>
-public sealed class FakeDevice : IDevice
+public sealed partial class FakeDevice : IDevice
 {
     private readonly FakeDeviceProvider _provider;
     private DeviceSummary _summary;
@@ -96,7 +96,7 @@ public sealed class FakeDevice : IDevice
     public Task<IDeviceFileSystem> OpenFileSystemAsync(string rootKey, CancellationToken ct)
     {
         EnsureConnected();
-        if (!Roots.TryGetValue(rootKey, out var root))
+        if (!Roots.TryGetValue(rootKey, out var root) && !TryAppFilesRoot(rootKey, out root))
         {
             throw new DeviceException(DeviceErrorCodes.PathNotFound, "That folder isn't on the phone.", new KeyNotFoundException(rootKey));
         }

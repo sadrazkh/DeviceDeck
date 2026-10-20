@@ -214,6 +214,9 @@ public static class BridgeMethods
             rpc.Register<DevStateParams, Empty>("dev.setState", (p, _) => Done(() => fake.SetState(p.DeviceId, p.State)));
         }
 
+        // Round 2 features, one line each.
+        AppFilesMethods.Register(rpc, s);
+
         return rpc;
     }
 

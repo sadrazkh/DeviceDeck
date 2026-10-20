@@ -201,7 +201,7 @@ function upsert<T extends { id: string }>(list: T[] | undefined, item: T): T[] {
 
 /** Refreshes a phone's data when it becomes ready again (after Trust, a reconnect or a reboot). */
 function invalidateDevice(queryClient: QueryClient, deviceId: string) {
-  for (const prefix of ['device.storage', 'device.battery', 'device.details', 'photos.albums', 'files.roots', 'files.list', 'apps.list']) {
+  for (const prefix of ['device.storage', 'device.battery', 'device.details', 'photos.albums', 'files.roots', 'files.list', 'apps.list', 'appFiles.list', 'appFiles.measure']) {
     void queryClient.invalidateQueries({ queryKey: [prefix, deviceId] });
   }
 }
