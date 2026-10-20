@@ -106,8 +106,8 @@ test('App documents: app cards, browse an app, drop files on a card', async ({ p
   const vlc = page.getByTestId('app-card-app:org.videolan.vlc-ios');
   const infuse = page.getByTestId('app-card-app:com.firecore.infuse');
   const empty = page.getByTestId('app-card-app:com.goodiware.GoodReader');
-  await expect(vlc).toContainText('3 items');
-  await expect(vlc).toContainText('3.1 GB of app data');
+  await expect(vlc).toContainText('4 files');
+  await expect(vlc).toContainText('3.1 GB');
   await expect(empty).toContainText('Empty');
 
   // A large copy in progress shows on its card.
@@ -132,7 +132,7 @@ test('App documents: app cards, browse an app, drop files on a card', async ({ p
   await empty.dispatchEvent('dragenter', { dataTransfer });
   await expect(empty).toContainText('Drop to copy into GoodReader');
   await empty.dispatchEvent('drop', { dataTransfer });
-  await expect(empty).toContainText('1 item', { timeout: 10_000 });
+  await expect(empty).toContainText('1 file', { timeout: 10_000 });
 
   // Open an app: its files, with a way back to the grid.
   await vlc.click();
@@ -150,11 +150,13 @@ test('App documents: app cards, browse an app, drop files on a card', async ({ p
   consoleWatch.assertClean();
 });
 
-test('App documents is an iPhone section: greyed on Android', async ({ page }) => {
+test('App documents is on both phones; greyed when the phone has no app files', async ({ page }) => {
   await page.goto(query('light', { screen: 'overview', device: 'android' }));
-  await expect(page.getByTestId('nav-appDocuments')).toBeDisabled();
+  await expect(page.getByTestId('nav-appDocuments')).toBeEnabled();
   await page.goto(query('light', { screen: 'overview' }));
   await expect(page.getByTestId('nav-appDocuments')).toBeEnabled();
+  await page.goto(query('light', { mock: 'limited', screen: 'overview' }));
+  await expect(page.getByTestId('nav-appDocuments')).toBeDisabled();
 });
 
 test('Apps → Open documents lands in App documents for that app', async ({ page }) => {

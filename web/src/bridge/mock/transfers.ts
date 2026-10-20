@@ -50,6 +50,8 @@ const SPEED: Record<TransferKind, number> = {
   appInstall: 24 * MB,
   appExport: 45 * MB,
   dragOut: 36 * MB,
+  photosBackup: 36 * MB,
+  photosToApp: 32 * MB,
 };
 
 export class TransferEngine {

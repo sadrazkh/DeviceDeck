@@ -83,6 +83,11 @@ internal sealed class DragOutService
             Marshal.ThrowExceptionForHR(Ole.CoMarshalInterThreadInterfaceInStream(Ole.IID_IDataObject, unknown, out var stream));
             return (stream, session);
         }
+        catch
+        {
+            session?.DragEnded(dropped: false);
+            throw;
+        }
         finally
         {
             Marshal.Release(unknown);
@@ -109,12 +114,14 @@ internal sealed class DragOutService
             var deviceId = request.DeviceId!;
             var device = _hub.GetUsableDevice(deviceId);
             var id = Guid.NewGuid().ToString("N");
-            var items = request.Items!;
+            // Files may come as entries (the page knows sizes and which are folders) or as bare paths, looked up on the phone.
+            var items = request.Items;
+            var paths = request.Paths;
             session = new DragOutSession(id, deviceId, request.Source, request.Root, Path.Combine(_stagingRoot, id), _queue, _registry,
-                () => request.Source == "photos" ? PhotoFiles(items) : PhoneFiles(device, request.Root!, items));
+                () => request.Source == "photos" ? PhotoFiles(items!) : PhoneFiles(device, request.Root!, items, paths));
             _registry.Add(session);
 
-            if (request.Source == "files" && items.Any(i => i.IsDirectory))
+            if (request.Source == "files" && (items is null || items.Any(i => i.IsDirectory)))
             {
                 // Walk the dragged folders while the pointer moves; the drop then finds the list ready.
                 _ = Task.Run(() =>
@@ -196,13 +203,14 @@ internal sealed class DragOutService
     }
 
     /// <summary>Files as they are; dragged folders walked on the phone, folders listed before their contents.</summary>
-    internal static IReadOnlyList<DragOutFile> PhoneFiles(IDevice device, string root, IReadOnlyList<DragOutEntry> items)
+    /// <param name="paths">Used when <paramref name="items"/> is null: each one is looked up on the phone first.</param>
+    internal static IReadOnlyList<DragOutFile> PhoneFiles(IDevice device, string root, IReadOnlyList<DragOutEntry>? items, IReadOnlyList<string>? paths = null)
     {
         using var timeout = new CancellationTokenSource(TimeSpan.FromMinutes(2));
-        return WalkAsync(device, root, items, timeout.Token).GetAwaiter().GetResult();
+        return WalkAsync(device, root, items, paths ?? [], timeout.Token).GetAwaiter().GetResult();
     }
 
-    private static async Task<IReadOnlyList<DragOutFile>> WalkAsync(IDevice device, string root, IReadOnlyList<DragOutEntry> items, CancellationToken ct)
+    private static async Task<IReadOnlyList<DragOutFile>> WalkAsync(IDevice device, string root, IReadOnlyList<DragOutEntry>? items, IReadOnlyList<string> paths, CancellationToken ct)
     {
         var files = new List<DragOutFile>();
         var top = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -210,12 +218,27 @@ internal sealed class DragOutService
         IDeviceFileSystem? fs = null;
         try
         {
+            if (items is null)
+            {
+                fs = await device.OpenFileSystemAsync(root, ct).ConfigureAwait(false);
+                var found = new List<DragOutEntry>();
+                foreach (var path in paths)
+                {
+                    var entry = await fs.StatAsync(path, ct).ConfigureAwait(false)
+                        ?? throw new DeviceException(DeviceErrorCodes.PathNotFound, "Something you dragged isn't on the phone any more.");
+                    found.Add(new DragOutEntry(entry.Path, entry.Name.Length > 0 ? entry.Name : "Phone", entry.IsDirectory ? 0 : entry.Size, entry.IsDirectory, entry.Modified));
+                }
+
+                items = found;
+            }
+
             foreach (var item in items)
             {
                 var name = Unique(top, SafeName(item.Name));
                 if (!item.IsDirectory)
                 {
-                    files.Add(new DragOutFile(name, false, item.Size, item.Modified, item.Id, next++));
+                    // 0 from the page means "not known": the stream then reads to the end instead of stopping at 0.
+                    files.Add(new DragOutFile(name, false, item.Size > 0 ? item.Size : null, item.Modified, item.Id, next++));
                     continue;
                 }
 

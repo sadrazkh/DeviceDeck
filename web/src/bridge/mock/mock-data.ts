@@ -54,6 +54,7 @@ export const ANDROID_CAPABILITIES: DeviceCapability[] = [
   'photosDelete',
   'photosImport',
   'files',
+  'appDocuments',
   'appsList',
   'appsInstall',
   'appsUninstall',
@@ -326,6 +327,9 @@ export const defaultSettings: Settings = {
   closeToTray: true,
   notifyOnConnect: true,
   autoUpdate: true,
+  photoBackupFolder: 'D:\\Phone backups',
+  photoBackupPattern: 'yyyy/MM',
+  photoBackupConvertHeic: false,
 };
 
 /** Folders shell.pickFolder hands back in turn (the mock has no real picker). */

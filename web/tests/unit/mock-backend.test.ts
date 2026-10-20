@@ -34,7 +34,7 @@ describe('mock backend', () => {
     for (const method of METHOD_NAMES) {
       expect(typeof backend.handlers[method], method).toBe('function');
     }
-    // Round 1 had 34; each round-2 feature adds a block of its own (checked in that feature's tests).
+    // Round 1 had 34; each round-2 feature adds its own block.
     expect(METHOD_NAMES.length).toBeGreaterThanOrEqual(34);
   });
 

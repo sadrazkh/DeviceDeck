@@ -1,0 +1,107 @@
+import { afterEach, describe, expect, it } from 'vitest';
+import { BridgeClient } from '../../src/bridge/client';
+import type { MockBackend } from '../../src/bridge/mock/backend';
+import { ANDROID_ID, IPHONE_ID } from '../../src/bridge/mock/mock-data';
+import { isValidPattern } from '../../src/bridge/mock/photosBackup';
+import { createMockTransport, type MockHandle } from '../../src/bridge/mock/transport';
+import { exampleFolder } from '../../src/screens/photos/backupQueries';
+
+let handle: MockHandle | null = null;
+
+function setup() {
+  handle = createMockTransport({ latencyMs: 0, autoTick: false, indexing: false, seedQueue: false });
+  return { client: new BridgeClient(handle.transport, { timeoutMs: 0 }), backend: handle.backend };
+}
+
+function run(backend: MockBackend, ms: number, step = 250) {
+  for (let t = 0; t < ms; t += step) backend.tick(step);
+}
+
+afterEach(() => {
+  handle?.dispose();
+  handle = null;
+});
+
+describe('photo backup (mock)', () => {
+  it('counts what is new since the pretend last backup, per phone', async () => {
+    const { client } = setup();
+    const iphone = await client.call('photos.newCount', { deviceId: IPHONE_ID });
+    expect(iphone.newCount).toBe(128 - iphone.cloudOnly);
+    expect(iphone.newPhotos + iphone.newVideos).toBe(iphone.newCount);
+    expect(iphone.hiddenLeftOut).toBeGreaterThan(0);
+    expect((await client.call('photos.newCount', { deviceId: ANDROID_ID })).newCount).toBe(46);
+
+    const status = await client.call('photos.backupStatus', { deviceId: IPHONE_ID });
+    expect(Object.keys(status)).toEqual(['deviceId', 'count', 'options', 'customized', 'backedUp', 'lastRun', 'activeJobId', 'heicConversion']);
+    expect(status.options).toEqual({ destination: 'D:\\Phone backups\\Nima’s iPhone', folderPattern: 'yyyy/MM', convertHeic: false, includeHidden: false });
+    expect(status.lastRun?.state).toBe('done');
+  });
+
+  it('backs up the new photos through the queue; then nothing is new', async () => {
+    const { client, backend } = setup();
+    const before = await client.call('photos.newCount', { deviceId: ANDROID_ID });
+    const { jobId } = await client.call('photos.backup', { deviceId: ANDROID_ID });
+    expect((await client.call('photos.backup', { deviceId: ANDROID_ID })).jobId).toBe(jobId); // one at a time per phone
+
+    const job = (await client.call('transfers.list')).find((j) => j.id === jobId)!;
+    expect(job.kind).toBe('photosBackup');
+    expect(job.totalItems).toBe(before.newCount);
+    expect(job.title).toMatch(/^Backing up new photos from .+ to D:\\Phone backups\\/);
+
+    run(backend, 120_000);
+    expect((await client.call('transfers.list')).find((j) => j.id === jobId)!.state).toBe('done');
+    const after = await client.call('photos.backupStatus', { deviceId: ANDROID_ID });
+    expect(after.count.newCount).toBe(0);
+    expect(after.activeJobId).toBeNull();
+    expect(after.lastRun).toMatchObject({ jobId, state: 'done', copied: before.newCount });
+  });
+
+  it('keeps options per phone, checks them and goes back to the defaults', async () => {
+    const { client } = setup();
+    const changed = await client.call('photos.backupConfigure', { deviceId: IPHONE_ID, folderPattern: '', includeHidden: true });
+    expect(changed.customized).toBe(true);
+    expect(changed.options.folderPattern).toBe('');
+    expect(changed.count.hiddenLeftOut).toBe(0);
+    await expect(client.call('photos.backupConfigure', { deviceId: IPHONE_ID, folderPattern: 'MMMM' })).rejects.toMatchObject({ rpcCode: -32602 });
+    await expect(client.call('photos.backupConfigure', { deviceId: IPHONE_ID, destination: 'backups' })).rejects.toMatchObject({ rpcCode: -32602 });
+
+    await client.call('settings.set', { photoBackupPattern: 'yyyy-MM' });
+    const reset = await client.call('photos.backupConfigure', { deviceId: IPHONE_ID, useDefaults: true });
+    expect(reset.customized).toBe(false);
+    expect(reset.options.folderPattern).toBe('yyyy-MM');
+  });
+
+  it('forgets the history without touching files', async () => {
+    const { client } = setup();
+    const status = await client.call('photos.backupStatus', { deviceId: ANDROID_ID });
+    const { forgotten } = await client.call('photos.backupForget', { deviceId: ANDROID_ID });
+    expect(forgotten).toBe(status.backedUp);
+    expect((await client.call('photos.backupStatus', { deviceId: ANDROID_ID })).backedUp).toBe(0);
+  });
+
+  it('copies photos into an iPhone app that shares files, never over a file there', async () => {
+    const { client, backend } = setup();
+    const files = backend.registerFiles([new File([new Uint8Array(2048)], 'beach.jpg'), new File([new Uint8Array(1024)], 'beach.jpg')]);
+    const { jobId } = await client.call('photos.importToApp', { deviceId: IPHONE_ID, appId: 'org.videolan.vlc-ios', files });
+    const job = (await client.call('transfers.list')).find((j) => j.id === jobId)!;
+    expect(job.kind).toBe('photosToApp');
+    expect(job.title).toBe('Adding 2 items to VLC on Nima’s iPhone');
+    run(backend, 10_000);
+    const names = (await client.call('files.list', { deviceId: IPHONE_ID, root: 'app:org.videolan.vlc-ios', path: '/' })).map((e) => e.name);
+    expect(names).toContain('beach.jpg');
+    expect(names).toContain('beach (1).jpg');
+
+    await expect(client.call('photos.importToApp', { deviceId: IPHONE_ID, appId: 'com.apple.Maps', files })).rejects.toMatchObject({ code: 'path_not_found' });
+    await expect(client.call('photos.importToApp', { deviceId: ANDROID_ID, appId: 'x', files })).rejects.toMatchObject({ code: 'not_supported' });
+  });
+
+  it('folder patterns: what the host accepts, and the example the UI shows', () => {
+    for (const ok of ['yyyy/MM', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy', '', 'yyyy MM']) expect(isValidPattern(ok), ok).toBe(true);
+    for (const bad of ['MMMM', 'yyyy/', '/MM', 'hh', 'yyyy/../MM']) expect(isValidPattern(bad), bad).toBe(false);
+    const when = new Date(2026, 9, 7);
+    expect(exampleFolder('yyyy/MM', when)).toBe('2026\\10');
+    expect(exampleFolder('yyyy/MM/dd', when)).toBe('2026\\10\\07');
+    expect(exampleFolder('yyyy-MM', when)).toBe('2026-10');
+    expect(exampleFolder('', when)).toBe('');
+  });
+});

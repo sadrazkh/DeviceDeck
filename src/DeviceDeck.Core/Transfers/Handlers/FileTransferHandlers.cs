@@ -1,4 +1,5 @@
 using DeviceDeck.Core.Abstractions;
+using DeviceDeck.Core.AppFiles;
 using static DeviceDeck.Core.Transfers.Handlers.TransferPaths;
 
 namespace DeviceDeck.Core.Transfers.Handlers;
@@ -8,7 +9,7 @@ public sealed class CopyToPcHandler : TransferHandler<CopyToPcRequest>
 {
     public override TransferKind Kind => TransferKind.CopyToPc;
 
-    protected override Task<string> DescribeAsync(IDevice device, CopyToPcRequest request, CancellationToken ct)
+    protected override async Task<string> DescribeAsync(IDevice device, CopyToPcRequest request, CancellationToken ct)
     {
         RequireList(request.Paths, "file");
         RequirePcFolder(request.Destination, "The destination");
@@ -17,8 +18,10 @@ public sealed class CopyToPcHandler : TransferHandler<CopyToPcRequest>
             throw new ArgumentException("root is required.");
         }
 
-        var what = request.Paths.Count == 1 ? NameOf(request.Paths[0]) : Plural(request.Paths.Count, "item", "items");
-        return Task.FromResult($"Copying {what} to {request.Destination}");
+        var what = request.Paths.Count != 1 ? Plural(request.Paths.Count, "item", "items")
+            : IsTop(request.Paths[0]) ? await TopNameAsync(device, request.Root, ct).ConfigureAwait(false)
+            : NameOf(request.Paths[0]);
+        return $"Copying {what} to {request.Destination}";
     }
 
     protected override async Task<IReadOnlyList<TransferItemPlan>> PlanAsync(TransferWorkContext context, CopyToPcRequest request, CancellationToken ct)
@@ -29,7 +32,9 @@ public sealed class CopyToPcHandler : TransferHandler<CopyToPcRequest>
         {
             var entry = await fs.StatAsync(path, ct).ConfigureAwait(false)
                 ?? throw new DeviceException(DeviceErrorCodes.PathNotFound, $"{NameOf(path)} isn't on the phone any more.");
-            var target = Path.Combine(request.Destination, SafeName(entry.Name.Length == 0 ? "Phone" : entry.Name));
+            // A whole root (an app's Documents) lands in a folder named after the app, not "_".
+            var name = IsTop(path) ? await TopNameAsync(context.Device, request.Root, ct).ConfigureAwait(false) : entry.Name;
+            var target = Path.Combine(request.Destination, SafeName(name.Length == 0 ? "Phone" : name));
             if (entry.IsDirectory)
             {
                 Directory.CreateDirectory(target);
@@ -87,6 +92,11 @@ public sealed class CopyToPcHandler : TransferHandler<CopyToPcRequest>
         var cut = name.LastIndexOf('/');
         return cut >= 0 ? name[(cut + 1)..] : name;
     }
+
+    private static bool IsTop(string devicePath) => devicePath.Trim().Trim('/', '\\').Length == 0;
+
+    private static async Task<string> TopNameAsync(IDevice device, string root, CancellationToken ct) =>
+        await AppFilesHelpers.RootLabelAsync(device, root, ct).ConfigureAwait(false) ?? root;
 }
 
 /// <summary>files.copyToDevice: PC files and folders into a folder of one root on the phone (an app's Documents, internal storage).</summary>
@@ -115,8 +125,7 @@ public sealed class CopyToDeviceHandler : TransferHandler<CopyToDeviceRequest>
             }
         }
 
-        var roots = await device.GetFileRootsAsync(ct).ConfigureAwait(false);
-        var label = roots.FirstOrDefault(r => r.Key == request.Root)?.Label
+        var label = await AppFilesHelpers.RootLabelAsync(device, request.Root, ct).ConfigureAwait(false)
             ?? throw new DeviceException(DeviceErrorCodes.PathNotFound, "That folder isn't on the phone.");
         var what = request.Files.Count == 1 ? Path.GetFileName(request.Files[0].TrimEnd('\\', '/')) : Plural(request.Files.Count, "item", "items");
         return $"Copying {what} into {label}";

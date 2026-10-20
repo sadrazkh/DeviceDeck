@@ -7,6 +7,7 @@ using DeviceDeck.Core;
 using DeviceDeck.Core.Fake;
 using DeviceDeck.Core.Hub;
 using DeviceDeck.Core.Notifications;
+using DeviceDeck.Core.Photos;
 using DeviceDeck.Core.Settings;
 using DeviceDeck.Core.Transfers;
 using DeviceDeck.Core.Transfers.Handlers;
@@ -18,8 +19,9 @@ namespace DeviceDeck.Shell.Hosting;
 internal sealed class HostServices : IAsyncDisposable
 {
     private HostServices(AppPaths paths, bool devMode, FakeDeviceProvider? fake, DeviceHub hub, SqliteTransferStore store,
-        TransferQueue transfers, SettingsStore settings, WicImageTranscoder transcoder, DragOutRegistry dragOuts)
+        TransferQueue transfers, SettingsStore settings, WicImageTranscoder transcoder, DragOutRegistry dragOuts, PhotoBackupService photoBackup)
     {
+        PhotoBackup = photoBackup;
         Paths = paths;
         DevMode = devMode;
         Fake = fake;
@@ -31,7 +33,7 @@ internal sealed class HostServices : IAsyncDisposable
         Screenshots = new ScreenshotStore();
         Thumbnails = new ThumbnailCache(paths.ThumbnailCache);
         Images = new DeviceImageHandler(hub, Thumbnails, Screenshots, transcoder, Path.Combine(paths.Root, "cache", "viewer"));
-        Videos = new VideoHandler(hub, Path.Combine(paths.Root, "cache", "video"));
+        Videos = new VideoHandler(hub, VideoCache);
         DragOuts = dragOuts;
     }
 
@@ -58,6 +60,11 @@ internal sealed class HostServices : IAsyncDisposable
 
     public string DragOutStaging => Path.Combine(Paths.Root, "cache", "dragout");
 
+    public string VideoCache => Path.Combine(Paths.Root, "cache", "video");
+
+    /// <summary>Photos backup; <c>CountNewAsync(deviceId, ct)</c> gives the "N new photos" count for a notification.</summary>
+    public PhotoBackupService PhotoBackup { get; }
+
     public static string Version { get; } =
         typeof(HostServices).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.1.0";
 
@@ -74,11 +81,13 @@ internal sealed class HostServices : IAsyncDisposable
         hub.ProviderStopFailed += (_, e) => ShellLog.Error($"Provider {e.ProviderId} did not stop cleanly.", e.Error);
         var store = new SqliteTransferStore(paths.TransfersDatabase);
         var transcoder = new WicImageTranscoder();
-        var dragOuts = new DragOutRegistry();
-        var transfers = new TransferQueue(hub, store, [.. TransferHandlers.All(transcoder), new DragOutHandler(dragOuts)], new WindowsKeepAwake());
-        transfers.Start();
         var settings = new SettingsStore(paths.SettingsFile);
-        var host = new HostServices(paths, devMode, fake, hub, store, transfers, settings, transcoder, dragOuts);
+        var photoBackup = new PhotoBackupService(Path.Combine(paths.Root, "photo-backup.db"), hub, settings, transcoder, PhotosHeicProbe.Check());
+        var dragOuts = new DragOutRegistry();
+        var transfers = new TransferQueue(hub, store, [.. TransferHandlers.All(transcoder), photoBackup.Handler, new DragOutHandler(dragOuts)], new WindowsKeepAwake());
+        transfers.Start();
+        photoBackup.Attach(transfers);
+        var host = new HostServices(paths, devMode, fake, hub, store, transfers, settings, transcoder, dragOuts, photoBackup);
 
         // A drag into File Explorer doesn't survive a restart: Explorer's end of it is gone.
         foreach (var job in transfers.List().Where(j => j.Kind == TransferKind.DragOut && j.State is not (TransferState.Done or TransferState.Failed or TransferState.Cancelled)))
@@ -86,7 +95,9 @@ internal sealed class HostServices : IAsyncDisposable
             transfers.Cancel(job.Id);
         }
 
+        // Left behind by a crash or a sign-out: drag-out staging files and cached videos (both can be gigabytes).
         DragOutService.ClearStaging(host.DragOutStaging);
+        DragOutService.ClearStaging(host.VideoCache);
         return host;
     }
 
@@ -101,6 +112,7 @@ internal sealed class HostServices : IAsyncDisposable
         DevFake = Fake,
         Notifications = notifications,
         Desktop = desktop,
+        PhotoBackup = PhotoBackup,
     };
 
     /// <summary>Starts the providers once the window is up, so the first paint isn't waiting on USB.</summary>
@@ -140,6 +152,11 @@ internal sealed class HostServices : IAsyncDisposable
         await StepAsync("transfer store", () =>
         {
             Store.Dispose();
+            return Task.CompletedTask;
+        }).ConfigureAwait(false);
+        await StepAsync("photo backup", () =>
+        {
+            PhotoBackup.Dispose();
             return Task.CompletedTask;
         }).ConfigureAwait(false);
         await StepAsync("device providers", async () => await Hub.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);

@@ -3,6 +3,7 @@ import { Card, Segmented } from '../components/ui';
 import { useI18n } from '../i18n';
 import { DesktopSettings } from '../shell/DesktopSettings';
 import { usePrefs } from '../state/prefs';
+import { PhotosBackupSettings } from './photos/PhotosBackupSettings';
 import { ScreenLayout } from './ScreenLayout';
 import styles from './Screen.module.css';
 
@@ -67,6 +68,7 @@ export function SettingsScreen() {
           </div>
         </Card>
         <DesktopSettings />
+        <PhotosBackupSettings />
         <p className={styles.muted}>{t('settings.more')}</p>
       </div>
     </ScreenLayout>

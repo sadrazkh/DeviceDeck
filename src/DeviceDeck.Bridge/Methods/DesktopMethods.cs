@@ -100,11 +100,11 @@ public static class DesktopMethods
             switch (p.Source)
             {
                 case "photos" when !string.IsNullOrEmpty(p.DeviceId) && p.Items is { Count: > 0 } && p.Items.All(i => !i.IsDirectory):
-                case "files" when !string.IsNullOrEmpty(p.DeviceId) && !string.IsNullOrEmpty(p.Root) && p.Items is { Count: > 0 }:
+                case "files" when !string.IsNullOrEmpty(p.DeviceId) && !string.IsNullOrEmpty(p.Root) && (p.Items is { Count: > 0 } || p.Paths is { Count: > 0 }):
                 case "pc" when p.Paths is { Count: > 0 } && p.Paths.All(Path.IsPathFullyQualified):
                     return RequireDesktop(s).DragOutAsync(p, ct);
                 default:
-                    throw new ArgumentException("source must be photos (deviceId, items), files (deviceId, root, items) or pc (full paths).");
+                    throw new ArgumentException("source must be photos (deviceId, items), files (deviceId, root, items or paths) or pc (full paths).");
             }
         });
 

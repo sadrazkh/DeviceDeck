@@ -9,7 +9,7 @@ namespace DeviceDeck.Bridge;
 public sealed record DragOutEntry(string Id, string Name, long Size = 0, bool IsDirectory = false, DateTimeOffset? Modified = null);
 
 /// <summary>shell.dragOut: what is being dragged out of the page.</summary>
-/// <param name="Source">"photos" (Items of DeviceId), "files" (Items in Root of DeviceId) or "pc" (Paths on this PC).</param>
+/// <param name="Source">"photos" (Items of DeviceId), "files" (Items, or bare Paths, in Root of DeviceId) or "pc" (Paths on this PC).</param>
 public sealed record DragOutParams(string Source, string? DeviceId = null, string? Root = null, IReadOnlyList<DragOutEntry>? Items = null, IReadOnlyList<string>? Paths = null);
 
 /// <summary>Where the drag ended, in the page's CSS pixels, when it was dropped back on the window itself.</summary>

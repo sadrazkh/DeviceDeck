@@ -112,6 +112,235 @@ type Settings = {
 
 Ids in paths are URI-encoded. A missing image is a 404; the page shows a placeholder.
 
+## App files (round 2)
+
+The apps that share files with a computer, and their folders. Every folder is a file root: browse it with
+`files.list`, change it with `files.mkdir` / `files.rename` / `files.delete`, copy in with `files.copyToDevice`
+and out with `files.copyToPc`, exactly as any other root. Needs `appDocuments` (iPhone and Android).
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `appFiles.list` | `{ deviceId }` | `AppFilesOverview` |
+| `appFiles.measure` | `{ deviceId, root, paths }` (1–1000 paths) | `FolderUsage`: files, folders and bytes under each path, all the way down |
+
+Root keys of app folders:
+
+| Key | Folder |
+| --- | --- |
+| `app:<bundleId>` | an iPhone app's Documents (house_arrest VendDocuments; File Sharing apps only) |
+| `appmedia:<package>` | Android/media/&lt;package&gt; |
+| `appdata:<package>` | Android/data/&lt;package&gt;, listed only when the phone lets adb read Android/data |
+| `shared:Documents`, `shared:Download` | the shared Documents and Download folders |
+
+- `files.copyToDevice` takes files and whole folders (copied recursively, empty folders included) into any folder
+  of the root. A name that is already there asks once (`needsDecision`); `transfers.resolveConflict` with
+  `applyToAll: true` answers every later clash in the job.
+- `files.copyToPc` with `paths: ["/"]` copies a whole root into a folder named after the app (`VLC`,
+  `com.whatsapp (Media)`), not `_`.
+- `appFiles.measure` on a path that is gone answers zeros; a folder the phone won't list counts what it can read.
+- Dragging rows out to File Explorer uses the desktop feature's `shell.dragOut { source: "files", deviceId, root, paths }`
+  on these roots (see "Desktop (round 2)"): Explorer receives virtual files and the copy is a `dragOut` job.
+- iPhone: opening house_arrest takes about a second, so the host keeps one connection per app for listings and
+  small changes; file contents use a connection of their own per job.
+
+```ts
+type AppFilesOverview = {
+  entries: AppFilesEntry[];            // apps, then shared folders (Android: Documents, Download)
+  privateData: "notApplicable" | "allowed" | "blocked";  // can adb read Android/data on this phone?
+};
+type AppFilesEntry = {
+  id: string;                          // bundle id or package name; a shared folder's root key
+  name: string;                        // the app's name when the host knows it (iPhone), else the id (Android: show apps.list labels)
+  kind: "app" | "sharedFolder";
+  appId: string | null;                // for icon/{deviceId}/{appId}; null for a shared folder
+  folders: { rootKey: string; label: string; empty: boolean }[];  // first = where a drop on the card goes
+};
+type FolderUsage = {
+  items: { path: string; files: number; folders: number; bytes: number }[];  // one per path, in order
+  files: number; folders: number; bytes: number;                             // totals
+};
+```
+## Photos backup and adding photos (round 2)
+
+Incremental backup of a phone's photos and videos to a PC folder, the count of new photos for the
+"phone connected" notification, and adding photos to an iPhone app that shares files.
+
+### Methods
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `photos.newCount` | `{ deviceId }` | `PhotoBackupCount` |
+| `photos.backupStatus` | `{ deviceId }` | `PhotoBackupStatus` |
+| `photos.backupConfigure` | `{ deviceId, destination?, folderPattern?, convertHeic?, includeHidden?, useDefaults? }` | `PhotoBackupStatus` |
+| `photos.backup` | `{ deviceId }` | `{ jobId }` (the job already queued or running for that phone, if any) |
+| `photos.backupForget` | `{ deviceId }` | `{ forgotten: number }` |
+| `photos.importToApp` | `{ deviceId, appId, files: string[] }` | `{ jobId }` |
+
+- **What counts as new.** Each phone has its own record (`photo-backup.db` in the app's data folder) of the
+  photos copied from it, by a stable identity: the iPhone's Photos.sqlite `ZUUID` (the DCIM path when the
+  database can't be read), on Android the file's path plus its size (an edited photo is a new version).
+  A photo whose identity changed is still recognised by its phone path, or by name + size + date taken.
+  A Live Photo counts once. Photos only in iCloud are counted apart (`cloudOnly`) and never copied; the
+  iPhone's Hidden album is left out (`hiddenLeftOut`) unless `includeHidden` is on.
+- **Backup job** (`kind: "photosBackup"`, through the transfer queue: pause, resume, cancel, waits for an
+  unplugged phone, carries on after a restart). One item per photo; a Live Photo's still and video are one
+  item and are written under one name (`IMG_0001.HEIC` + `IMG_0001.MOV`). Files go into date folders under
+  the destination by `folderPattern` (taken date in the PC's time zone; no date → `Undated`).
+  Never asks about conflicts:
+  - bytes already anywhere in the destination (same size, then same SHA-256) are not written again, only
+    remembered (`duplicates` in the run);
+  - a different file under the same name makes `IMG_0001 (1).HEIC` (both halves of a Live Photo move together);
+  - files are written as `<name>.ddpart` and renamed, then get the photo's date as created/modified time.
+- **HEIC → JPG** (`convertHeic`): Windows Imaging Component decodes HEIC only with the Microsoft Store's
+  *HEIF Image Extensions* (and *HEVC Video Extensions*). The JPEG (quality 0.92, sRGB, pixels upright) gets
+  the photo's EXIF from the HEIC — date, camera, GPS, Apple's maker note — with Orientation 1 and the JPEG's
+  pixel size. **Fallback:** without the codec the file is kept as HEIC, the run counts it in `keptHeic`, and
+  `heicConversion` turns `missingCodec`; the UI says how to get the extensions. Videos and JPEGs are copied as they are.
+- **Options per phone.** `photos.backupConfigure` saves a phone's own options; a field left out keeps its
+  value, `useDefaults: true` clears them all first. A phone without its own options uses Settings:
+  destination = `photoBackupFolder` + `\<phone name>`, `photoBackupPattern`, `photoBackupConvertHeic`,
+  `includeHidden` false. The destination is pinned to the phone on its first backup.
+- `photos.backupForget` forgets the record only; files on the PC are never touched. The next backup reads
+  every photo again and remembers the ones already in the folder without writing them.
+- **`photos.importToApp`** (`kind: "photosToApp"`): there is no supported way to write into an iPhone's
+  Photos library over USB. This copies PC pictures and videos (a folder brings its pictures and videos,
+  flattened) into the Documents of an app that shares files (`AppInfo.fileSharing`, file root `app:<appId>`),
+  e.g. Documents by Readdle or LocalSend. A taken name gets `(1)`; nothing in the app is replaced. The user
+  opens that app on the iPhone (or Files › On My iPhone › the app) and saves them to Photos from there.
+  Android keeps `photos.import` (into `DCIM/DeviceDeck`, scanned into the gallery).
+
+### Host-side call for the notification
+
+`HostServices.PhotoBackup` is a `DeviceDeck.Core.Photos.PhotoBackupService`:
+`CountNewAsync(deviceId, ct)` returns the same `PhotoBackupCount` as `photos.newCount` without a bridge round
+trip. Call it once the device is `ready`; it throws `DeviceException` like any provider call (`device_locked`
+for a locked iPhone). On an iPhone the first call after plugging in reads the photo index (seconds; the
+Photos screen and the backup reuse it for a minute). `StartAsync(deviceId, ct)` starts (or returns) the
+backup job, and the `RunFinished` event fires once per finished run.
+
+### Shapes
+
+```ts
+type PhotoBackupCount = {
+  deviceId: string;
+  newCount: number; newPhotos: number; newVideos: number;   // newCount = newPhotos + newVideos
+  newBytes: number;          // sizes the phone already reported (an iPhone's newest few may show 0)
+  cloudOnly: number;         // new, but only in iCloud: not copyable over USB, not in newCount
+  hiddenLeftOut: number;     // new, in the iPhone's Hidden album, left out by the options
+};
+
+type PhotoBackupOptions = {
+  destination: string;       // full PC folder
+  folderPattern: string;     // "" or yyyy, MM, dd joined by / - _ . or a space; "/" = sub-folder. Default "yyyy/MM"
+  convertHeic: boolean;
+  includeHidden: boolean;
+};
+
+type PhotoBackupRun = {
+  jobId: string; destination: string;
+  state: "running" | "done" | "failed" | "cancelled";
+  planned: number;           // photos the run set out to copy
+  copied: number;            // written to the PC
+  duplicates: number;        // already in the destination, now remembered
+  failed: number; bytes: number;
+  keptHeic: number;          // HEIC kept because this PC couldn't convert
+  startedAt: string; finishedAt: string | null;
+};
+
+type PhotoBackupStatus = {
+  deviceId: string;
+  count: PhotoBackupCount;
+  options: PhotoBackupOptions;
+  customized: boolean;       // the phone has options of its own (false = Settings)
+  backedUp: number;          // photos this PC remembers copying from the phone
+  lastRun: PhotoBackupRun | null;
+  activeJobId: string | null; // a backup queued, running, paused or waiting for the phone
+  heicConversion: "available" | "missingCodec" | "unknown";
+};
+```
+
+`TransferJob.kind` gains `"photosBackup"` and `"photosToApp"`. `Settings` gains
+`photoBackupFolder: string` (default `Pictures\DeviceDeck Backup`), `photoBackupPattern: string`
+(default `"yyyy/MM"`) and `photoBackupConvertHeic: boolean` (default `false`).
+
+## Clean-up (round 2)
+
+Storage analysis per phone and the clean-up actions. The analysis only reads. Nothing is deleted unless the page
+sends the exact items the user confirmed, each with the size the page showed, and their total as `expectedBytes`.
+The host deletes an item only when the last analysis listed it at that size and it is still the same on the phone;
+anything that changed is skipped and counted. With `copyFirstTo` (a PC folder) the items are copied first through the
+transfer queue (`keepBoth`, originals unconverted), and nothing is deleted unless every copy finished.
+Deletes wait while an analysis runs. A report is dropped when its phone disconnects.
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `cleanup.status` | `{ deviceId }` | `CleanupStatus` |
+| `cleanup.analyze` | `{ deviceId }` | `CleanupStatus` (starts one, or returns the one running) |
+| `cleanup.cancel` | `{ deviceId }` | `{}` |
+| `cleanup.deleteMedia` | `{ deviceId, items: { id, size }[], expectedBytes, copyFirstTo? }` | `CleanupResult` — Android only (MediaStore); an iPhone answers `not_supported`: copy to the PC, then delete in the Photos app |
+| `cleanup.deleteFiles` | `{ deviceId, items: { root, path, size }[], expectedBytes, copyFirstTo? }` | `CleanupResult` |
+| `cleanup.uninstallApps` | `{ deviceId, items: { id, size }[], expectedBytes, copyFirstTo? }` | `CleanupResult` — `size` is appBytes + dataBytes; copy first saves the APK (Android), not the app's data |
+| `cleanup.trimCaches` | `{ deviceId }` | `CleanupResult` — Android `pm trim-caches`: every app's cache; `freedBytes` is free space after minus before |
+
+| Event | Params |
+| --- | --- |
+| `cleanup.updated` | `CleanupStatus` (progress at most 4/s, every state change) |
+
+```ts
+type CleanupSection = "storage" | "apps" | "media" | "caches" | "appFiles" | "duplicates";
+type CleanupStatus = {
+  deviceId: string; state: "idle" | "running" | "done" | "failed" | "cancelled";
+  progress: { section: CleanupSection; done: number; total: number } | null;   // bytes for duplicates, items otherwise
+  report: CleanupReport | null;        // partial while running
+  error: { code: string; message: string } | null; finishedAt: string | null;
+};
+type CleanupReport = {
+  deviceId: string; platform: "ios" | "android"; startedAt: string;
+  totalBytes: number | null; freeBytes: number | null;
+  apps: { largest: AppInfo[]; count: number; totalBytes: number; canUninstall: boolean; canCopyFirst: boolean } | null;
+  media: { largestVideos: PhotoAsset[]; largestPhotos: PhotoAsset[]; videoCount: number; videoBytes: number;
+           photoCount: number; photoBytes: number; cloudOnlyCount: number; canDelete: boolean } | null;
+  caches: { totalBytes: number | null; apps: { appId: string; name: string | null; bytes: number }[];
+            trimmedBytes: number | null; trimmedAt: string | null } | null;          // Android: as the phone last counted (about daily)
+  appFiles: { files: { root: string; path: string; name: string; size: number; modified: string | null;
+                       appId: string | null; folder: string | null }[];
+              totalBytes: number; minBytes: number; appNames: Record<string, string>; canDelete: boolean } | null;
+  duplicates: { groups: { hash: string; size: number; assets: PhotoAsset[]; reclaimableBytes: number }[];  // oldest asset first
+                reclaimableBytes: number; hashedCount: number; hashedBytes: number; canDelete: boolean } | null;
+  notes: { section: CleanupSection; code: string; message: string }[];
+};
+type CleanupResult = { deleted: number; skipped: number; freedBytes: number; copyJobIds: string[]; copyIncomplete: boolean };
+```
+
+Duplicates are exact: same size and same whole-file hash (md5 on an Android phone, SHA-256 of the file read over AFC
+on an iPhone, after a first pass over the opening 64 KiB). iCloud-only originals are left out.
+
+## Battery history (round 2)
+
+A snapshot is stored in `battery.db` each time a phone becomes ready (at most once per 30 minutes per phone).
+`healthEstimated` is true for an iPhone: full-charge over design capacity, which differs from iOS Settings.
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `battery.devices` | — | `BatteryDevice[]` (every phone with history, connected or not, most recent first) |
+| `battery.history` | `{ deviceId }` | `BatterySnapshot[]` (oldest first) |
+| `battery.record` | `{ deviceId }` | `BatterySnapshot` (now, whatever the interval) |
+| `battery.export` | `{ deviceId, destination, language?: "en" \| "fa" }` | `{ path }` — a self-contained HTML report (prints to PDF) in the folder |
+
+| Event | Params |
+| --- | --- |
+| `battery.recorded` | `BatterySnapshot` |
+
+```ts
+type BatterySnapshot = {
+  id: number; deviceId: string; deviceName: string; platform: "ios" | "android"; model: string; osVersion: string;
+  at: string; levelPercent: number | null; isCharging: boolean; healthPercent: number | null; healthEstimated: boolean;
+  cycleCount: number | null; designCapacityMah: number | null; fullChargeCapacityMah: number | null; temperatureCelsius: number | null;
+};
+type BatteryDevice = { deviceId: string; name: string; platform: "ios" | "android"; model: string; count: number;
+                       firstAt: string; lastAt: string; latest: BatterySnapshot };
+```
+
 ## Desktop (round 2)
 
 Added by the desktop session. C#: `src/DeviceDeck.Bridge/Methods/DesktopMethods.cs`, `src/DeviceDeck.Bridge/IDesktopShell.cs`,

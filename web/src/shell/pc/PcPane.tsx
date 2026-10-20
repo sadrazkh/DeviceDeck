@@ -175,7 +175,7 @@ export function PcPane({ device, phoneTarget, className }: { device: DeviceSumma
   const dropRef = useInsideDrop((drop, hit) => {
     const target = hit.closest<HTMLElement>('[data-pc-folder]')?.dataset.pcFolder ?? folder;
     if (!target || drop.source !== 'files') return;
-    void actions.copyToPc(device, drop.root, drop.items.map((i) => i.id), target);
+    void actions.copyToPc(device, drop.root, 'items' in drop ? drop.items.map((i) => i.id) : drop.paths, target);
   });
 
   const onKeyDown = (e: KeyboardEvent<HTMLDivElement>) => {

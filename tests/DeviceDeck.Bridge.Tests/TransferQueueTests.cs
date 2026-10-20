@@ -207,6 +207,10 @@ public sealed class TransferQueueTests
 
         var jobId = await ExportAsync(host, destination);
         await Wait.ForStateAsync(host.Queue, jobId, TransferState.NeedsDecision);
+        // Events go out from a background pump, so the "needsDecision" event can arrive just after the state
+        // changes: wait for it before counting, or it would look like a second question.
+        bool IsQuestion(JsonNode e) => (string?)e["params"]?["state"] == "needsDecision" && (string?)e["params"]?["id"] == jobId;
+        await Wait.UntilAsync(() => host.Transport.Events.Any(IsQuestion), "the needsDecision event");
         var asked = host.Transport.Events.Count;
 
         await host.ResultAsync("transfers.resolveConflict", new { jobId, choice = "keepBoth", applyToAll = true });
@@ -219,7 +223,7 @@ public sealed class TransferQueueTests
             Assert.Equal(200_000, new FileInfo(copy).Length);
         }
 
-        Assert.DoesNotContain(host.Transport.Events.Skip(asked), e => (string?)e["params"]?["state"] == "needsDecision" && (string?)e["params"]?["id"] == jobId);
+        Assert.DoesNotContain(host.Transport.Events.Skip(asked), IsQuestion);
         Assert.Equal(ConflictRule.KeepBoth, host.Store.LoadAll().Single(j => j.Id == jobId).Rule);
     }
 

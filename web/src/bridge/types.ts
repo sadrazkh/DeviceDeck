@@ -200,7 +200,10 @@ export type TransferKind =
   | 'appInstall'
   | 'appExport'
   /** Photos or files dragged into File Explorer (virtual files the queue copies while Explorer reads them). */
-  | 'dragOut';
+  | 'dragOut'
+  // Photos (round 2): backup to the PC, photos into an iPhone app's Documents.
+  | 'photosBackup'
+  | 'photosToApp';
 
 export type TransferState =
   | 'queued'
@@ -258,6 +261,12 @@ export interface Settings {
   notifyOnConnect: boolean;
   /** Look for updates on GitHub Releases in the background (installed copies only). */
   autoUpdate: boolean;
+  // Photos backup defaults, for a phone without options of its own.
+  /** Each phone backs up into a sub-folder named after it. */
+  photoBackupFolder: string;
+  /** "" or yyyy, MM and dd joined by / - _ . or a space ("yyyy/MM"). */
+  photoBackupPattern: string;
+  photoBackupConvertHeic: boolean;
 }
 
 export interface HelloResult {
@@ -341,6 +350,8 @@ export interface DragOutEntry {
 export type DragOutParams =
   | { source: 'photos'; deviceId: string; items: DragOutEntry[] }
   | { source: 'files'; deviceId: string; root: string; items: DragOutEntry[] }
+  /** Bare paths in the root; the host looks each one up on the phone. */
+  | { source: 'files'; deviceId: string; root: string; paths: string[] }
   | { source: 'pc'; paths: string[] };
 
 export interface DragOutResult {
@@ -383,4 +394,59 @@ export interface UpdateStatus {
   percent: number | null;
   error: string | null;
   lastChecked: string | null;
+}
+
+// ---------- Photos backup (docs/bridge-contract.md, "Photos backup and adding photos") ----------
+
+export interface PhotoBackupCount {
+  deviceId: string;
+  /** Photos and videos on the phone this PC never backed up (a Live Photo counts once). */
+  newCount: number;
+  newPhotos: number;
+  newVideos: number;
+  /** Sizes the phone already reported. */
+  newBytes: number;
+  /** New but only in iCloud: can't be copied over USB, not in newCount. */
+  cloudOnly: number;
+  /** New, in the iPhone's Hidden album, left out by the options. */
+  hiddenLeftOut: number;
+}
+
+export interface PhotoBackupOptions {
+  destination: string;
+  folderPattern: string;
+  convertHeic: boolean;
+  includeHidden: boolean;
+}
+
+export type PhotoBackupRunState = 'running' | 'done' | 'failed' | 'cancelled';
+
+export interface PhotoBackupRun {
+  jobId: string;
+  destination: string;
+  state: PhotoBackupRunState;
+  planned: number;
+  copied: number;
+  /** Already in the destination (same size and SHA-256), now remembered. */
+  duplicates: number;
+  failed: number;
+  bytes: number;
+  /** HEIC kept as HEIC because this PC couldn't convert. */
+  keptHeic: number;
+  startedAt: string;
+  finishedAt: string | null;
+}
+
+export type HeicConversion = 'available' | 'missingCodec' | 'unknown';
+
+export interface PhotoBackupStatus {
+  deviceId: string;
+  count: PhotoBackupCount;
+  options: PhotoBackupOptions;
+  /** The phone has options of its own (false = the Settings defaults). */
+  customized: boolean;
+  backedUp: number;
+  lastRun: PhotoBackupRun | null;
+  activeJobId: string | null;
+  heicConversion: HeicConversion;
 }

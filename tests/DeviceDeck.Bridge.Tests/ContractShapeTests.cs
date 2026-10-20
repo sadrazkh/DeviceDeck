@@ -86,7 +86,7 @@ public sealed class ContractShapeTests
     public void Settings_have_exactly_the_contract_fields_and_values()
     {
         var json = ToJson(new AppSettings { PhotoExportFolder = @"D:\Photos", FileCopyFolder = @"D:\Copies" });
-        // Round-1 fields first; each round-2 feature appends its own block (checked in that feature's tests).
+        // Round 1's fields first, in order; each round-2 feature checks the fields it adds after them in its own tests.
         Assert.Equal(["language", "theme", "density", "photoExportFolder", "photoFolderPattern", "convertHeic", "fileCopyFolder", "conflictRule"], Keys(json)[..8]);
         Assert.Equal("en", (string?)json["language"]);
         Assert.Equal("system", (string?)json["theme"]);
@@ -165,7 +165,8 @@ public sealed class ContractShapeTests
         Assert.Single(apps);
 
         var settings = (await host.ResultAsync("settings.get"))!.AsObject();
-        Assert.True(settings.Count >= 8);
+        // Round 1's eight first; round-2 features add theirs after them.
+        Assert.Equal(["language", "theme", "density", "photoExportFolder", "photoFolderPattern", "convertHeic", "fileCopyFolder", "conflictRule"], Keys(settings)[..8]);
 
         var shot = (await host.ResultAsync("tools.screenshot", new { deviceId = TestPhones.IphoneId }))!.AsObject();
         Assert.StartsWith("https://device.local/shot/test-iphone/", (string?)shot["url"]);

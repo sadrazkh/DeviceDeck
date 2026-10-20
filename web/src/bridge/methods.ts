@@ -22,11 +22,14 @@ import type {
   Page,
   PhotoAlbum,
   PhotoAsset,
+  PhotoBackupCount,
+  PhotoBackupStatus,
   RebootTarget,
   Settings,
   StorageInfo,
   TransferJob,
 } from './types';
+import type { AppFilesOverview, FolderUsage } from './appFiles';
 
 type DeviceParams = { deviceId: string };
 
@@ -103,6 +106,25 @@ export interface BridgeMethods {
   'app.updateStatus': { params: Empty; result: UpdateStatus };
   'app.checkForUpdates': { params: Empty; result: UpdateStatus };
   'app.applyUpdate': { params: Empty; result: Empty };
+  // App files (round 2)
+  'appFiles.list': { params: DeviceParams; result: AppFilesOverview };
+  'appFiles.measure': { params: DeviceParams & { root: string; paths: string[] }; result: FolderUsage };
+  // Photos backup and adding photos to an iPhone app (round 2).
+  'photos.newCount': { params: DeviceParams; result: PhotoBackupCount };
+  'photos.backupStatus': { params: DeviceParams; result: PhotoBackupStatus };
+  'photos.backupConfigure': {
+    params: DeviceParams & {
+      destination?: string;
+      folderPattern?: string;
+      convertHeic?: boolean;
+      includeHidden?: boolean;
+      useDefaults?: boolean;
+    };
+    result: PhotoBackupStatus;
+  };
+  'photos.backup': { params: DeviceParams; result: JobStarted };
+  'photos.backupForget': { params: DeviceParams; result: { forgotten: number } };
+  'photos.importToApp': { params: DeviceParams & { appId: string; files: string[] }; result: JobStarted };
 }
 
 export type MethodName = keyof BridgeMethods;
@@ -164,6 +186,15 @@ const methodTable = {
   'app.updateStatus': true,
   'app.checkForUpdates': true,
   'app.applyUpdate': true,
+  // App files (round 2)
+  'appFiles.list': true,
+  'appFiles.measure': true,
+  'photos.newCount': true,
+  'photos.backupStatus': true,
+  'photos.backupConfigure': true,
+  'photos.backup': true,
+  'photos.backupForget': true,
+  'photos.importToApp': true,
 } as const satisfies Record<MethodName, true>;
 
 export const METHOD_NAMES = Object.keys(methodTable) as MethodName[];
