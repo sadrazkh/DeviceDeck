@@ -39,12 +39,28 @@ Backup. Those members return `DeviceException(not_supported)`.
 - `photos` asset ids are DCIM paths (`DCIM/100APPLE/IMG_0001.HEIC`) — URI-encode them in image URLs.
 - `GetThumbnailAsync` returns the phone's own JPEG from `/PhotoData/Thumbnails/V2` when it exists, else
   null: the host should then make one from the original.
-- `Photos.sqlite` (and its `-wal`) is copied to `%LOCALAPPDATA%\DeviceDeck\ios\cache\<UDID>\` and reused while
-  unchanged on the phone; the copy is deleted when the phone disconnects.
+- `Photos.sqlite` (and its `-wal`) is copied to `%LOCALAPPDATA%\DeviceDeck\ios\cache\<UDID>\` on its own AFC
+  connection; the 150 MB main file is copied again only when it changed, usually just the WAL is. A dropped
+  connection or a checkpoint during the copy is retried. The copy is deleted when the phone disconnects.
+- Hidden photos (ZHIDDEN) are not in "all" or any other album; they are listed in the `hidden` album.
+- `StartAsync` returns with the phones already plugged in listed (seeded from ListDevices), not empty.
+- Storage: iOS 27 has no app-usage key, so `apps` is summed from installation_proxy sizes (fetched in the
+  background once the phone is Ready; about 7–12 s on a phone with 300+ apps); `videos` is split from `photos`
+  once the photo index exists. Battery temperature is not exposed on iOS 27 and stays null there.
 - Thumbnails, photo listing and icons share one AFC and one SpringBoard connection per phone, so a grid of
   requests does not open a lockdown session each.
 - Pair records DeviceDeck makes are stored through usbmux (where Apple's tools find them); if usbmux will
   not keep one, it goes to `%LOCALAPPDATA%\DeviceDeck\ios\pair\`.
+
+## Measured on a real iPhone 16 (iOS 27.0, USB)
+
+| What | Result |
+| --- | --- |
+| Photos.sqlite (145 MB + 6 MB WAL) copy and read | 4.7–5.0 s (≈31 MB/s) |
+| Pull (phone → PC), Media or app Documents | 33–35 MB/s |
+| Push (PC → phone), Media root | 25.8 MB/s |
+| Push (PC → phone), an app's Documents (VLC) | 16–17.5 MB/s (the phone's limit: 256 KiB–4 MiB writes all land here) |
+| App list with sizes (115 user apps) | 6.7 s |
 
 ## Probe
 
