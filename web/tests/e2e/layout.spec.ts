@@ -11,7 +11,7 @@ const SIZES = [
   [1600, 1000],
 ] as const;
 const VARIANTS: Variant[] = ['light', 'dark', 'rtl'];
-const PHONES = [
+const PHONES: { name: string; params: Record<string, string> }[] = [
   { name: 'iphone', params: {} },
   { name: 'android', params: { device: 'android' } },
   { name: 'limited', params: { mock: 'limited' } },

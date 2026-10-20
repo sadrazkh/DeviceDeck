@@ -70,37 +70,49 @@ public sealed class DragOutLifetimeTests
         await Wait.UntilAsync(() => host.Registry.Find(session.Id) is null, "the session to close");
     }
 
-    // The fake phone writes 256 KB at a time: at 400 KB/s a new chunk comes every 0.64 s, well inside the idle limit.
-    private const long Rate = 400_000;
-    private static readonly TimeSpan Idle = TimeSpan.FromSeconds(1.1);
+    // The fake phone writes 256 KB at a time, then waits to keep its rate: at 10 KB/s the job copies the first chunk
+    // of the first photo and then sits for 25 s, running but copying nothing. The tests move it on by hand.
+    private const long Stalled = 10_000;
 
     [Fact]
     public async Task A_read_does_not_give_up_while_the_job_is_paused()
     {
-        await using var host = await DragHost.StartAsync(bytesPerSecond: Rate);
-        var session = Session(host, idleLimit: Idle);
+        await using var host = await DragHost.StartAsync(bytesPerSecond: Stalled);
+        var session = Session(host, idleLimit: TimeSpan.FromMilliseconds(300));
         await Task.Run(session.EnsureJob);
         host.Queue.Pause(session.JobId!);
         await Wait.UntilAsync(() => host.Queue.Get(session.JobId!)!.State == TransferState.Paused, "the job to pause");
 
         var read = Task.Run(() => session.WaitFor(2, host.Photos[2].Size));
-        await Task.Delay(Idle * 3); // nothing copied for three idle limits, but paused
+        await Task.Delay(TimeSpan.FromSeconds(2)); // well past the idle limit with nothing copied, but paused
         Assert.False(read.IsCompleted);
 
-        host.Queue.Resume(session.JobId!);
-        Assert.Equal(host.Photos[2].Size, await read.WaitAsync(TimeSpan.FromSeconds(30)));
-        session.Close();
+        host.Queue.Cancel(session.JobId!);
+        var error = await Assert.ThrowsAsync<IOException>(() => read.WaitAsync(TimeSpan.FromSeconds(30)));
+        Assert.Equal("The copy was cancelled.", error.Message);
     }
 
     [Fact]
-    public async Task A_read_of_a_later_file_waits_while_the_job_copies_an_earlier_one()
+    public async Task A_read_waits_while_other_files_copy_and_gives_up_once_nothing_moves()
     {
-        await using var host = await DragHost.StartAsync(bytesPerSecond: Rate);
-        var session = Session(host, idleLimit: Idle);
+        await using var host = await DragHost.StartAsync(bytesPerSecond: Stalled);
+        var session = Session(host, idleLimit: TimeSpan.FromSeconds(1));
         await Task.Run(session.EnsureJob);
+        await Wait.UntilAsync(() => host.Queue.Get(session.JobId!)!.State == TransferState.Running, "the job to run");
 
-        // Item 2 gets its first byte after about 1.5 s, past the idle limit (items 0 and 1 come first), yet the job is copying.
-        Assert.Equal(host.Photos[2].Size, await Task.Run(() => session.WaitFor(2, long.MaxValue)).WaitAsync(TimeSpan.FromSeconds(30)));
+        // Nothing of item 2 for three idle limits, while bytes of item 0 keep coming: the read waits.
+        var read = Task.Run(() => session.WaitFor(2, host.Photos[2].Size));
+        for (var i = 1; i <= 30; i++)
+        {
+            session.Report(0, i * 1000);
+            await Task.Delay(100);
+        }
+
+        Assert.False(read.IsCompleted);
+
+        // Then nothing at all: the read gives up.
+        var error = await Assert.ThrowsAsync<IOException>(() => read.WaitAsync(TimeSpan.FromSeconds(30)));
+        Assert.Equal("The phone stopped sending this file.", error.Message);
         session.Close();
     }
 
