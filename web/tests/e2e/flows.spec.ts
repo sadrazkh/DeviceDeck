@@ -42,6 +42,16 @@ test('connect → Trust → Overview → Photos → select → Export → transf
   consoleWatch.assertClean();
 });
 
+test('first indexing shows "Reading 13,213 photos" with progress', async ({ page }) => {
+  const consoleWatch = watchConsole(page);
+  await page.goto('/?latency=0&theme=light&screen=photos');
+  await expect(page.getByText('Reading 13,213 photos…')).toBeVisible();
+  await page.waitForTimeout(1500);
+  await shot(page, 'flow-photos-indexing-light');
+  await expect(page.getByText('Reading 13,213 photos…')).toBeHidden({ timeout: 10_000 });
+  consoleWatch.assertClean();
+});
+
 test('photo viewer opens on double-click and moves with the arrow keys', async ({ page }) => {
   const consoleWatch = watchConsole(page);
   await page.goto(query('dark', { screen: 'photos' }));

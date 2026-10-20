@@ -357,21 +357,21 @@ export function OverviewScreen({ device }: { device: DeviceSummary }) {
           </div>
         </Card>
 
-        <Card title={t('overview.storage')} className={styles.wide} data-testid="storage-card">
-          {storage.error ? (
-            <ErrorBanner error={storage.error} onRetry={() => void storage.refetch()} />
-          ) : !caps.has('storage') ? (
-            <p className="t-secondary">{t('error.next.not_supported')}</p>
-          ) : volumes.length === 0 ? (
-            <div className={styles.skeletonStack}>
-              <Skeleton height={14} radius="999px" />
-              <Skeleton width="70%" />
-              <Skeleton width="55%" />
-            </div>
-          ) : (
-            volumes.map((volume) => <StorageBar key={volume.key} volume={volume} showLabel={volumes.length > 1} />)
-          )}
-        </Card>
+        {caps.has('storage') ? (
+          <Card title={t('overview.storage')} className={styles.wide} data-testid="storage-card">
+            {storage.error ? (
+              <ErrorBanner error={storage.error} onRetry={() => void storage.refetch()} />
+            ) : volumes.length === 0 ? (
+              <div className={styles.skeletonStack}>
+                <Skeleton height={14} radius="999px" />
+                <Skeleton width="70%" />
+                <Skeleton width="55%" />
+              </div>
+            ) : (
+              volumes.map((volume) => <StorageBar key={volume.key} volume={volume} showLabel={volumes.length > 1} />)
+            )}
+          </Card>
+        ) : null}
 
         {caps.has('battery') ? (
           <BatteryCard battery={battery.data} loading={battery.isPending} error={battery.error} onRetry={() => void battery.refetch()} />

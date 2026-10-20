@@ -93,7 +93,7 @@ describe('mock backend', () => {
   it('reports first indexing progress', async () => {
     const { client, backend, events } = setup();
     await client.call('photos.albums', { deviceId: IPHONE_ID });
-    run(backend, 3000);
+    run(backend, 7000);
     const progress = events.filter((e) => e.event === 'photos.indexProgress').map((e) => e.params as { done: number; total: number });
     expect(progress.length).toBeGreaterThan(5);
     expect(progress.at(-1)).toEqual({ deviceId: IPHONE_ID, done: 13_213, total: 13_213 });

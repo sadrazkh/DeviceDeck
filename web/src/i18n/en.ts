@@ -259,7 +259,7 @@ export const en = {
   'overview.activity': 'Recent activity',
   'overview.activityEmpty': 'No transfers with this phone yet.',
   'overview.screenshotTitle': 'Screenshot of {device}',
-  'overview.limitedBanner': 'Limited mode: only photos can be read. Install Apple’s driver for files, apps and backups.',
+  'overview.limitedBanner': 'Only the camera roll can be read over this connection. Install Apple’s driver to add files, app documents, apps, backups and battery health.',
 
   // Photos
   'photos.title': 'Photos',

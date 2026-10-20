@@ -524,9 +524,10 @@ export class MockBackend {
     if (this.indexed.has(deviceId)) return;
     this.indexed.add(deviceId);
     if (!this.indexing) return;
-    const steps = 12;
+    // About six seconds, like reading a large library's index the first time.
+    const steps = 24;
     for (let i = 0; i <= steps; i++) {
-      this.after(i * 220, () =>
+      this.after(i * 250, () =>
         this.emit('photos.indexProgress', { deviceId, done: Math.round((total * i) / steps), total }),
       );
     }

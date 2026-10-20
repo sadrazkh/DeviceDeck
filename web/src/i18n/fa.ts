@@ -251,7 +251,7 @@ export const fa: Record<MessageKey, string> = {
   'overview.activity': 'کارهای اخیر',
   'overview.activityEmpty': 'هنوز انتقالی با این گوشی انجام نشده.',
   'overview.screenshotTitle': 'عکس صفحهٔ {device}',
-  'overview.limitedBanner': 'حالت محدود: فقط عکس‌ها خوانده می‌شوند. برای فایل‌ها، برنامه‌ها و پشتیبان، درایور اپل را نصب کنید.',
+  'overview.limitedBanner': 'با این اتصال فقط گالری دوربین خوانده می‌شود. برای فایل‌ها، اسناد برنامه‌ها، برنامه‌ها، پشتیبان و سلامت باتری، درایور اپل را نصب کنید.',
 
   'photos.title': 'عکس‌ها',
   'photos.subtitle': '{photos} عکس · {videos} ویدیو',
