@@ -867,3 +867,81 @@ and `.backup.ddpart` (a download always starts over, so none is ever resumed fro
 every run, those in the folders backups went to are removed, but only where no backup is queued, running, paused or
 waiting for that folder, and only when not written in the last minute. Nothing else is touched: not another copy's
 `.ddpart`, not a file outside the backup folders. The host logs what went and how much space it freed.
+
+## WhatsApp (round 4, whatsapp session)
+
+WhatsApp's chats on an iPhone are read from a backup on this PC (DeviceDeck's, iTunes' or Apple Devices'; encrypted
+ones once `backup.unlock`ed), through the same sessions as contacts and messages. WhatsApp keeps them in its app
+group: `AppDomainGroup-group.net.whatsapp.WhatsApp.shared/ChatStorage.sqlite` (WhatsApp Business:
+`…group.net.whatsapp.WhatsAppSMB.shared`), media under `Message/Media/…`. On Android the chats can't be opened
+(`Databases/msgstore.db.crypt14`/`.crypt15` are encrypted with a key only the phone has); DeviceDeck copies WhatsApp's
+folders to the PC instead, for WhatsApp itself to restore.
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `whatsapp.status` | `{ backupId }` | `WhatsAppStatus` |
+| `whatsapp.chats` | `{ backupId }` | `WhatsAppChat[]` (both apps, newest first) |
+| `whatsapp.messages` | `{ backupId, chatId, offset, limit }` | `Page<WhatsAppMessage>` (oldest first; limit 1–1000; `total` = `chat.messageCount`) |
+| `whatsapp.thumbnail` | `{ backupId, mediaId, size? }` | `{ dataUrl: string \| null }` (WhatsApp's own thumbnail, else the photo or sticker made small; size 64–1024, default 256) |
+| `whatsapp.media` | `{ backupId, mediaId }` | `{ dataUrl, mimeType, size }` (a voice note to play; files over 32 MB are `not_supported`: export them) |
+| `whatsapp.export` | `{ backupId, format: "html" \| "pdf", destination, chatIds? }` | `BackupJob` (kind `export`; no `chatIds` = every chat) |
+| `whatsapp.exportMedia` | `{ backupId, destination, chatIds? }` | `BackupJob` (kind `export`) |
+| `whatsapp.android` | `{ deviceId }` | `WhatsAppAndroidInfo` (Android only, else `not_supported`) |
+| `whatsapp.backupAndroid` | `{ deviceId, destination }` | `{ jobId, folder }` (a transfer job of kind `whatsAppMedia`) |
+
+- **Exports** run as backup jobs (`backup.updated`, Backup screen). One chat writes `<chat>.html` (or `.pdf`) and its
+  media into `<chat> files` right in `destination`, and `BackupJob.destination` is that page. Several chats go into
+  `destination\WhatsApp - <phone> - <backup date>` (that folder is `destination`), one page per chat. Media files
+  keep WhatsApp's names and get their message's date. `exportMedia` writes
+  `destination\WhatsApp media - <phone> - <backup date>\<chat>\…`, one folder per chat, only files the backup holds.
+  Files listed but not in the backup end the job `done` with a `backup_missing` warning in `error`.
+- **Android copy**: `whatsapp.backupAndroid` picks the dated folder `destination\WhatsApp - <phone> - yyyy-MM-dd`
+  (`… (1)` when taken) and queues one transfer job that copies `Media`, `Databases` and `Backups` of
+  `Android/media/com.whatsapp/WhatsApp` (and `com.whatsapp.w4b/WhatsApp Business`; `/WhatsApp` and
+  `/WhatsApp Business` at the top of the storage for versions before 2021) into `<folder>\WhatsApp\…` and
+  `<folder>\WhatsApp Business\…`. Nothing on the phone is changed. No WhatsApp folder: the job fails `path_not_found`.
+- **Not in the backup**: `whatsapp.status` says `found: false` (and `installed`, from the backup's app list and
+  domains); `whatsapp.chats` is `[]`. An Android backup is `not_supported`. A database whose tables DeviceDeck doesn't
+  know is `backup_corrupt`.
+- **Other WhatsApp versions**: every table and column is looked up first. One that isn't there reads as empty and is
+  named in `status.missing` (`"ZWAMESSAGE.ZSTARRED"`, `"ZWAGROUPMEMBER"`), so the page can say some details are
+  missing instead of failing. A `ChatStorage.sqlite-wal` next to the database is folded in, in memory.
+
+```ts
+type WhatsAppAccount = "whatsApp" | "business";
+type WhatsAppStatus = { backupId: string; found: boolean; installed: boolean; accounts: WhatsAppAccountInfo[]; missing: string[] };
+type WhatsAppAccountInfo = { account: WhatsAppAccount; name: string; chats: number; messages: number;
+  media: number; mediaInBackup: number; mediaBytes: number };
+type WhatsAppChat = {
+  id: string;                     // "w:<row>" or "b:<row>" (Business)
+  account: WhatsAppAccount; title: string;
+  jid: string | null;             // "989121234567@s.whatsapp.net", "…@g.us"
+  phone: string | null;           // "+989121234567", one-to-one chats
+  isGroup: boolean; messageCount: number; mediaCount: number; lastMessageAt: string | null;
+  preview: string | null; previewMedia: WhatsAppMediaKind | null; archived: boolean;
+};
+type WhatsAppMessageKind = "text" | "media" | "event" | "deleted" | "other";   // other: a poll, a call, something newer
+type WhatsAppMessage = {
+  id: string; kind: WhatsAppMessageKind; date: string | null; fromMe: boolean;
+  senderJid: string | null; senderName: string | null;   // groups only
+  text: string | null;                                     // or a photo's caption
+  starred: boolean; quote: WhatsAppQuote | null; media: WhatsAppMedia | null;
+};
+type WhatsAppQuote = { messageId: string | null; fromMe: boolean; senderName: string | null; text: string | null; mediaKind: WhatsAppMediaKind | null };
+type WhatsAppMediaKind = "image" | "video" | "audio" | "voice" | "document" | "sticker" | "gif" | "location" | "contact" | "other";
+type WhatsAppMedia = {
+  id: string;                     // for whatsapp.thumbnail / whatsapp.media
+  kind: WhatsAppMediaKind; name: string; mimeType: string | null; size: number; durationSeconds: number | null;
+  inBackup: boolean; hasThumbnail: boolean; latitude: number | null; longitude: number | null;
+};
+type WhatsAppAndroidInfo = { deviceId: string; apps: WhatsAppAndroidApp[] };
+type WhatsAppAndroidApp = {
+  package: "com.whatsapp" | "com.whatsapp.w4b"; account: WhatsAppAccount; name: string;
+  folder: string; hasFolder: boolean; installed: boolean | null;
+  mediaFiles: number | null; mediaBytes: number | null;
+  chatBackups: { name: string; size: number; modified: string | null }[];   // msgstore*.crypt14/15, newest first
+};
+```
+
+Also in this round: `SqliteImage.FromBytes` opens WAL-mode database images (a phone's databases are in WAL mode;
+before, an encrypted backup's databases failed with "unable to open database file").

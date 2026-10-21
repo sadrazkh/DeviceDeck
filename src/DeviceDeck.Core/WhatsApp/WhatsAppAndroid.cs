@@ -120,7 +120,7 @@ public static class WhatsAppAndroid
         return new WhatsAppAndroidInfo(device.Summary.Id, result);
     }
 
-    internal static void RequireAndroid(IDevice device)
+    public static void RequireAndroid(IDevice device)
     {
         if (device.Summary.Platform != DevicePlatform.Android)
         {
