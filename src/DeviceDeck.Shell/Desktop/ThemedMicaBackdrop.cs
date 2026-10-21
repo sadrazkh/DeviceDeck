@@ -51,6 +51,15 @@ internal sealed class ThemedMicaBackdrop(MicaKind kind) : SystemBackdrop
         _controller.SetSystemBackdropConfiguration(_configuration);
     }
 
+    /// <summary>
+    /// XAML calls this when the root's theme changes. The tint here comes from <see cref="Dark"/>, not from XAML's default
+    /// configuration, so there is nothing to do; the base implementation can throw (E_INVALIDARG for "target", seen
+    /// after a folder picker closed and the theme then changed) and take the window down with it.
+    /// </summary>
+    protected override void OnDefaultSystemBackdropConfigurationChanged(ICompositionSupportsSystemBackdrop target, XamlRoot xamlRoot)
+    {
+    }
+
     protected override void OnTargetDisconnected(ICompositionSupportsSystemBackdrop disconnectedTarget)
     {
         base.OnTargetDisconnected(disconnectedTarget);
