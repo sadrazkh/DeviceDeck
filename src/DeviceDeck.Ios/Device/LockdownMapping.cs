@@ -14,14 +14,18 @@ public static class LockdownMapping
         DeviceCapability.Reboot | DeviceCapability.Shutdown | DeviceCapability.Rename |
         DeviceCapability.Backup | DeviceCapability.Restore | DeviceCapability.Contacts | DeviceCapability.Messages;
 
-    public static DeviceCapability CapabilitiesFor(DeviceState state) => state switch
+    /// <param name="photosDelete">
+    /// Windows' camera connection shows the phone's camera roll as deletable (round 4): PhotosDelete is added when Ready.
+    /// It is never in <see cref="ReadyCapabilities"/>: deleting over AFC would leave the Photos library pointing at missing files.
+    /// </param>
+    public static DeviceCapability CapabilitiesFor(DeviceState state, bool photosDelete = false) => state switch
     {
-        DeviceState.Ready => ReadyCapabilities,
+        DeviceState.Ready => ReadyCapabilities | (photosDelete ? DeviceCapability.PhotosDelete : DeviceCapability.None),
         DeviceState.Locked => DeviceCapability.Info,
         _ => DeviceCapability.None,
     };
 
-    public static DeviceSummary Summary(string udid, PlistDict values, ConnectionKind connection, DeviceState state)
+    public static DeviceSummary Summary(string udid, PlistDict values, ConnectionKind connection, DeviceState state, bool photosDelete = false)
     {
         var productType = values.GetString("ProductType");
         var enclosure = values.GetString("DeviceEnclosureColor") ?? values.GetLong("DeviceEnclosureColor")?.ToString(System.Globalization.CultureInfo.InvariantCulture);
@@ -35,7 +39,7 @@ public static class LockdownMapping
             Connection: connection,
             State: state,
             Mode: DeviceMode.Full,
-            Capabilities: CapabilitiesFor(state),
+            Capabilities: CapabilitiesFor(state, photosDelete),
             ColorHex: DeviceColors.Hex(productType, enclosure));
     }
 

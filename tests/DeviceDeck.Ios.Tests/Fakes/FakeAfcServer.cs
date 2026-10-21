@@ -92,6 +92,13 @@ internal sealed class FakeAfcServer
             return _entries.ContainsKey(path);
     }
 
+    /// <summary>Removes a file the way the phone itself would (the Photos library deleting it), not through AFC.</summary>
+    public void Remove(string path)
+    {
+        lock (_gate)
+            _entries.Remove(path);
+    }
+
     public async Task ServeAsync(Stream s, CancellationToken ct)
     {
         await using var _ = s;

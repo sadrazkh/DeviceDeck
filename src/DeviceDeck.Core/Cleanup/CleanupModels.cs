@@ -22,7 +22,10 @@ public sealed record CleanupNote(CleanupSection Section, string Code, string Mes
 /// <param name="CanCopyFirst">The app itself can be saved to the PC before it goes (Android: the APK, not its data).</param>
 public sealed record CleanupApps(IReadOnlyList<AppInfo> Largest, int Count, long TotalBytes, bool CanUninstall, bool CanCopyFirst);
 
-/// <param name="CanDelete">The phone's media can be deleted from the PC safely (Android MediaStore). False on an iPhone: copy, then delete in Photos.</param>
+/// <param name="CanDelete">
+/// The phone's media can be deleted from the PC safely: Android's MediaStore, or an iPhone whose camera connection
+/// (Windows Portable Devices) allows it (round 4). Otherwise: copy, then delete in Photos.
+/// </param>
 /// <param name="CloudOnlyCount">iPhone originals that are in iCloud only: they take no room and are left out.</param>
 public sealed record CleanupMedia(
     IReadOnlyList<PhotoAsset> LargestVideos,
@@ -87,4 +90,13 @@ public sealed record CleanupFileItem(string Root, string Path, long Size);
 /// <param name="Skipped">Items left alone because they changed or disappeared since the analysis.</param>
 /// <param name="CopyJobIds">The copy-to-PC jobs that ran first.</param>
 /// <param name="CopyIncomplete">The copy didn't finish, so nothing was deleted.</param>
-public sealed record CleanupResult(int Deleted, int Skipped, long FreedBytes, IReadOnlyList<string> CopyJobIds, bool CopyIncomplete);
+public sealed record CleanupResult(int Deleted, int Skipped, long FreedBytes, IReadOnlyList<string> CopyJobIds, bool CopyIncomplete)
+{
+    // Round 4 (photodelete): photos and videos only.
+
+    /// <summary>One result per photo or video that was tried, in order; null for files, apps and caches.</summary>
+    public IReadOnlyList<PhotoDeleteResult>? Items { get; init; }
+
+    /// <summary>Where the deleted photos went (Recently Deleted or gone for good); null for files, apps and caches.</summary>
+    public PhotoDeleteDestination? GoesTo { get; init; }
+}

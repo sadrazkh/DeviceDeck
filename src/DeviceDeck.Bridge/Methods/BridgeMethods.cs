@@ -258,6 +258,9 @@ public static class BridgeMethods
         // Photos into Photos with LocalSend (round 3).
         LocalSend.LocalSendMethods.Register(rpc, s);
 
+        // Deleting photos, iPhone included, with a reason when it can't (round 4, photodelete).
+        PhotoDeleteMethods.Register(rpc, s);
+
         return rpc;
     }
 

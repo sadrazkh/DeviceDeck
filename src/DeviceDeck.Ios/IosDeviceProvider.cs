@@ -2,6 +2,7 @@ using DeviceDeck.Core.Abstractions;
 using DeviceDeck.Ios.Device;
 using DeviceDeck.Ios.Protocol.Lockdown;
 using DeviceDeck.Ios.Protocol.Usbmux;
+using DeviceDeck.Ios.Wpd;
 
 namespace DeviceDeck.Ios;
 
@@ -20,7 +21,7 @@ public sealed class IosDeviceProvider : IDeviceProvider
     private readonly CancellationTokenSource _stop = new();
     private Task _watch = Task.CompletedTask;
 
-    public IosDeviceProvider() : this(new TcpUsbmuxConnector(), new IosProviderOptions())
+    public IosDeviceProvider() : this(new TcpUsbmuxConnector(), new IosProviderOptions { Wpd = WpdBackends.ForThisPc() })
     {
     }
 

@@ -22,4 +22,18 @@ public sealed class IosProviderOptions
 
     /// <summary>Send lockdown Pair when there is no pair record, so the phone shows "Trust This Computer?".</summary>
     public bool AutoPair { get; init; } = true;
+
+    // Round 4 (photodelete)
+
+    /// <summary>
+    /// Windows Portable Devices, to delete photos the way File Explorer does. Null (the default here; the provider's
+    /// parameterless constructor sets the real one): photos can't be deleted and PhotosDelete is never reported.
+    /// </summary>
+    public Wpd.IWpdBackend? Wpd { get; init; }
+
+    /// <summary>Where photo-deletes-yyyyMMdd.log goes (one line per photo deleted); null keeps the lines in memory only.</summary>
+    public string? PhotoDeleteLogDirectory { get; init; } = PhotoDelete.PhotoDeleteLog.DefaultFolder;
+
+    /// <summary>How long to wait before asking Windows again whether it sees the phone as a camera, after it just connected.</summary>
+    public TimeSpan PhotoDeleteRetryInterval { get; init; } = TimeSpan.FromSeconds(3);
 }

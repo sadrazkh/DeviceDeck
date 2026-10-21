@@ -31,8 +31,15 @@ protocol layer — see [DECISION.md](DECISION.md) for why. No native binaries; t
 - `Ready` — session works and services start. Capabilities: Info, Storage, Battery, PhotosRead, Files,
   AppDocuments, AppsList, AppsInstall, AppsUninstall, Reboot, Shutdown.
 
-Not advertised: PhotosDelete, PhotosImport, AppsExport, Screenshot (needs Developer Mode), RebootToRecovery,
+Not advertised: PhotosImport, AppsExport, Screenshot (needs Developer Mode), RebootToRecovery,
 Backup. Those members return `DeviceException(not_supported)`.
+
+`PhotosDelete` (round 4) is added while Ready only when Windows' camera connection (Windows Portable Devices,
+the PTP device File Explorer shows as This PC › Apple iPhone) lists the phone by its UDID and its camera roll says
+its files can be deleted. Deletes go through WPD (`Wpd/`, `PhotoDelete/`), never over AFC: removing DCIM files
+behind Photos' back leaves Photos.sqlite pointing at missing files. `IPhotoDeleter.GetDeleteSupportAsync` says why
+not otherwise (iCloud Photos / read-only, locked, not a camera, converted "Automatic" transfers). Each deleted
+object is logged (path and size) in `logs\photo-deletes-yyyyMMdd.log`.
 
 ## Notes for the host
 
