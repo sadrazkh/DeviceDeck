@@ -236,6 +236,35 @@ public sealed class SqliteTransferStore : ITransferStore
         }
     }
 
+    /// <summary>One job's items as last saved (LocalSend asks which files a new session still has to send).</summary>
+    public IReadOnlyList<TransferItem> LoadItems(string jobId)
+    {
+        lock (_gate)
+        {
+            using var cmd = _db.CreateCommand();
+            cmd.CommandText = "SELECT idx, source, destination, name, size, state, error_code, error_message FROM items WHERE job_id = $job ORDER BY idx;";
+            cmd.Parameters.AddWithValue("$job", jobId);
+            using var r = cmd.ExecuteReader();
+            var items = new List<TransferItem>();
+            while (r.Read())
+            {
+                items.Add(new TransferItem
+                {
+                    Index = r.GetInt32(0),
+                    Source = r.GetString(1),
+                    Destination = r.GetString(2),
+                    Name = r.GetString(3),
+                    Size = r.GetInt64(4),
+                    State = Enum.Parse<TransferItemState>(r.GetString(5)),
+                    ErrorCode = r.IsDBNull(6) ? null : r.GetString(6),
+                    ErrorMessage = r.IsDBNull(7) ? null : r.GetString(7),
+                });
+            }
+
+            return items;
+        }
+    }
+
     public void Dispose()
     {
         lock (_gate)
