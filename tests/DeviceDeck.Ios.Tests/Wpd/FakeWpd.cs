@@ -89,6 +89,9 @@ internal sealed class FakeWpdDevice(string pnpId, string? usbSerial, WpdDevicePr
     /// <summary>Deleting a Live Photo's still also takes its video, as Photos does for the whole asset.</summary>
     public bool StillTakesItsVideo { get; set; }
 
+    /// <summary>What reading an object Windows no longer has throws (some drivers answer with an error, not "no such object").</summary>
+    public int? GoneObjectError { get; set; }
+
     /// <summary>A folder, storage or anything outside DCIM was asked to be deleted.</summary>
     public List<string> Forbidden { get; } = [];
 
@@ -170,7 +173,12 @@ internal sealed class FakeWpdDevice(string pnpId, string? usbSerial, WpdDevicePr
     {
         lock (_gate)
         {
-            return _objects.GetValueOrDefault(id);
+            if (!_objects.TryGetValue(id, out var o) && GoneObjectError is { } hr)
+            {
+                throw new WpdException("No such object.", hr);
+            }
+
+            return o;
         }
     }
 

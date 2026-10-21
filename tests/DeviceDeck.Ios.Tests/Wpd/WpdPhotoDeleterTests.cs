@@ -168,6 +168,19 @@ public sealed class WpdPhotoDeleterTests
     }
 
     [Fact]
+    public async Task A_delete_that_went_through_stays_deleted_when_windows_answers_an_error_for_the_gone_object()
+    {
+        var device = Library(6);
+        device.GoneObjectError = unchecked((int)0x80042009); // an undocumented answer for "no such object"
+
+        var results = await Deleter().DeleteAsync(Enumerable.Range(1, 6).Select(Item).ToList(), Ct);
+
+        Assert.All(results, r => Assert.Equal(PhotoDeleteOutcome.Deleted, r.Outcome));
+        Assert.Equal(2, device.DeleteCalls.Count);
+        Assert.Empty(_roll.Disk);
+    }
+
+    [Fact]
     public async Task An_object_that_changed_just_before_its_batch_stops_the_delete()
     {
         var device = Library(7);

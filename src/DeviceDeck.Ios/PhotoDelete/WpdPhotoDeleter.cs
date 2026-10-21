@@ -501,8 +501,7 @@ public sealed class WpdPhotoDeleter
             var plan = plans[i];
             var stillAt = owner.FindIndex(o => o.Item == i && o.IsStill);
             var stillHr = outcome[stillAt];
-            var stillGone = c.Get(plan.Still!.Id) is null;
-            if (stillHr != 0 || !stillGone)
+            if (stillHr != 0 || StillListed(c, plan.Still!.Id) == true)
             {
                 var hr = stillHr != 0 ? stillHr : WpdErrors.GenFailure;
                 results[i] = new PhotoDeleteResult(plan.Item.Id, plan.Asset.FileName, plan.Item.Size, PhotoDeleteOutcome.Failed, Code(hr),
@@ -519,8 +518,7 @@ public sealed class WpdPhotoDeleter
             if (plan.Pair is { } pair)
             {
                 var pairAt = owner.FindIndex(o => o.Item == i && !o.IsStill);
-                var pairGone = c.Get(pair.Id) is null;
-                if (outcome[pairAt] == 0 || pairGone)
+                if (outcome[pairAt] == 0 || StillListed(c, pair.Id) == false)
                 {
                     also.Add(pair.FileName ?? Path.GetFileName(plan.PairPath!));
                     freed += plan.PairDiskSize ?? 0;
@@ -541,7 +539,7 @@ public sealed class WpdPhotoDeleter
             if (plan.Edits.Count > 0)
             {
                 // Not deleted by DeviceDeck: the phone makes these for the PC. What happened to them is reported.
-                var kept = plan.Edits.Where(o => c.Get(o.Id) is not null).Select(o => o.FileName).ToList();
+                var kept = plan.Edits.Where(o => StillListed(c, o.Id) == true).Select(o => o.FileName).ToList();
                 var names = string.Join(", ", plan.Edits.Select(o => o.FileName));
                 notes.Add(kept.Count == 0
                     ? $"Its edit ({names}) went with it."
@@ -560,6 +558,23 @@ public sealed class WpdPhotoDeleter
         }
 
         return !stop;
+    }
+
+    /// <summary>
+    /// Whether Windows still lists an object after a delete; null when it couldn't say (which error it gives for an
+    /// object it no longer has isn't documented). The batch's own per-object result decides then: never throws, so a
+    /// delete that went through is never reported as failed.
+    /// </summary>
+    private static bool? StillListed(IWpdConnection c, string id)
+    {
+        try
+        {
+            return c.Get(id) is not null;
+        }
+        catch (WpdException)
+        {
+            return null;
+        }
     }
 
     private async Task ClassifyAsync(IReadOnlyList<PhotoDeleteItem> items, Plan?[] plans, PhotoDeleteResult?[] results, List<int> deleted, CancellationToken ct)
