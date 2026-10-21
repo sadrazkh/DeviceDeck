@@ -7,7 +7,7 @@ namespace DeviceDeck.Bridge.LocalSend;
 
 // docs/bridge-contract.md, "Photos into Photos with LocalSend (round 3)".
 
-public sealed record LocalSendDiscoverParams(string DeviceId, bool Wifi = false);
+public sealed record LocalSendDiscoverParams(string DeviceId, bool Wifi = false, bool Rescan = false);
 
 public sealed record LocalSendSendParams(string DeviceId, LocalSendTarget Target, IReadOnlyList<string> Files);
 
@@ -18,7 +18,7 @@ public static class LocalSendMethods
 {
     public static void Register(JsonRpcDispatcher rpc, BridgeServices s)
     {
-        rpc.Register<LocalSendDiscoverParams, LocalSendDiscovery>("localsend.discover", (p, ct) => Service(s).DiscoverAsync(p.DeviceId, p.Wifi, ct));
+        rpc.Register<LocalSendDiscoverParams, LocalSendDiscovery>("localsend.discover", (p, ct) => Service(s).DiscoverAsync(p.DeviceId, p.Wifi, ct, p.Rescan));
         rpc.Register<LocalSendSendParams, JobIdResult>("localsend.send", async (p, ct) =>
         {
             if (p.Target is null)

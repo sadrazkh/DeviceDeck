@@ -78,12 +78,13 @@ public sealed class LocalSendService : IAsyncDisposable
     /// localsend.discover: is LocalSend answering through the phone's cable, and (with <paramref name="wifi"/>) who answers
     /// on the network. Wi-Fi searches run in the background; ask again to see more.
     /// </summary>
-    public async Task<LocalSendDiscovery> DiscoverAsync(string deviceId, bool wifi, CancellationToken ct)
+    /// <param name="rescan">Look on Wi-Fi again now, even if a search finished a moment ago.</param>
+    public async Task<LocalSendDiscovery> DiscoverAsync(string deviceId, bool wifi, CancellationToken ct, bool rescan = false)
     {
         var device = _hub.GetUsableDevice(deviceId);
         if (wifi)
         {
-            Finder.StartWifiSearch();
+            Finder.StartWifiSearch(again: rescan);
         }
 
         var (state, detail, receiver) = await ProbeUsbAsync(device, ct).ConfigureAwait(false);

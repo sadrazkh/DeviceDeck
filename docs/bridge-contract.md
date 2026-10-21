@@ -652,7 +652,7 @@ it runs no LocalSend server and announces nothing but its own multicast "hello" 
 
 | Method | Params | Result |
 | --- | --- | --- |
-| `localsend.discover` | `{ deviceId, wifi?: boolean }` | `LocalSendDiscovery`. Probes the cable each call (a few seconds at most); `wifi: true` starts a Wi-Fi search in the background (about 8 s) — call again to see what it found. |
+| `localsend.discover` | `{ deviceId, wifi?: boolean, rescan?: boolean }` | `LocalSendDiscovery`. Probes the cable each call (a few seconds at most); `wifi: true` starts a Wi-Fi search in the background (about 8 s; at most once a minute, or now with `rescan: true`) — call again to see what it found. |
 | `localsend.send` | `{ deviceId, target: LocalSendTarget, files: string[] }` | `{ jobId }` (files from a drop or picker, like `photos.import`) |
 | `localsend.retry` | `{ jobId, pin?: string }` | `{}` — runs a failed (or cancelled, or partly failed) send again for the files that didn't go |
 | `localsend.job` | `{ jobId }` | `LocalSendJobStatus` with `files` |

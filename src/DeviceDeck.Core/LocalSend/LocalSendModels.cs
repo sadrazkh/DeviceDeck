@@ -80,6 +80,7 @@ public sealed record LocalSendTarget(
     string? Alias = null,
     string? DeviceModel = null)
 {
+    [JsonIgnore]
     public bool Https => !string.Equals(Protocol, "http", StringComparison.OrdinalIgnoreCase);
 }
 

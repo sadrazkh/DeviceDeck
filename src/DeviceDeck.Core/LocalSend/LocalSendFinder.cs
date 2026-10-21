@@ -25,6 +25,9 @@ public sealed class LocalSendFinderOptions
     /// <summary>A receiver not seen again for this long drops out of the list.</summary>
     public TimeSpan Remember { get; init; } = TimeSpan.FromMinutes(2);
 
+    /// <summary>The page asks every few seconds; a new search starts only this long after the last one (or when asked to look again).</summary>
+    public TimeSpan SearchAgainAfter { get; init; } = TimeSpan.FromMinutes(1);
+
     public int SweepParallelism { get; init; } = 64;
 
     public LocalSendTimeouts ProbeTimeouts { get; init; } = new() { Connect = TimeSpan.FromSeconds(4), Short = TimeSpan.FromSeconds(4) };
@@ -125,12 +128,16 @@ public sealed class LocalSendFinder : IAsyncDisposable
         }
     }
 
-    /// <summary>Starts a Wi-Fi search unless one is running; read the results with <see cref="WifiSnapshot"/>.</summary>
-    public void StartWifiSearch()
+    /// <summary>
+    /// Starts a Wi-Fi search unless one is running or one finished lately (<paramref name="again"/> skips that wait);
+    /// read the results with <see cref="WifiSnapshot"/>.
+    /// </summary>
+    public void StartWifiSearch(bool again = false)
     {
         lock (_gate)
         {
-            if (!_search.IsCompleted || _life.IsCancellationRequested)
+            if (!_search.IsCompleted || _life.IsCancellationRequested
+                || (!again && _searchedAt is { } last && DateTimeOffset.UtcNow - last < _options.SearchAgainAfter))
             {
                 return;
             }
