@@ -90,7 +90,7 @@ public sealed class LocalSendFinder : IAsyncDisposable
         var port = _options.Port;
         using var client = new LocalSendClient(
             new LocalSendEndpoint("127.0.0.1", port, https, token => new ValueTask<Stream>(tunnel.ConnectPortAsync(port, token))),
-            pinnedFingerprint: null, _options.ProbeTimeouts);
+            pinnedFingerprint: null, _options.ProbeTimeouts, _me.Certificate);
         try
         {
             LocalSendInfo info;
@@ -244,7 +244,7 @@ public sealed class LocalSendFinder : IAsyncDisposable
     {
         try
         {
-            using var client = new LocalSendClient(new LocalSendEndpoint(address.ToString(), _options.Port, https), pinnedFingerprint: null, _options.SweepTimeouts);
+            using var client = new LocalSendClient(new LocalSendEndpoint(address.ToString(), _options.Port, https), pinnedFingerprint: null, _options.SweepTimeouts, _me.Certificate);
             var info = await client.RegisterAsync(_me.Info(), ct).ConfigureAwait(false);
             var fingerprint = https ? client.PeerFingerprint : info.Fingerprint;
             if (https && !LocalSendProtocol.SameFingerprint(fingerprint, info.Fingerprint))

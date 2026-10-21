@@ -25,8 +25,8 @@ public sealed class LocalSendTimeouts
     /// <summary>How long the phone may sit on the Accept question.</summary>
     public TimeSpan Accept { get; init; } = TimeSpan.FromMinutes(5);
 
-    /// <summary>No byte taken for this long in the middle of a file: LocalSend went to the background.</summary>
-    public TimeSpan Stall { get; init; } = TimeSpan.FromSeconds(30);
+    /// <summary>No byte taken for this long in the middle of a file: LocalSend went to the background (iOS suspends it in seconds).</summary>
+    public TimeSpan Stall { get; init; } = TimeSpan.FromSeconds(15);
 
     /// <summary>After the last byte, the receiver writes the file (and saves it to Photos) before it answers.</summary>
     public TimeSpan Finish { get; init; } = TimeSpan.FromMinutes(2);
@@ -45,7 +45,12 @@ public sealed class LocalSendClient : IDisposable
     private readonly string? _pinned;
     private volatile bool _certificateRejected;
 
-    public LocalSendClient(LocalSendEndpoint endpoint, string? pinnedFingerprint, LocalSendTimeouts? timeouts = null)
+    /// <param name="clientCertificate">
+    /// The sender's own certificate (<see cref="LocalSendIdentity.Certificate"/>). LocalSend asks for one in the TLS handshake
+    /// and drops the connection without it, right after the handshake and before any answer.
+    /// </param>
+    public LocalSendClient(LocalSendEndpoint endpoint, string? pinnedFingerprint, LocalSendTimeouts? timeouts = null,
+        System.Security.Cryptography.X509Certificates.X509Certificate2? clientCertificate = null)
     {
         Endpoint = endpoint;
         _pinned = endpoint.Https ? pinnedFingerprint : null;
@@ -60,6 +65,8 @@ public sealed class LocalSendClient : IDisposable
             SslOptions = new SslClientAuthenticationOptions
             {
                 RemoteCertificateValidationCallback = (_, certificate, _, _) => Validate(certificate),
+                ClientCertificates = clientCertificate is null ? null : [clientCertificate],
+                LocalCertificateSelectionCallback = clientCertificate is null ? null : (_, _, _, _, _) => clientCertificate,
             },
         };
         if (endpoint.Connect is { } connect)
@@ -181,7 +188,7 @@ public sealed class LocalSendClient : IDisposable
         }
         catch (OperationCanceledException) when (stall.IsCancellationRequested && !ct.IsCancellationRequested)
         {
-            throw new DeviceException(LocalSendErrors.ConnectionLost, "LocalSend on the iPhone stopped taking the file. Keep LocalSend open in front until it's done.");
+            throw new DeviceException(LocalSendErrors.ConnectionLost, "LocalSend went to the background on the iPhone (it locked, or another app came to the front), so sending stopped. Open LocalSend again, keep it on screen, and try again.");
         }
         catch (Exception ex) when (Translate(ex, ct, Stage.Upload) is { } translated)
         {

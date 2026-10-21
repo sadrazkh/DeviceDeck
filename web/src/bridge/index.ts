@@ -32,7 +32,7 @@ export function mockOptionsFromUrl(search: string): MockTransportOptions {
     indexing: query.get('indexing') !== '0',
     seedQueue: query.get('queue') !== '0',
     longNames: query.get('names') === 'long',
-    // LocalSend on the phone (round 3): ?localsend=closed|opening|background|wifi|pin|reject|busy|quickSave
+    // LocalSend on the phone (round 3): ?localsend=closed|opening|background|wifi|pin|reject|busy|quickSave|backgroundMidSend
     localSend: MOCK_LOCALSEND_SCENARIOS.find((s) => s === query.get('localsend')) ?? 'ready',
     settings: {
       ...(lang === 'fa' || lang === 'en' ? { language: lang } : {}),

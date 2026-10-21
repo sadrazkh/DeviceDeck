@@ -126,7 +126,7 @@ internal sealed class LocalSendTestHost : IAsyncDisposable
         Provider = new LocalSendTestProvider(phone);
         Hub = new DeviceHub([Provider]) { DriverPollInterval = TimeSpan.Zero };
         Store = new SqliteTransferStore(Path.Combine(root, "app", "transfers.db"));
-        Service = new LocalSendService(Hub, Store.LoadItems, new LocalSendIdentity("DeviceDeck (TEST-PC)", "DD-TEST-FINGERPRINT"),
+        Service = new LocalSendService(Hub, Store.LoadItems, LocalSendIdentity.Create("DeviceDeck (TEST-PC)"),
             finder ?? new LocalSendFinderOptions { Multicast = false, SweepAddresses = () => [], ProbeTimeouts = FastTimeouts }, FastTimeouts);
         Queue = new TransferQueue(Hub, Store, [.. TransferHandlers.All(), Service.Handler], new CountingKeepAwake(), TestHost.FastQueue());
         Queue.Start();

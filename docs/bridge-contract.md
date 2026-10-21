@@ -670,6 +670,10 @@ it runs no LocalSend server and announces nothing but its own multicast "hello" 
 - **Certificates.** LocalSend's HTTPS certificate is self-signed: its SHA-256 (hex) is the fingerprint. Discovery takes
   it from the TLS handshake and checks it against the one `/info` (`/register`) states; the job pins it, and a different
   certificate fails with `localsend_fingerprint`. A receiver with encryption off is reached over HTTP.
+  **Mutual TLS:** LocalSend (2.2, seen on iOS 27) asks for the sender's certificate in the handshake (TLS 1.3 only) and
+  drops a connection without one right after it. DeviceDeck shows its own self-signed certificate, kept per PC in
+  `%LocalAppData%\DeviceDeck\localsend-identity.pfx`; DeviceDeck's fingerprint is that certificate's SHA-256 (upper-case
+  hex, as LocalSend's), so the phone sees the same sender every time and can keep it as a favourite.
 - **The job** (`kind: "localSend"`, through the transfer queue): one item per file (a folder brings its pictures and
   videos). Each run of the job is one LocalSend session: one `/prepare-upload` with every file still to go (one Accept on
   the phone, or none with Quick Save on), then one `/upload` per item; HEIC, Live Photos (still + video) and videos go as

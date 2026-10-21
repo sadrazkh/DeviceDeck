@@ -4,6 +4,7 @@ import {
   ErrorCircleRegular,
   HandRightRegular,
   PauseCircleRegular,
+  PhoneRegular,
   PlugDisconnectedRegular,
 } from '@fluentui/react-icons';
 import { useState, type ReactNode } from 'react';
@@ -20,6 +21,17 @@ import backupStyles from './Backup.module.css';
 const PIN_CODES = new Set(['localsend_pin_required', 'localsend_pin_wrong']);
 
 /**
+ * LocalSend stopped answering in the middle of the send: the iPhone locked or another app came to the front, and iOS
+ * suspended LocalSend. A dropped or stalled upload says so directly; "not answering" says so once bytes had gone.
+ */
+export function wentToBackground(job: TransferJob | null, status: LocalSendJobStatus | null, sawSending: boolean): boolean {
+  if (!job || !(job.state === 'failed' || (job.state === 'done' && job.failedItems > 0))) return false;
+  const codes = [job.error?.code, status?.error?.code, ...(status?.files ?? []).map((f) => f.error?.code)];
+  if (codes.includes('localsend_connection_lost')) return true;
+  return codes.includes('localsend_not_listening') && (sawSending || job.doneItems > 0);
+}
+
+/**
  * A LocalSend send under way, in the dialog: reaching the phone → waiting for Accept → sending 12 of 40 → done, in
  * Photos now. A PIN request shows a field for it; any other failure says what to do and offers to try again.
  */
@@ -28,12 +40,15 @@ export function LocalSendProgress({
   job,
   status,
   receiverName,
+  background,
   onRetry,
 }: {
   device: DeviceSummary;
   job: TransferJob | null;
   status: LocalSendJobStatus | null;
   receiverName: string;
+  /** See wentToBackground: then it says to open LocalSend again, not a generic failure. */
+  background: boolean;
   onRetry(pin?: string): Promise<boolean>;
 }) {
   const { t, n, percent } = useI18n();
@@ -48,7 +63,12 @@ export function LocalSendProgress({
   let icon: ReactNode = <Spinner />;
   let title = t('localsend.job.connecting', { name });
   let detail: string | null = null;
-  if (state === 'done') {
+  if (background) {
+    tone = 'warn';
+    icon = <PhoneRegular />;
+    title = t('localsend.background.title');
+    detail = t('localsend.background.text');
+  } else if (state === 'done') {
     tone = job && job.failedItems > 0 ? 'warn' : 'found';
     icon = <CheckmarkCircleRegular />;
     title = t('localsend.job.done', { count: job ? job.doneItems : 0 });
@@ -76,7 +96,8 @@ export function LocalSendProgress({
     title = t('localsend.job.sending', { done: n(Math.min((job?.doneItems ?? 0) + 1, job?.totalItems ?? 0)), total: n(job?.totalItems ?? 0) });
   }
 
-  const askPin = state === 'failed' && error !== null && PIN_CODES.has(error.code);
+  const askPin = !background && state === 'failed' && error !== null && PIN_CODES.has(error.code);
+  const running = state === 'running' || state === 'queued';
   const retry = async (withPin?: string) => {
     setBusy(true);
     await onRetry(withPin);
@@ -88,7 +109,7 @@ export function LocalSendProgress({
   const showFiles = files !== null && (state === 'failed' || (state === 'done' && (job?.failedItems ?? 0) > 0));
 
   return (
-    <div className={backupStyles.section} data-testid="localsend-progress" data-state={state} data-phase={phase}>
+    <div className={backupStyles.section} data-testid="localsend-progress" data-state={state} data-phase={phase} data-background={background}>
       <div
         className={cx(styles.status, tone === 'found' && styles.found, tone === 'warn' && styles.warn, tone === 'bad' && styles.bad)}
         role="status"
@@ -104,6 +125,13 @@ export function LocalSendProgress({
           {detail ? <span>{detail}</span> : null}
         </span>
       </div>
+
+      {running ? (
+        <div className={styles.keepOpen} data-testid="localsend-keep-open">
+          <PhoneRegular aria-hidden />
+          <span>{t('localsend.keepOpen')}</span>
+        </div>
+      ) : null}
 
       {showProgress && job ? (
         <div className={styles.progress}>
@@ -123,12 +151,12 @@ export function LocalSendProgress({
         </div>
       ) : null}
 
-      {state === 'failed' && !askPin ? (
+      {(state === 'failed' && !askPin) || background ? (
         <Button variant="accent" loading={busy} onClick={() => void retry()} data-testid="localsend-retry">
           {t('localsend.retry')}
         </Button>
       ) : null}
-      {state === 'done' && (job?.failedItems ?? 0) > 0 ? (
+      {state === 'done' && (job?.failedItems ?? 0) > 0 && !background ? (
         <Button loading={busy} onClick={() => void retry()} data-testid="localsend-retry">
           {t('localsend.retry')}
         </Button>

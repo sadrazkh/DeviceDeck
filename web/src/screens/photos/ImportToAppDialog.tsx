@@ -10,8 +10,9 @@ import { useI18n } from '../../i18n';
 import { isFinished } from '../../state/transfers';
 import { SUGGESTED_APPS, lastApp, useBackupActions } from './backupQueries';
 import { IntoAppPanel, IntoAppSent } from './IntoAppPanel';
-import { LocalSendPanel } from './LocalSendPanel';
-import { LocalSendProgress } from './LocalSendProgress';
+import { LocalSendGuide, type GuideStage } from './LocalSendGuide';
+import { LocalSendPanel, type LookState } from './LocalSendPanel';
+import { LocalSendProgress, wentToBackground } from './LocalSendProgress';
 import { useLocalSendActions, useLocalSendJob } from './localSendQueries';
 import styles from './Backup.module.css';
 import lsStyles from './LocalSend.module.css';
@@ -54,6 +55,8 @@ export function ImportToAppDialog({
   const [sendJobId, setSendJobId] = useState<string | null>(null);
   const localSend = useLocalSendActions(device);
   const sending = useLocalSendJob(sendJobId);
+  const [look, setLook] = useState<LookState>('looking');
+  const [sawSending, setSawSending] = useState(false);
 
   // Into an app
   const apps = useApps(device, false);
@@ -93,6 +96,29 @@ export function ImportToAppDialog({
   const job = sending.job;
   const jobRunning = job !== null && !isFinished(job.state);
   const close = () => onOpenChange(false);
+  const sendingNow = sending.status?.phase === 'sending' || (job?.doneBytes ?? 0) > 0;
+  useEffect(() => {
+    if (sendingNow) setSawSending(true);
+  }, [sendingNow]);
+  const background = wentToBackground(job, sending.status, sawSending);
+
+  // The walkthrough's step: from the look before sending, then from the send itself.
+  let stage: GuideStage;
+  if (!sendJobId) {
+    stage = look === 'found' ? 'ready' : look === 'notAnswering' ? 'notAnswering' : look === 'looking' ? 'looking' : 'notListening';
+  } else if (!job) {
+    stage = 'accept';
+  } else if (background) {
+    stage = 'background';
+  } else if (job.state === 'done') {
+    stage = job.failedItems > 0 ? 'failedSending' : 'done';
+  } else if (job.state === 'failed') {
+    stage = job.doneItems > 0 ? 'failedSending' : job.error?.code === 'localsend_not_listening' ? 'notAnswering' : 'failedAccept';
+  } else if (job.state === 'cancelled') {
+    stage = 'ready';
+  } else {
+    stage = sendingNow ? 'sending' : 'accept';
+  }
 
   let footer;
   if (sendJobId) {
@@ -133,14 +159,16 @@ export function ImportToAppDialog({
   }
 
   return (
-    <Dialog open={open} onOpenChange={onOpenChange} title={t('photos.toApp.title', { device: device.name })} footer={footer} wide>
+    <Dialog open={open} onOpenChange={onOpenChange} title={t('photos.toApp.title', { device: device.name })} footer={footer} className={lsStyles.guideDialog}>
       {sendJobId ? (
         <div className={styles.body}>
+          <LocalSendGuide stage={stage} />
           <LocalSendProgress
             device={device}
             job={job}
             status={sending.status}
             receiverName={target?.alias ?? device.name}
+            background={background}
             onRetry={(pin) => localSend.retry(sendJobId, pin)}
           />
         </div>
@@ -148,67 +176,72 @@ export function ImportToAppDialog({
         <IntoAppSent started={sent.started} appName={sent.appName} job={sentJob} />
       ) : (
         <div className={styles.body}>
-          <div className={styles.section}>
-            <span className={styles.label}>{t('photos.toApp.files', { count: files.length })}</span>
-            {files.length > 0 ? (
-              <ul className={styles.fileList} data-testid="to-app-files">
-                {files.map((f, i) => (
-                  <li key={`${f.name}-${i}`}>
-                    <span className={styles.fileName}>{f.name}</span>
-                    <span className="t-secondary num">{bytes(f.size)}</span>
-                  </li>
-                ))}
-              </ul>
-            ) : null}
-            <div className={lsStyles.row}>
-              <Button icon={<AddRegular />} onClick={() => input.current?.click()} data-testid="to-app-choose">
-                {t('photos.toApp.choose')}
-              </Button>
-              {files.length > 0 ? <span className={styles.hint}>{t('photos.toApp.total', { count: files.length, size: bytes(total) })}</span> : null}
-            </div>
-            <input
-              ref={input}
-              type="file"
-              multiple
-              hidden
-              accept="image/*,video/*,.heic,.heif"
-              data-testid="to-app-input"
-              onChange={(e) => {
-                const picked = Array.from(e.target.files ?? []);
-                e.target.value = '';
-                if (picked.length) setFiles((current) => [...current, ...picked]);
-              }}
-            />
-          </div>
-
-          <div className={styles.section}>
-            <span className={styles.label}>{t('photos.toApp.route')}</span>
-            <div className={lsStyles.stretch} data-testid="to-app-routes">
-              <RadioCards<Route>
-                label={t('photos.toApp.route')}
-                value={route}
-                onChange={setRoute}
-                options={[
-                  {
-                    value: 'localsend',
-                    label: (
-                      <>
-                        {t('localsend.route.photos')}{' '}
-                        <Badge tone="accent" className="t-caption">
-                          {t('localsend.route.recommended')}
-                        </Badge>
-                      </>
-                    ),
-                    hint: t('localsend.route.photosHint'),
-                  },
-                  { value: 'app', label: t('localsend.route.app'), hint: t('localsend.route.appHint') },
-                ]}
+          <div className={lsStyles.topRow}>
+            <div className={styles.section}>
+              <span className={styles.label}>{t('photos.toApp.files', { count: files.length })}</span>
+              {files.length > 0 ? (
+                <ul className={styles.fileList} data-testid="to-app-files">
+                  {files.map((f, i) => (
+                    <li key={`${f.name}-${i}`}>
+                      <span className={styles.fileName}>{f.name}</span>
+                      <span className="t-secondary num">{bytes(f.size)}</span>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              <div className={lsStyles.row}>
+                <Button icon={<AddRegular />} onClick={() => input.current?.click()} data-testid="to-app-choose">
+                  {t('photos.toApp.choose')}
+                </Button>
+                {files.length > 0 ? <span className={styles.hint}>{t('photos.toApp.total', { count: files.length, size: bytes(total) })}</span> : null}
+              </div>
+              <input
+                ref={input}
+                type="file"
+                multiple
+                hidden
+                accept="image/*,video/*,.heic,.heif"
+                data-testid="to-app-input"
+                onChange={(e) => {
+                  const picked = Array.from(e.target.files ?? []);
+                  e.target.value = '';
+                  if (picked.length) setFiles((current) => [...current, ...picked]);
+                }}
               />
+            </div>
+
+            <div className={styles.section}>
+              <span className={styles.label}>{t('photos.toApp.route')}</span>
+              <div className={lsStyles.stretch} data-testid="to-app-routes">
+                <RadioCards<Route>
+                  label={t('photos.toApp.route')}
+                  value={route}
+                  onChange={setRoute}
+                  options={[
+                    {
+                      value: 'localsend',
+                      label: (
+                        <>
+                          {t('localsend.route.photos')}{' '}
+                          <Badge tone="accent" className="t-caption">
+                            {t('localsend.route.recommended')}
+                          </Badge>
+                        </>
+                      ),
+                      hint: t('localsend.route.photosHint'),
+                    },
+                    { value: 'app', label: t('localsend.route.app'), hint: t('localsend.route.appHint') },
+                  ]}
+                />
+              </div>
             </div>
           </div>
 
           {route === 'localsend' ? (
-            <LocalSendPanel device={device} active={open && !started} onTarget={setTarget} />
+            <>
+              <LocalSendGuide stage={stage} />
+              <LocalSendPanel device={device} active={open && !started} onTarget={setTarget} onLook={setLook} />
+            </>
           ) : (
             <IntoAppPanel loading={apps.isPending} sharing={sharing} appId={appId} onAppId={setAppId} count={files.length} />
           )}

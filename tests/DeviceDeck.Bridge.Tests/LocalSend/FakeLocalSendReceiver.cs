@@ -79,6 +79,12 @@ internal sealed class FakeLocalSendReceiver : IAsyncDisposable
     /// <summary>Accepts connections and never answers (iOS suspended the app).</summary>
     public bool Silent { get; set; }
 
+    /// <summary>LocalSend (2.2, on iOS) wants the sender's own certificate in the TLS handshake; without one it drops the connection.</summary>
+    public bool RequireClientCertificate { get; set; } = true;
+
+    /// <summary>The fingerprints of the certificates senders showed.</summary>
+    public ConcurrentQueue<string> ClientFingerprints { get; } = new();
+
     // ---- what happened ----
 
     public ConcurrentDictionary<string, byte[]> Received { get; } = new(StringComparer.Ordinal);
@@ -163,8 +169,22 @@ internal sealed class FakeLocalSendReceiver : IAsyncDisposable
 
             if (_certificate is not null)
             {
+                // Like LocalSend: the sender must show a certificate of its own (any; its SHA-256 is the sender's fingerprint).
                 var ssl = new SslStream(stream, leaveInnerStreamOpen: false);
-                await ssl.AuthenticateAsServerAsync(new SslServerAuthenticationOptions { ServerCertificate = _certificate }, ct);
+                await ssl.AuthenticateAsServerAsync(new SslServerAuthenticationOptions
+                {
+                    ServerCertificate = _certificate,
+                    ClientCertificateRequired = RequireClientCertificate,
+                    RemoteCertificateValidationCallback = (_, certificate, _, _) =>
+                    {
+                        if (certificate is not null)
+                        {
+                            ClientFingerprints.Enqueue(LocalSendProtocol.Fingerprint(certificate));
+                        }
+
+                        return certificate is not null || !RequireClientCertificate;
+                    },
+                }, ct);
                 stream = ssl;
             }
 

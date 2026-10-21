@@ -290,7 +290,7 @@ public sealed class LocalSendHandler : TransferHandler<LocalSendRequest>
                     }
                 }
 
-                client = LocalSendIdentity.Connect(context.Device, request.Target, owner._timeouts);
+                client = owner._me.Connect(context.Device, request.Target, owner._timeouts);
                 owner.Publish(memory, context.JobId, LocalSendPhase.WaitingForAccept);
                 var asked = files.Select(f => f.Id).ToHashSet(StringComparer.Ordinal);
                 var session = files.Count == 0 ? null : await client.PrepareUploadAsync(owner._me.Info(), files, memory.Pin, ct).ConfigureAwait(false);
@@ -446,7 +446,7 @@ public sealed class LocalSendHandler : TransferHandler<LocalSendRequest>
             memory.Open = null;
             try
             {
-                using var client = LocalSendIdentity.Connect(context.Device, open.Target, owner._timeouts);
+                using var client = owner._me.Connect(context.Device, open.Target, owner._timeouts);
                 await client.CancelAsync(open.SessionId, ct).ConfigureAwait(false);
             }
             catch (Exception ex) when (ex is DeviceException or ArgumentException)

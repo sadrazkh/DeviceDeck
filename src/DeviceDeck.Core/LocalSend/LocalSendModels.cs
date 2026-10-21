@@ -13,7 +13,7 @@ public static class LocalSendProtocol
 {
     public const int DefaultPort = 53317;
     public const string MulticastGroup = "224.0.0.167";
-    public const string Version = "2.0";
+    public const string Version = "2.2";
     public const string ApiBase = "/api/localsend/v2/";
 
     /// <summary>The wire's JSON: camelCase, nulls left out (the receiver treats a missing field as null).</summary>

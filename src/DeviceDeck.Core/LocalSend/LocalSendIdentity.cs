@@ -1,18 +1,78 @@
 using System.Security.Cryptography;
+using System.Security.Cryptography.X509Certificates;
 using DeviceDeck.Core.Abstractions;
 
 namespace DeviceDeck.Core.LocalSend;
 
 /// <summary>
-/// Who DeviceDeck says it is to LocalSend: the name the phone's Accept question shows ("DeviceDeck (OFFICE-PC)") and a
-/// random fingerprint. DeviceDeck runs no LocalSend server, so the fingerprint only keeps it from finding itself.
+/// Who DeviceDeck is to LocalSend: the name the phone's Accept question shows ("DeviceDeck (OFFICE-PC)") and a
+/// self-signed certificate. LocalSend's server asks for the sender's certificate in the TLS handshake (mutual TLS)
+/// and drops a connection without one, so every request presents it; the fingerprint is its SHA-256, as LocalSend's
+/// own. Kept per PC (<see cref="ForThisPc"/>), so the phone sees the same sender every time and can keep it as a favourite.
 /// </summary>
-public sealed class LocalSendIdentity(string alias, string fingerprint)
+public sealed class LocalSendIdentity
 {
-    public static LocalSendIdentity ForThisPc() => new($"DeviceDeck ({Environment.MachineName})", Convert.ToHexString(RandomNumberGenerator.GetBytes(32)));
+    public const string FileName = "localsend-identity.pfx";
 
-    public string Alias { get; } = alias;
-    public string Fingerprint { get; } = fingerprint;
+    public LocalSendIdentity(string alias, X509Certificate2 certificate)
+    {
+        Alias = alias;
+        Certificate = certificate;
+        Fingerprint = LocalSendProtocol.Fingerprint(certificate);
+    }
+
+    /// <summary>
+    /// This PC's identity, from <paramref name="folder"/>/localsend-identity.pfx (made there the first time); a fresh one
+    /// for this run when no folder is given or the file can't be read or written.
+    /// </summary>
+    public static LocalSendIdentity ForThisPc(string? folder = null)
+    {
+        var alias = $"DeviceDeck ({Environment.MachineName})";
+        var path = folder is null ? null : Path.Combine(folder, FileName);
+        if (path is not null && File.Exists(path))
+        {
+            try
+            {
+                return new LocalSendIdentity(alias, X509CertificateLoader.LoadPkcs12FromFile(path, null));
+            }
+            catch (CryptographicException)
+            {
+                // Unreadable: make a new one below (the phone then sees a new sender).
+            }
+        }
+
+        var pkcs12 = NewCertificate();
+        if (path is not null)
+        {
+            try
+            {
+                Directory.CreateDirectory(folder!);
+                File.WriteAllBytes(path, pkcs12);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                // Then it lasts for this run only.
+            }
+        }
+
+        return new LocalSendIdentity(alias, X509CertificateLoader.LoadPkcs12(pkcs12, null));
+    }
+
+    /// <summary>A new self-signed certificate (RSA 2048, ten years) as PKCS#12, the form SChannel can sign TLS with.</summary>
+    public static byte[] NewCertificate(string name = "DeviceDeck")
+    {
+        using var rsa = RSA.Create(2048);
+        var request = new CertificateRequest($"CN={name}", rsa, HashAlgorithmName.SHA256, RSASignaturePadding.Pkcs1);
+        using var created = request.CreateSelfSigned(DateTimeOffset.UtcNow.AddDays(-1), DateTimeOffset.UtcNow.AddYears(10));
+        return created.Export(X509ContentType.Pkcs12);
+    }
+
+    /// <summary>A throwaway identity (tests, probes).</summary>
+    public static LocalSendIdentity Create(string alias) => new(alias, X509CertificateLoader.LoadPkcs12(NewCertificate(), null));
+
+    public string Alias { get; }
+    public X509Certificate2 Certificate { get; }
+    public string Fingerprint { get; }
 
     public LocalSendInfo Info(bool? announce = null) => new()
     {
@@ -28,7 +88,7 @@ public sealed class LocalSendIdentity(string alias, string fingerprint)
     };
 
     /// <summary>A client for a job's target: through the phone's cable (usbmux) or straight to its address.</summary>
-    public static LocalSendClient Connect(IDevice device, LocalSendTarget target, LocalSendTimeouts? timeouts = null)
+    public LocalSendClient Connect(IDevice device, LocalSendTarget target, LocalSendTimeouts? timeouts = null)
     {
         if (target.Route == LocalSendRoute.Usb)
         {
@@ -39,7 +99,7 @@ public sealed class LocalSendIdentity(string alias, string fingerprint)
 
             return new LocalSendClient(
                 new LocalSendEndpoint("127.0.0.1", target.Port, target.Https, ct => new ValueTask<Stream>(tunnel.ConnectPortAsync(target.Port, ct))),
-                target.Fingerprint, timeouts);
+                target.Fingerprint, timeouts, Certificate);
         }
 
         if (string.IsNullOrWhiteSpace(target.Address))
@@ -47,7 +107,7 @@ public sealed class LocalSendIdentity(string alias, string fingerprint)
             throw new ArgumentException("A Wi-Fi target needs the receiver's address.");
         }
 
-        return new LocalSendClient(new LocalSendEndpoint(target.Address, target.Port, target.Https), target.Fingerprint, timeouts);
+        return new LocalSendClient(new LocalSendEndpoint(target.Address, target.Port, target.Https), target.Fingerprint, timeouts, Certificate);
     }
 }
 
