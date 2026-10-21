@@ -933,8 +933,9 @@ type ReleaseNotes = {
   `whatsNew` (an update from v0.3.0, which kept no history, counts when the data folder was already there; a first install doesn't).
   The page shows the dialog and calls `app.whatsNewShown`.
 - **Environment** (the Shell): `DEVICEDECK_UPDATE_FEED=off` (no automatic checks) or a URL used instead of the API's repository
-  address (a test server; checks then run in a dev build too); `DEVICEDECK_WHATSNEW=1` shows What's new now, `0` never. A dev build
-  (`DEVICEDECK_DEV`) never checks or opens What's new by itself.
+  address (a test server; checks then run in a dev build too); `DEVICEDECK_WHATSNEW=1` shows What's new now, `0` never;
+  `DEVICEDECK_UPDATE_SOURCE` a folder or address with `vpk pack`'s output that a Setup copy updates from instead of GitHub Releases
+  (to try a whole update on a test install). A dev build (`DEVICEDECK_DEV`) never checks or opens What's new by itself.
 
 ### The page
 
