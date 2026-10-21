@@ -141,10 +141,12 @@ public sealed class WpdPhotoDeleter
                     : PhotoDeleteSupport.No(PhotoDeleteBlock.Locked, "Windows lists DCIM on the iPhone with nothing in it.");
             }
 
-            // A sample is enough: the phone marks its whole library the same way.
+            // A sample is enough: the phone marks its whole library the same way. Photos and videos only: an edit's
+            // .AAE sidecar says nothing about them.
             var sample = new[] { folders[0], folders[folders.Count / 2], folders[^1] }
                 .DistinctBy(f => f.Id)
                 .SelectMany(f => WpdDcimWalker.Files(c, f.Id, ct, limit: 8))
+                .Where(o => o.FileName is { } n && PhotoIndex.IsMediaFile(n))
                 .ToList();
             if (sample.Count == 0)
             {
