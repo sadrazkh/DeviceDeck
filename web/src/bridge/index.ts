@@ -2,6 +2,7 @@ import { BridgeClient } from './client';
 import type { MockBackend, MockScenario } from './mock/backend';
 import { createMockTransport, type MockTransportOptions } from './mock/transport';
 import { MOCK_LOCALSEND_SCENARIOS } from './mock/localSend';
+import { MOCK_PHOTODELETE_SCENARIOS } from './mock/photoDelete';
 import { createWebViewTransport, getWebView } from './webview';
 
 export { BridgeClient, type FileSource } from './client';
@@ -34,6 +35,8 @@ export function mockOptionsFromUrl(search: string): MockTransportOptions {
     longNames: query.get('names') === 'long',
     // LocalSend on the phone (round 3): ?localsend=closed|opening|background|wifi|pin|reject|busy|quickSave|backgroundMidSend
     localSend: MOCK_LOCALSEND_SCENARIOS.find((s) => s === query.get('localsend')) ?? 'ready',
+    // Deleting iPhone photos (round 4): ?photodelete=iCloudPhotos|readOnly|locked|notCamera|converted|recentlyDeleted|fails
+    photoDelete: MOCK_PHOTODELETE_SCENARIOS.find((s) => s === query.get('photodelete')) ?? 'ok',
     settings: {
       ...(lang === 'fa' || lang === 'en' ? { language: lang } : {}),
       ...(theme === 'light' || theme === 'dark' || theme === 'system' ? { theme } : {}),

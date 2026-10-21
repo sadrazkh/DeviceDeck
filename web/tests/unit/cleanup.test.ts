@@ -5,14 +5,15 @@ import { BridgeError } from '../../src/bridge/errors';
 import { METHOD_NAMES } from '../../src/bridge/methods';
 import type { MockBackend } from '../../src/bridge/mock/backend';
 import { OLD_PHONE_ID } from '../../src/bridge/mock/battery';
+import type { MockPhotoDeleteScenario } from '../../src/bridge/mock/photoDelete';
 import { ANDROID_ID, IPHONE_ID } from '../../src/bridge/mock/mock-data';
 import { createMockTransport, type MockHandle } from '../../src/bridge/mock/transport';
 import { niceRange } from '../../src/screens/battery/BatteryChart';
 
 let handle: MockHandle | null = null;
 
-function setup() {
-  handle = createMockTransport({ latencyMs: 0, autoTick: false, indexing: false, seedQueue: false });
+function setup(photoDelete: MockPhotoDeleteScenario = 'ok') {
+  handle = createMockTransport({ latencyMs: 0, autoTick: false, indexing: false, seedQueue: false, photoDelete });
   const client = new BridgeClient(handle.transport, { timeoutMs: 0 });
   const updates: CleanupStatus[] = [];
   client.on('cleanup.updated', (s) => updates.push(s));
@@ -75,8 +76,8 @@ describe('mock clean-up', () => {
     }
   });
 
-  it('never deletes iPhone photos, only copies them', async () => {
-    const { client, backend } = setup();
+  it('an iPhone that won’t let the PC delete (iCloud Photos) only copies', async () => {
+    const { client, backend } = setup('iCloudPhotos');
     const report = await analyzed(client, backend, IPHONE_ID);
     expect(report.media!.canDelete).toBe(false);
     expect(report.caches).toBeNull();
@@ -86,6 +87,24 @@ describe('mock clean-up', () => {
     expect(error.message).toContain('Photos app');
     const page = await client.call('photos.list', { deviceId: IPHONE_ID, offset: 0, limit: 1 });
     expect(page.total).toBe(report.media!.videoCount + report.media!.photoCount + report.media!.cloudOnlyCount);
+  });
+
+  it('an iPhone whose camera connection allows it deletes item by item (round 4)', async () => {
+    const { client, backend } = setup();
+    const report = await analyzed(client, backend, IPHONE_ID);
+    expect(report.media!.canDelete).toBe(true);
+    expect(report.duplicates!.canDelete).toBe(true);
+    const [a, b] = report.media!.largestVideos;
+    const result = await client.call('cleanup.deleteMedia', {
+      deviceId: IPHONE_ID,
+      items: [{ id: a!.id, size: a!.size }, { id: b!.id, size: b!.size }],
+      expectedBytes: a!.size + b!.size,
+    });
+    expect(result.deleted).toBe(2);
+    expect(result.items!.map((i) => i.outcome)).toEqual(['deleted', 'deleted']);
+    expect(result.goesTo).toBe('permanent');
+    const left = await client.call('cleanup.status', { deviceId: IPHONE_ID });
+    expect(left.report!.media!.largestVideos.map((v) => v.id)).not.toContain(a!.id);
   });
 
   it('checks the confirmed total and that each item is one the analysis listed', async () => {

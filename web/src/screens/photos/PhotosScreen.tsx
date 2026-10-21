@@ -8,6 +8,7 @@ import {
   EyeRegular,
   ImageMultipleRegular,
   ImageRegular,
+  InfoRegular,
   LockClosedRegular,
   LockOpenRegular,
 } from '@fluentui/react-icons';
@@ -20,7 +21,6 @@ import { useActions } from '../../app/actions';
 import { useClient } from '../../app/bridgeContext';
 import { keys, useAlbums, usePhotoLibrary } from '../../app/queries';
 import { Button } from '../../components/Button';
-import { ConfirmDialog } from '../../components/Dialog';
 import { DropOverlay, useFileDrop } from '../../components/DropZone';
 import { ErrorBanner } from '../../components/ErrorState';
 import { Banner, EmptyState, LinearProgress, Segmented, Skeleton, Spinner } from '../../components/ui';
@@ -39,6 +39,11 @@ import { usePhotoDragOut } from '../../shell/dragOut';
 import { Lightbox } from './Lightbox';
 import { PhotoGrid, type PhotoGridHandle } from './PhotoGrid';
 import styles from './Photos.module.css';
+// Deleting photos, iPhone included (round 4, photodelete).
+import deleteStyles from './PhotoDelete.module.css';
+import { PhotoDeleteDialog } from './PhotoDeleteDialog';
+import { PhotoDeleteWhyDialog, reasonOf } from './PhotoDeleteNotice';
+import { SHORT_REASON, usePhotoDeleteSupport } from './photoDelete';
 
 type Filter = 'all' | 'photos' | 'videos' | 'live' | 'favorites';
 
@@ -166,7 +171,10 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
   const [selection, setSelection] = useState<Selection>(emptySelection);
   const [viewer, setViewer] = useState<number | null>(null);
   const [exporting, setExporting] = useState<PhotoAsset[] | null>(null);
-  const [confirmDelete, setConfirmDelete] = useState(false);
+  // Deleting (round 4): the confirmation, or why this phone can't delete from the PC.
+  const [deleting, setDeleting] = useState<PhotoAsset[] | null>(null);
+  const [whyOpen, setWhyOpen] = useState(false);
+  const deleteSupport = usePhotoDeleteSupport(device);
   const [visibleGroup, setVisibleGroup] = useState(0);
   const grid = useRef<PhotoGridHandle>(null);
   const importInput = useRef<HTMLInputElement>(null);
@@ -255,6 +263,15 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
 
   const startExport = (list: PhotoAsset[]) => {
     if (list.length > 0) setExporting(list);
+  };
+
+  const canDelete = device.capabilities.includes('photosDelete');
+  // An iPhone that can't delete says why, where Delete would be: a hidden button with no reason was the bug.
+  const explainDelete = !canDelete && device.platform === 'ios';
+  const startDelete = () => {
+    if (selectedAssets.length === 0) return;
+    if (canDelete) setDeleting(selectedAssets);
+    else if (explainDelete) setWhyOpen(true);
   };
 
   /** Locks the Hidden album again and forgets what was read from it. */
@@ -390,7 +407,7 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
               onToggleGroup={onToggleGroup}
               onSelectAll={() => setSelection(selectAll(order))}
               onClear={() => setSelection(emptySelection)}
-              onDelete={() => selection.ids.size > 0 && device.capabilities.includes('photosDelete') && setConfirmDelete(true)}
+              onDelete={startDelete}
               onExport={() => startExport(selectedAssets)}
               onVisibleGroup={setVisibleGroup}
               onDragOut={dragOutTile}
@@ -420,10 +437,19 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
                 <Button variant="accent" icon={<ArrowExportRegular />} onClick={() => startExport(selectedAssets)} data-testid="export-selected">
                   {t('photos.exportToPc')}
                 </Button>
-                {device.capabilities.includes('photosDelete') ? (
-                  <Button variant="danger" icon={<DeleteRegular />} onClick={() => setConfirmDelete(true)}>
+                {canDelete ? (
+                  <Button variant="danger" icon={<DeleteRegular />} onClick={startDelete} data-testid="delete-selected">
                     {t('common.delete')}
                   </Button>
+                ) : explainDelete ? (
+                  <>
+                    <span className={deleteStyles.reason} data-testid="delete-reason" title={t(SHORT_REASON[reasonOf(deleteSupport.data)])}>
+                      {t(SHORT_REASON[reasonOf(deleteSupport.data)])}
+                    </span>
+                    <Button icon={<InfoRegular />} onClick={() => setWhyOpen(true)} data-testid="delete-why">
+                      {t('photoDelete.why')}
+                    </Button>
+                  </>
                 ) : null}
                 <Button variant="subtle" icon={<DismissRegular />} aria-label={t('common.clearSelection')} onClick={() => setSelection(emptySelection)} />
               </motion.div>
@@ -462,19 +488,19 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
       {toAppFiles ? (
         <ImportToAppDialog device={device} open initialFiles={toAppFiles} onOpenChange={(open) => (open ? undefined : setToAppFiles(null))} />
       ) : null}
-      <ConfirmDialog
-        open={confirmDelete}
-        onOpenChange={setConfirmDelete}
-        danger
-        title={t('photos.delete.title', { count: selection.ids.size, device: device.name })}
-        body={t('photos.delete.body')}
-        confirmLabel={t('photos.delete.confirm', { count: selection.ids.size })}
-        onConfirm={async () => {
-          setConfirmDelete(false);
-          const ok = await actions.deletePhotos(device, [...selection.ids]);
-          if (ok) setSelection(emptySelection);
-        }}
-      />
+      {deleting ? (
+        <PhotoDeleteDialog
+          device={device}
+          assets={deleting}
+          support={deleteSupport.data}
+          onClose={() => setDeleting(null)}
+          onDeleted={() => {
+            setViewer(null);
+            setSelection(emptySelection);
+          }}
+        />
+      ) : null}
+      <PhotoDeleteWhyDialog device={device} support={deleteSupport.data} open={whyOpen} onOpenChange={setWhyOpen} />
     </ScreenLayout>
   );
 }

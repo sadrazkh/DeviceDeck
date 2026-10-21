@@ -61,6 +61,7 @@ import type {
   WirelessResult,
 } from './toolbox';
 import type { LocalSendDiscovery, LocalSendJobStatus, LocalSendTarget, PhotosToAppStarted } from './localSend';
+import type { PhotoDeleteItem, PhotoDeleteReport, PhotoDeleteSupport } from './photoDeleteTypes';
 
 type DeviceParams = { deviceId: string };
 
@@ -267,6 +268,12 @@ export interface BridgeMethods {
   'localsend.job': { params: { jobId: string }; result: LocalSendJobStatus };
   // Photo backup (round 3)
   'photos.backupSpace': { params: { folder: string }; result: PhotoBackupSpace };
+  // Deleting photos, iPhone included (round 4, photodelete)
+  'photos.deleteSupport': { params: DeviceParams & { recheck?: boolean }; result: PhotoDeleteSupport };
+  'photos.deleteItems': {
+    params: DeviceParams & { items: PhotoDeleteItem[]; expectedBytes: number; copyFirstTo?: string | null };
+    result: PhotoDeleteReport;
+  };
 }
 
 export type MethodName = keyof BridgeMethods;
@@ -406,6 +413,9 @@ const methodTable = {
   'localsend.job': true,
   // Photo backup (round 3)
   'photos.backupSpace': true,
+  // Deleting photos, iPhone included (round 4, photodelete)
+  'photos.deleteSupport': true,
+  'photos.deleteItems': true,
 } as const satisfies Record<MethodName, true>;
 
 export const METHOD_NAMES = Object.keys(methodTable) as MethodName[];

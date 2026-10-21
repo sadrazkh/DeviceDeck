@@ -12,6 +12,8 @@ import styles from './Cleanup.module.css';
 import { ConfirmCleanup, type CleanupPlan } from './ConfirmCleanup';
 import { AppFilesCard, AppsCard, CachesCard, DuplicatesCard, MediaCard, type SectionProps } from './Sections';
 import { useCleanupActions, useCleanupStatus } from './useCleanup';
+import { PhotoDeleteNotice } from '../photos/PhotoDeleteNotice';
+import { usePhotoDeleteSupport } from '../photos/photoDelete';
 
 function Tile({ label, value, sub, testId }: { label: string; value: string; sub?: string; testId?: string }) {
   return (
@@ -87,6 +89,9 @@ export function CleanupScreen({ device }: { device: DeviceSummary }) {
   const report = current?.report ?? null;
   const running = current?.state === 'running';
   const android = device.platform === 'android';
+  // Round 4: an iPhone deletes photos when its camera connection allows it; otherwise the notice says why.
+  const deleteSupport = usePhotoDeleteSupport(device);
+  const mediaBlocked = !android && !device.capabilities.includes('photosDelete');
 
   const section: SectionProps = {
     device,
@@ -159,11 +164,7 @@ export function CleanupScreen({ device }: { device: DeviceSummary }) {
                 {note.message}
               </Banner>
             ))}
-            {report.media && !report.media.canDelete ? (
-              <Banner tone="info" title={t('cleanup.media.iphoneTitle')}>
-                {t('cleanup.media.iphoneBody')}
-              </Banner>
-            ) : null}
+            {report.media && mediaBlocked ? <PhotoDeleteNotice device={device} support={deleteSupport.data} /> : null}
             {report.duplicates ? <DuplicatesCard {...section} data={report.duplicates} /> : null}
             {report.media ? <MediaCard {...section} data={report.media} kind="videos" /> : null}
             {report.apps ? <AppsCard {...section} data={report.apps} /> : null}

@@ -41,6 +41,8 @@ const NO_TIMEOUT: ReadonlySet<string> = new Set([
   'report.save',
   'shell.dragOut',
   'app.checkForUpdates',
+  // Deleting photos (round 4): may copy them to the PC first.
+  'photos.deleteItems',
 ]);
 
 export class BridgeClient {

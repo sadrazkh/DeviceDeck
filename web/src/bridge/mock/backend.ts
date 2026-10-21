@@ -43,6 +43,7 @@ import { hashString } from './random';
 import { TransferEngine, type JobItem } from './transfers';
 import { MockToolbox } from './toolbox';
 import { MockLocalSend, type MockLocalSendScenario } from './localSend';
+import { MockPhotoDelete, type MockPhotoDeleteScenario } from './photoDelete';
 
 export type MockScenario = 'ready' | 'empty' | 'trust' | 'limited' | 'driverMissing' | 'iphoneOnly';
 
@@ -58,6 +59,8 @@ export interface MockOptions {
   longNames?: boolean;
   /** LocalSend on the phone (round 3): ?localsend=closed and so on. Default "ready". */
   localSend?: MockLocalSendScenario;
+  /** Deleting iPhone photos (round 4): ?photodelete=iCloudPhotos and so on. Default "ok". */
+  photoDelete?: MockPhotoDeleteScenario;
 }
 
 /** A JSON-RPC error raised by a mock handler. */
@@ -92,6 +95,9 @@ function badParams(message: string): RpcFault {
 }
 
 const basename = (path: string) => path.split(/[\\/]/).filter(Boolean).pop() ?? path;
+
+/** A photo deleted a moment ago, still on screen until the list is read again (round 4): an empty picture, never src="". */
+const GONE_IMAGE = 'data:image/gif;base64,R0lGODlhAQABAAAAACH5BAEKAAEALAAAAAABAAEAAAICTAEAOw==';
 const en = new Intl.NumberFormat('en-US');
 
 type Handler<M extends MethodName> = (params: MethodParams<M>) => MethodResult<M>;
@@ -127,6 +133,7 @@ export class MockBackend {
     this.indexing = options.indexing ?? true;
     this.settings = { ...defaultSettings, ...options.settings };
     this.localSend.scenario = options.localSend ?? 'ready';
+    this.photoDelete.scenario = options.photoDelete ?? 'ok';
     const scenario = options.scenario ?? 'ready';
     this.driverList = scenario === 'limited' || scenario === 'driverMissing' ? driversIosMissing : drivers;
 
@@ -153,6 +160,8 @@ export class MockBackend {
       case 'driverMissing':
         break;
     }
+    // Deleting photos (round 4): an iPhone that can't delete in this scenario has no photosDelete.
+    for (const [id, device] of this.devices) this.devices.set(id, this.photoDelete.adjust(device));
 
     this.engine = new TransferEngine(
       (job) => this.emit('transfer.updated', job),
@@ -198,7 +207,7 @@ export class MockBackend {
     const base = deviceId === IPHONE_ID ? iphone : deviceId === ANDROID_ID ? { ...android, connection: 'usb' as const } : null;
     if (!base) return;
     const added = !this.devices.has(deviceId);
-    const device: DeviceSummary = { ...base, state: 'connecting' };
+    const device: DeviceSummary = this.photoDelete.adjust({ ...base, state: 'connecting' });
     this.devices.set(deviceId, device);
     this.emit(added ? 'device.added' : 'device.changed', { ...device });
     this.after(1200, () => {
@@ -250,12 +259,12 @@ export class MockBackend {
 
   thumbUrl(deviceId: string, assetId: string): string {
     const asset = this.libraries.get(deviceId)?.byId.get(assetId);
-    return asset ? thumbnailUrl(asset) : '';
+    return asset ? thumbnailUrl(asset) : GONE_IMAGE;
   }
 
   photoUrl(deviceId: string, assetId: string): string {
     const asset = this.libraries.get(deviceId)?.byId.get(assetId);
-    return asset ? photoUrl(asset) : '';
+    return asset ? photoUrl(asset) : GONE_IMAGE;
   }
 
   iconUrl(deviceId: string, appId: string): string {
@@ -334,6 +343,17 @@ export class MockBackend {
     sizeOfLocal: (path) => this.sizeOfLocal(path),
     emit: (event, params) => this.emit(event, params),
     after: (ms, run) => this.after(ms, run),
+    fault: (code, message) => fault(code, message),
+    badParams: (message) => badParams(message),
+  });
+
+  /** Deleting photos, iPhone included (round 4): ./photoDelete.ts; its handlers end the table below. */
+  readonly photoDelete = new MockPhotoDelete({
+    requireReady: (deviceId, capability) => this.requireReady(deviceId, capability),
+    device: (deviceId) => this.devices.get(deviceId),
+    setDevice: (device) => this.setDevice(device),
+    library: (deviceId) => this.library(deviceId),
+    addJob: (spec) => this.engine.add(spec),
     fault: (code, message) => fault(code, message),
     badParams: (message) => badParams(message),
   });
@@ -621,6 +641,7 @@ export class MockBackend {
       now: () => this.now(),
       fault: (code, message) => fault(code, message),
       badParams,
+      photoDeletes: (deviceId, items) => this.photoDelete.deleteItems(deviceId, items),
     }),
     ...batteryHandlers({
       requireReady: (deviceId, capability) => this.requireReady(deviceId, capability),
@@ -631,6 +652,7 @@ export class MockBackend {
     }),
     ...this.toolbox.handlers,
     ...this.localSend.handlers,
+    ...this.photoDelete.handlers,
   };
 
   private pcCall<T>(run: () => T): T {

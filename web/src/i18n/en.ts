@@ -6,6 +6,7 @@ import { cleanupEn } from '../screens/cleanup/strings';
 import { backupEn } from './backup';
 import { localSendEn } from './localSend';
 import { photoBackupEn } from '../screens/photos/backupStrings';
+import { photoDeleteEn } from '../screens/photos/deleteStrings';
 
 export const en = {
   'app.name': 'DeviceDeck',
@@ -640,6 +641,8 @@ export const en = {
   ...localSendEn,
   // Photo backup (round 3)
   ...photoBackupEn,
+  // Deleting photos, iPhone included (round 4, photodelete)
+  ...photoDeleteEn,
 } as const;
 
 export type MessageKey = keyof typeof en;

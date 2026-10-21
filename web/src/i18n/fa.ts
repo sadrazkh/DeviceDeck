@@ -6,6 +6,7 @@ import { cleanupFa } from '../screens/cleanup/strings';
 import { backupFa } from './backup';
 import { localSendFa } from './localSend';
 import { photoBackupFa } from '../screens/photos/backupStrings';
+import { photoDeleteFa } from '../screens/photos/deleteStrings';
 import type { MessageKey } from './en';
 
 export const fa: Record<MessageKey, string> = {
@@ -624,4 +625,6 @@ export const fa: Record<MessageKey, string> = {
   ...localSendFa,
   // Photo backup (round 3)
   ...photoBackupFa,
+  // Deleting photos, iPhone included (round 4, photodelete)
+  ...photoDeleteFa,
 };
