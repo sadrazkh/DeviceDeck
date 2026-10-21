@@ -39,19 +39,7 @@ public sealed partial class IosPhotoLibrary : IPhotoBackupSource
         if (paths.Count == 0)
             return assets;
 
-        var stats = await device.UseAsync(async c =>
-        {
-            var lanes = Math.Clamp(paths.Count / 16, 1, StatLanes);
-            var found = await Task.WhenAll(Enumerable.Range(0, lanes).Select(async lane =>
-            {
-                await using var afc = await c.StartAfcAsync(ct).ConfigureAwait(false);
-                var mine = new List<(string Path, Protocol.Afc.AfcFileInfo? Info)>();
-                for (var i = lane; i < paths.Count; i += lanes)
-                    mine.Add((paths[i], await afc.GetFileInfoAsync("/" + paths[i], ct).ConfigureAwait(false)));
-                return mine;
-            })).ConfigureAwait(false);
-            return found.SelectMany(f => f).ToDictionary(f => f.Path, f => f.Info, StringComparer.Ordinal);
-        }).ConfigureAwait(false);
+        var stats = await StatAsync(paths, ct).ConfigureAwait(false);
 
         return assets.Select(a =>
         {

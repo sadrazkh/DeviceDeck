@@ -133,7 +133,10 @@ public sealed partial class IosDevice : IDevice, IAsyncDisposable
         _pairRecord?.Dispose();
         _pairRecord = null;
         if (Photos is IosPhotoLibrary photos)
+        {
+            await photos.CloseConnectionsAsync().ConfigureAwait(false);
             photos.DeleteCache();
+        }
     }
 
     // ---- handshake loop ----

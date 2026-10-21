@@ -648,3 +648,13 @@ type PhotoBackupRange = {
 
 A field the kind doesn't use is dropped (`{ kind: "since", since: "2026-09-01", days: 7 }` is stored without `days`);
 a missing or bad field is `-32602`. A job queued before ranges existed has no `range` in its request and copies everything.
+
+### Speed
+
+Nothing changes on the wire. A `photosBackup` job copies three photos at once (the queue runs several items of one
+job side by side for handlers that ask for it, and saves item states in batches); on an iPhone the originals come over
+a pool of up to four AFC connections kept open for the whole job (closed after 20 s idle) instead of a lockdown session
+per file, with two FileReads in flight per file (one at a time for the rest of the connection's life if a phone drops a
+read ahead). The destination folder is read once per run, the ledger is written in batches, and a HEIC is read once to
+be converted. Measured with `tools/PhotoBench --fake` (240 photos, 1.07 GB, a 34 MB/s link): 57.7 s → 32.6 s, 618 → 8
+connections.

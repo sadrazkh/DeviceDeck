@@ -6,11 +6,14 @@ namespace DeviceDeck.Core.Photos;
 /// <summary>
 /// The files already in a backup folder (all sub-folders), by size, so a photo that is there already — copied by an
 /// earlier run, by another app, or under another name — is recognised: same size, then same SHA-256. Sums of PC files
-/// are cached in the ledger by path, size and write time.
+/// are cached in the ledger by path, size and write time; sums found or written during a run wait in memory until the
+/// handler saves them with its batch (<see cref="TakeUnsavedHashes"/>). Built once per run of a job.
 /// </summary>
 internal sealed class PhotoDestinationIndex
 {
     private readonly Dictionary<long, List<string>> _bySize = [];
+    private readonly Dictionary<string, (long Size, long Modified, byte[] Sha256)> _hashes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<(string Path, long Size, long Modified, byte[] Sha256)> _unsaved = [];
     private readonly PhotoBackupLedger _ledger;
     private readonly Lock _gate = new();
 
@@ -83,7 +86,27 @@ internal sealed class PhotoDestinationIndex
         var info = new FileInfo(path);
         if (info.Exists)
         {
-            _ledger.PutHash(info.FullName, info.Length, info.LastWriteTimeUtc.Ticks, sha256);
+            Remember(info.FullName, info.Length, info.LastWriteTimeUtc.Ticks, sha256);
+        }
+    }
+
+    /// <summary>The sums learnt since the last call, for the ledger.</summary>
+    public IReadOnlyList<(string Path, long Size, long Modified, byte[] Sha256)> TakeUnsavedHashes()
+    {
+        lock (_gate)
+        {
+            var taken = _unsaved.ToArray();
+            _unsaved.Clear();
+            return taken;
+        }
+    }
+
+    private void Remember(string fullPath, long size, long modified, byte[] sha256)
+    {
+        lock (_gate)
+        {
+            _hashes[fullPath] = (size, modified, sha256);
+            _unsaved.Add((fullPath, size, modified, sha256));
         }
     }
 
@@ -113,6 +136,14 @@ internal sealed class PhotoDestinationIndex
         }
 
         var modified = info.LastWriteTimeUtc.Ticks;
+        lock (_gate)
+        {
+            if (_hashes.TryGetValue(info.FullName, out var known) && known.Size == size && known.Modified == modified)
+            {
+                return known.Sha256;
+            }
+        }
+
         if (_ledger.GetHash(info.FullName, size, modified) is { } cached)
         {
             return cached;
@@ -122,7 +153,7 @@ internal sealed class PhotoDestinationIndex
         {
             await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20, FileOptions.Asynchronous | FileOptions.SequentialScan);
             var hash = await SHA256.HashDataAsync(stream, ct).ConfigureAwait(false);
-            _ledger.PutHash(info.FullName, size, modified, hash);
+            Remember(info.FullName, size, modified, hash);
             return hash;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)

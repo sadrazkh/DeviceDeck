@@ -1,3 +1,4 @@
+using System.Runtime.ExceptionServices;
 using System.Text.Json;
 using System.Threading.Channels;
 using DeviceDeck.Core.Abstractions;
@@ -36,16 +37,49 @@ public sealed class TransferQueue : IAsyncDisposable
     {
         public StoredJob Data { get; } = data;
         public ITransferHandler Handler { get; } = handler;
+        public IBatchingTransferHandler? Batching { get; } = handler as IBatchingTransferHandler;
         public SpeedMeter Speed { get; } = new(speedWindow);
         public CancellationTokenSource? Cts { get; set; }
         public Task? Worker { get; set; }
         public StopReason Stop { get; set; }
-        public TransferItem? CurrentItem { get; set; }
-        public long CurrentBytes { get; set; }
+
+        /// <summary>Items being copied right now, by index (one, or several for a batching handler).</summary>
+        public Dictionary<int, Flight> InFlight { get; } = [];
+
         public long CompletedBytes { get; set; }
         public long LastEmit { get; set; } = long.MinValue;
         public bool TrailingPending { get; set; }
+
+        // Running totals of the items, so a snapshot doesn't walk them all (a photo backup can have tens of thousands).
+        public int DoneCount { get; set; }
+        public int FailedCount { get; set; }
+        public long TotalBytes { get; set; }
+        public long DoneBytes { get; set; }
+
+        /// <summary>Where the next queued item is looked for: items before it were taken earlier in this run.</summary>
+        public int Cursor { get; set; }
+
+        /// <summary>Item states not saved yet (batching handlers save them every so often, and when the run stops).</summary>
+        public List<TransferItem> Unsaved { get; } = [];
+        public long LastSave { get; set; }
+
+        /// <summary>The conflict an item stopped on; the run ends at needsDecision.</summary>
+        public (TransferConflict Conflict, int Index)? Decision { get; set; }
     }
+
+    private sealed class Flight(TransferItem item)
+    {
+        public TransferItem Item { get; } = item;
+
+        /// <summary>The size the totals counted when the item started (a handler may correct it while copying).</summary>
+        public long StartSize { get; } = item.Size;
+
+        public long Bytes { get; set; }
+    }
+
+    /// <summary>A batching handler's item states are saved at least this often, or every <see cref="SaveEvery"/> items.</summary>
+    private static readonly TimeSpan SaveInterval = TimeSpan.FromSeconds(1);
+    private const int SaveEvery = 64;
 
     private readonly DeviceHub _hub;
     private readonly ITransferStore _store;
@@ -108,7 +142,9 @@ public sealed class TransferQueue : IAsyncDisposable
                     item.State = TransferItemState.Queued;
                 }
 
-                _jobs[stored.Id] = new Job(stored, handler, _options.SpeedWindow);
+                var job = new Job(stored, handler, _options.SpeedWindow);
+                Recount(job);
+                _jobs[stored.Id] = job;
                 _seq = Math.Max(_seq, stored.Seq);
             }
 
@@ -279,6 +315,7 @@ public sealed class TransferQueue : IAsyncDisposable
         }
 
         _store.UpdateItems(job.Data.Id, retry);
+        Recount(job);
         job.Data.Error = null;
         job.Data.FinishedAt = null;
         SetState(job, TransferState.Queued);
@@ -391,9 +428,11 @@ public sealed class TransferQueue : IAsyncDisposable
     {
         job.Stop = StopReason.None;
         job.Cts = new CancellationTokenSource();
-        job.CurrentItem = null;
-        job.CurrentBytes = 0;
-        job.CompletedBytes = job.Data.Items.Where(i => i.State is TransferItemState.Done or TransferItemState.Skipped).Sum(i => i.Size);
+        job.InFlight.Clear();
+        job.Cursor = 0;
+        job.Decision = null;
+        Recount(job);
+        job.CompletedBytes = job.DoneBytes;
         job.Speed.Reset();
         SetState(job, TransferState.Running);
         var ct = job.Cts.Token;
@@ -404,6 +443,7 @@ public sealed class TransferQueue : IAsyncDisposable
     {
         using var hold = _keepAwake.Acquire();
         TransferWorkContext? context = null;
+        Exception? stopped = null;
         try
         {
             var device = _hub.GetUsableDevice(job.Data.DeviceId);
@@ -429,128 +469,40 @@ public sealed class TransferQueue : IAsyncDisposable
                     job.Data.Planned = true;
                     _store.ReplaceItems(job.Data.Id, job.Data.Items);
                     _store.UpsertJob(job.Data);
+                    Recount(job);
                     Emit(job);
                 }
             }
 
-            while (true)
-            {
-                TransferItem? item;
-                lock (_gate)
-                {
-                    ct.ThrowIfCancellationRequested();
-                    item = job.Data.Items.FirstOrDefault(i => i.State == TransferItemState.Queued);
-                    if (item is null)
-                    {
-                        break;
-                    }
-
-                    item.State = TransferItemState.Running;
-                    job.CurrentItem = item;
-                    job.CurrentBytes = 0;
-                }
-
-                var progress = new InlineProgress<long>(bytes => OnItemProgress(job, bytes));
-                try
-                {
-                    var outcome = await job.Handler.RunItemAsync(context, item, progress, ct).ConfigureAwait(false);
-                    lock (_gate)
-                    {
-                        item.State = outcome == TransferItemState.Skipped ? TransferItemState.Skipped : TransferItemState.Done;
-                        item.ErrorCode = null;
-                        item.ErrorMessage = null;
-                        job.CompletedBytes += item.Size;
-                        EndItem(job, item);
-                    }
-                }
-                catch (TransferNeedsDecisionException need)
-                {
-                    lock (_gate)
-                    {
-                        item.State = TransferItemState.Queued;
-                        EndItem(job, item);
-                        job.Data.Conflict = need.Conflict;
-                        job.Data.ConflictItem = item.Index;
-                        SetState(job, TransferState.NeedsDecision);
-                    }
-
-                    return;
-                }
-                catch (Exception ex) when (ct.IsCancellationRequested || IsDeviceUnavailable(ex))
-                {
-                    lock (_gate)
-                    {
-                        item.State = TransferItemState.Queued;
-                        EndItem(job, item);
-                    }
-
-                    throw;
-                }
-                catch (Exception ex)
-                {
-                    var error = Describe(ex);
-                    lock (_gate)
-                    {
-                        item.State = TransferItemState.Failed;
-                        item.ErrorCode = error.Code;
-                        item.ErrorMessage = error.Message;
-                        EndItem(job, item);
-                    }
-                }
-            }
-
-            lock (_gate)
-            {
-                var failed = job.Data.Items.Where(i => i.State == TransferItemState.Failed).ToList();
-                var succeeded = job.Data.Items.Any(i => i.State is TransferItemState.Done or TransferItemState.Skipped);
-                job.Data.FinishedAt = _time.GetLocalNow();
-                if (failed.Count > 0 && !succeeded)
-                {
-                    job.Data.Error = failed.Count == 1
-                        ? new TransferError(failed[0].ErrorCode ?? "internal", failed[0].ErrorMessage ?? "The copy failed.")
-                        : new TransferError(failed[0].ErrorCode ?? "internal", $"None of the {failed.Count:N0} items could be copied. {failed[0].ErrorMessage}");
-                    SetState(job, TransferState.Failed);
-                }
-                else
-                {
-                    SetState(job, TransferState.Done);
-                }
-
-                Prune();
-            }
-        }
-        catch (Exception ex) when (ct.IsCancellationRequested || IsDeviceUnavailable(ex))
-        {
-            lock (_gate)
-            {
-                switch (job.Stop)
-                {
-                    case StopReason.Pause:
-                        SetState(job, TransferState.Paused);
-                        break;
-                    case StopReason.Cancel:
-                        job.Data.FinishedAt = _time.GetLocalNow();
-                        SetState(job, TransferState.Cancelled);
-                        Prune();
-                        break;
-                    case StopReason.Shutdown:
-                        // Left as running on disk: the next start queues it again.
-                        break;
-                    default:
-                        SetState(job, TransferState.WaitingForDevice);
-                        ScheduleRetry(job);
-                        break;
-                }
-            }
+            await RunItemsAsync(job, context, ct).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
+            stopped = ex;
+        }
+
+        try
+        {
+            // What the handler holds (the photo backup's ledger) is saved before the job's new state goes out.
+            if (context is not null && job.Batching is { } batching)
+            {
+                try
+                {
+                    await batching.EndRunAsync(context).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (stopped is null)
+                {
+                    stopped = ex;
+                }
+                catch (Exception)
+                {
+                    // The run is stopping for another reason already; that one is what the job reports.
+                }
+            }
+
             lock (_gate)
             {
-                job.Data.Error = Describe(ex);
-                job.Data.FinishedAt = _time.GetLocalNow();
-                SetState(job, TransferState.Failed);
-                Prune();
+                Conclude(job, stopped, ct);
             }
         }
         finally
@@ -562,8 +514,9 @@ public sealed class TransferQueue : IAsyncDisposable
 
             lock (_gate)
             {
-                job.CurrentItem = null;
-                job.CurrentBytes = 0;
+                SaveUnsaved(job);
+                job.InFlight.Clear();
+                job.Decision = null;
                 job.Cts?.Dispose();
                 job.Cts = null;
                 job.Worker = null;
@@ -572,27 +525,287 @@ public sealed class TransferQueue : IAsyncDisposable
         }
     }
 
-    private void EndItem(Job job, TransferItem item)
+    /// <summary>The state a run ends in: done or failed by its items, needsDecision, or what stopped it. Caller holds _gate.</summary>
+    private void Conclude(Job job, Exception? stopped, CancellationToken ct)
     {
-        job.CurrentItem = null;
-        job.CurrentBytes = 0;
-        _store.UpdateItems(job.Data.Id, [item]);
+        if (stopped is null && job.Decision is { } decision)
+        {
+            job.Data.Conflict = decision.Conflict;
+            job.Data.ConflictItem = decision.Index;
+            SetState(job, TransferState.NeedsDecision);
+        }
+        else if (stopped is null)
+        {
+            job.Data.FinishedAt = _time.GetLocalNow();
+            if (job.FailedCount > 0 && job.DoneCount == 0)
+            {
+                var failed = job.Data.Items.First(i => i.State == TransferItemState.Failed);
+                job.Data.Error = job.FailedCount == 1
+                    ? new TransferError(failed.ErrorCode ?? "internal", failed.ErrorMessage ?? "The copy failed.")
+                    : new TransferError(failed.ErrorCode ?? "internal", $"None of the {job.FailedCount:N0} items could be copied. {failed.ErrorMessage}");
+                SetState(job, TransferState.Failed);
+            }
+            else
+            {
+                SetState(job, TransferState.Done);
+            }
+
+            Prune();
+        }
+        else if (ct.IsCancellationRequested || IsDeviceUnavailable(stopped))
+        {
+            switch (job.Stop)
+            {
+                case StopReason.Pause:
+                    SetState(job, TransferState.Paused);
+                    break;
+                case StopReason.Cancel:
+                    job.Data.FinishedAt = _time.GetLocalNow();
+                    SetState(job, TransferState.Cancelled);
+                    Prune();
+                    break;
+                case StopReason.Shutdown:
+                    // Left as running on disk: the next start queues it again.
+                    break;
+                default:
+                    SetState(job, TransferState.WaitingForDevice);
+                    ScheduleRetry(job);
+                    break;
+            }
+        }
+        else
+        {
+            job.Data.Error = Describe(stopped);
+            job.Data.FinishedAt = _time.GetLocalNow();
+            SetState(job, TransferState.Failed);
+            Prune();
+        }
+    }
+
+    /// <summary>
+    /// Copies the job's queued items, one at a time, or <see cref="IBatchingTransferHandler.ParallelItems"/> at once.
+    /// Throws what stopped the run; returns when every item had its turn or one stopped on a conflict.
+    /// </summary>
+    private async Task RunItemsAsync(Job job, TransferWorkContext context, CancellationToken ct)
+    {
+        var lanes = Math.Clamp(job.Batching?.ParallelItems ?? 1, 1, 8);
+        if (lanes == 1)
+        {
+            await LaneAsync(job, context, null, ct).ConfigureAwait(false);
+            return;
+        }
+
+        // A lane that stops the run (a pulled cable, a conflict) stops the others; their items go back to the queue.
+        using var stop = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var tasks = Enumerable.Range(0, lanes).Select(_ => LaneAsync(job, context, stop, stop.Token)).ToArray();
+        try
+        {
+            await Task.WhenAll(tasks).ConfigureAwait(false);
+            return;
+        }
+        catch (Exception)
+        {
+            // Looked at below, all of them.
+        }
+
+        lock (_gate)
+        {
+            if (job.Decision is not null)
+            {
+                return;
+            }
+        }
+
+        var errors = tasks.Where(t => t.IsFaulted).SelectMany(t => t.Exception!.InnerExceptions).ToList();
+        // A phone that went away explains the lanes that were stopped because of it.
+        var reason = errors.FirstOrDefault(IsDeviceUnavailable) ?? errors.FirstOrDefault(e => e is not OperationCanceledException) ?? errors.FirstOrDefault();
+        if (reason is not null)
+        {
+            ExceptionDispatchInfo.Throw(reason);
+        }
+
+        ct.ThrowIfCancellationRequested();
+        throw new OperationCanceledException("The copy stopped.", ct);
+    }
+
+    private async Task LaneAsync(Job job, TransferWorkContext context, CancellationTokenSource? stopLanes, CancellationToken ct)
+    {
+        while (true)
+        {
+            Flight flight;
+            lock (_gate)
+            {
+                ct.ThrowIfCancellationRequested();
+                if (NextQueued(job) is not { } next)
+                {
+                    return;
+                }
+
+                next.State = TransferItemState.Running;
+                flight = new Flight(next);
+                job.InFlight[next.Index] = flight;
+            }
+
+            var item = flight.Item;
+            var progress = new InlineProgress<long>(bytes => OnItemProgress(job, flight, bytes));
+            try
+            {
+                var outcome = await job.Handler.RunItemAsync(context, item, progress, ct).ConfigureAwait(false);
+                lock (_gate)
+                {
+                    item.State = outcome == TransferItemState.Skipped ? TransferItemState.Skipped : TransferItemState.Done;
+                    item.ErrorCode = null;
+                    item.ErrorMessage = null;
+                    job.CompletedBytes += item.Size;
+                    EndItem(job, flight);
+                }
+            }
+            catch (TransferNeedsDecisionException need)
+            {
+                lock (_gate)
+                {
+                    item.State = TransferItemState.Queued;
+                    EndItem(job, flight);
+                    job.Decision ??= (need.Conflict, item.Index);
+                }
+
+                TryCancel(stopLanes);
+                return;
+            }
+            catch (Exception ex) when (ct.IsCancellationRequested || IsDeviceUnavailable(ex))
+            {
+                lock (_gate)
+                {
+                    item.State = TransferItemState.Queued;
+                    EndItem(job, flight);
+                }
+
+                TryCancel(stopLanes);
+                throw;
+            }
+            catch (Exception ex)
+            {
+                var error = Describe(ex);
+                lock (_gate)
+                {
+                    item.State = TransferItemState.Failed;
+                    item.ErrorCode = error.Code;
+                    item.ErrorMessage = error.Message;
+                    EndItem(job, flight);
+                }
+            }
+        }
+    }
+
+    /// <summary>The next queued item at or after the cursor. Caller holds _gate.</summary>
+    private static TransferItem? NextQueued(Job job)
+    {
+        var items = job.Data.Items;
+        while (job.Cursor < items.Count)
+        {
+            var item = items[job.Cursor++];
+            if (item.State == TransferItemState.Queued)
+            {
+                return item;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>An item left the run (done, skipped, failed, or back to the queue): totals, saving, an update. Caller holds _gate.</summary>
+    private void EndItem(Job job, Flight flight)
+    {
+        var item = flight.Item;
+        job.InFlight.Remove(item.Index);
+        job.TotalBytes += item.Size - flight.StartSize;
+        switch (item.State)
+        {
+            case TransferItemState.Done or TransferItemState.Skipped:
+                job.DoneCount++;
+                job.DoneBytes += item.Size;
+                break;
+            case TransferItemState.Failed:
+                job.FailedCount++;
+                break;
+        }
+
+        if (job.Batching is null)
+        {
+            _store.UpdateItems(job.Data.Id, [item]);
+        }
+        else
+        {
+            job.Unsaved.Add(item);
+            if (job.Unsaved.Count >= SaveEvery || _time.GetElapsedTime(job.LastSave) >= SaveInterval)
+            {
+                SaveUnsaved(job);
+            }
+        }
+
         EmitThrottled(job);
     }
 
-    private void OnItemProgress(Job job, long bytes)
+    /// <summary>Writes the item states a batching handler's run hasn't saved yet. Caller holds _gate.</summary>
+    private void SaveUnsaved(Job job)
+    {
+        job.LastSave = _time.GetTimestamp();
+        if (job.Unsaved.Count == 0)
+        {
+            return;
+        }
+
+        _store.UpdateItems(job.Data.Id, job.Unsaved.ToArray());
+        job.Unsaved.Clear();
+    }
+
+    /// <summary>The totals from scratch: when a job is loaded, planned, retried or started. Caller holds _gate.</summary>
+    private static void Recount(Job job)
+    {
+        int done = 0, failed = 0;
+        long total = 0, doneBytes = 0;
+        foreach (var item in job.Data.Items)
+        {
+            total += item.Size;
+            switch (item.State)
+            {
+                case TransferItemState.Done or TransferItemState.Skipped:
+                    done++;
+                    doneBytes += item.Size;
+                    break;
+                case TransferItemState.Failed:
+                    failed++;
+                    break;
+            }
+        }
+
+        (job.DoneCount, job.FailedCount, job.TotalBytes, job.DoneBytes) = (done, failed, total, doneBytes);
+    }
+
+    private void OnItemProgress(Job job, Flight flight, long bytes)
     {
         lock (_gate)
         {
-            if (job.Data.State != TransferState.Running || job.CurrentItem is null)
+            if (job.Data.State != TransferState.Running || !job.InFlight.ContainsKey(flight.Item.Index))
             {
                 return;
             }
 
-            job.CurrentBytes = bytes;
-            job.Speed.Add(_time.GetUtcNow().UtcTicks, job.CompletedBytes + ClampToItem(job));
+            flight.Bytes = bytes;
+            job.Speed.Add(_time.GetUtcNow().UtcTicks, job.CompletedBytes + InFlightBytes(job));
             EmitThrottled(job);
         }
+    }
+
+    private static long InFlightBytes(Job job)
+    {
+        long sum = 0;
+        foreach (var flight in job.InFlight.Values)
+        {
+            sum += flight.Item is { Size: > 0 } item ? Math.Min(flight.Bytes, item.Size) : flight.Bytes;
+        }
+
+        return sum;
     }
 
     // A phone that comes back (or is ready again) gets its waiting jobs queued; a retry covers a phone
@@ -657,6 +870,8 @@ public sealed class TransferQueue : IAsyncDisposable
 
     private void SetState(Job job, TransferState state)
     {
+        // Never a job state on disk ahead of its items'.
+        SaveUnsaved(job);
         job.Data.State = state;
         if (state != TransferState.NeedsDecision)
         {
@@ -723,27 +938,16 @@ public sealed class TransferQueue : IAsyncDisposable
     private TransferJob Snapshot(Job job)
     {
         var data = job.Data;
-        int done = 0, failed = 0;
-        long total = 0, doneBytes = 0;
-        foreach (var item in data.Items)
+        var (done, failed, total, doneBytes) = (job.DoneCount, job.FailedCount, job.TotalBytes, job.DoneBytes);
+        foreach (var flight in job.InFlight.Values)
         {
-            total += item.Size;
-            switch (item.State)
-            {
-                case TransferItemState.Done or TransferItemState.Skipped:
-                    done++;
-                    doneBytes += item.Size;
-                    break;
-                case TransferItemState.Failed:
-                    failed++;
-                    break;
-            }
+            total += flight.Item.Size - flight.StartSize;
         }
 
         var running = data.State == TransferState.Running;
         if (running)
         {
-            doneBytes += ClampToItem(job);
+            doneBytes += InFlightBytes(job);
         }
 
         var rate = running ? job.Speed.BytesPerSecond : null;
@@ -766,9 +970,6 @@ public sealed class TransferQueue : IAsyncDisposable
             data.CreatedAt,
             data.FinishedAt);
     }
-
-    private static long ClampToItem(Job job) =>
-        job.CurrentItem is { Size: > 0 } item ? Math.Min(job.CurrentBytes, item.Size) : job.CurrentBytes;
 
     private void Prune()
     {

@@ -17,6 +17,33 @@ public sealed record PhotoBackupRecord(
     string? JobId,
     DateTimeOffset BackedUpAt);
 
+/// <summary>
+/// Ledger writes a running backup gathers and saves together (<see cref="PhotoBackupLedger.Save"/>): one transaction
+/// every few dozen photos instead of several writes per photo. Not thread-safe; the handler guards it.
+/// </summary>
+public sealed class PhotoBackupLedgerBatch
+{
+    internal List<(string DeviceId, PhotoBackupRecord Record)> Records { get; } = [];
+
+    internal Dictionary<string, (int Copied, int Duplicates, long Bytes, int KeptHeic)> Runs { get; } = new(StringComparer.Ordinal);
+
+    internal Dictionary<string, (long Size, long Modified, byte[] Sha256)> Hashes { get; } = new(StringComparer.OrdinalIgnoreCase);
+
+    public bool IsEmpty => Records.Count == 0 && Runs.Count == 0 && Hashes.Count == 0;
+
+    public int Count => Records.Count + Runs.Count + Hashes.Count;
+
+    public void Record(string deviceId, PhotoBackupRecord record) => Records.Add((deviceId, record));
+
+    public void AddToRun(string jobId, int copied, int duplicates, long bytes, int keptHeic)
+    {
+        var (c, d, b, h) = Runs.GetValueOrDefault(jobId);
+        Runs[jobId] = (c + copied, d + duplicates, b + bytes, h + keptHeic);
+    }
+
+    public void PutHash(string path, long size, long modifiedTicks, byte[] sha256) => Hashes[path] = (size, modifiedTicks, sha256);
+}
+
 /// <summary>A phone's own backup options; a null field falls back to Settings (the range: to everything).</summary>
 public sealed record PhotoBackupOwnOptions(
     string? Destination = null,
@@ -447,6 +474,66 @@ public sealed class PhotoBackupLedger : IDisposable
         }
     }
 
+    // ---------- batches ----------
+
+    /// <summary>Saves what a running backup gathered (photos, run counts, PC file sums) in one transaction.</summary>
+    public void Save(PhotoBackupLedgerBatch batch)
+    {
+        if (batch.IsEmpty)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            using var tx = _db.BeginTransaction();
+            if (batch.Records.Count > 0)
+            {
+                using var record = Command("""
+                    INSERT INTO assets (device_id, asset_key, source_path, file_name, size, taken_at, pc_path, motion_pc_path, duplicate, job_id, backed_up_at)
+                    VALUES ($d, $k, $path, $name, $size, $taken, $pc, $motion, $dup, $job, $at)
+                    ON CONFLICT(device_id, asset_key) DO UPDATE SET source_path = excluded.source_path, file_name = excluded.file_name,
+                        size = excluded.size, taken_at = excluded.taken_at, pc_path = excluded.pc_path, motion_pc_path = excluded.motion_pc_path,
+                        duplicate = excluded.duplicate, job_id = excluded.job_id, backed_up_at = excluded.backed_up_at;
+                    """);
+                record.Transaction = tx;
+                foreach (var (deviceId, r) in batch.Records)
+                {
+                    Bind(record, ("$d", deviceId), ("$k", r.Key), ("$path", r.SourcePath), ("$name", r.FileName), ("$size", r.Size),
+                        ("$taken", r.TakenAt?.ToUnixTimeSeconds()), ("$pc", r.PcPath), ("$motion", r.MotionPcPath), ("$dup", r.Duplicate),
+                        ("$job", r.JobId), ("$at", Text(r.BackedUpAt)));
+                    record.ExecuteNonQuery();
+                }
+            }
+
+            foreach (var (jobId, delta) in batch.Runs)
+            {
+                using var run = Command("""
+                    UPDATE runs SET copied = copied + $c, duplicates = duplicates + $dup, bytes = bytes + $b, kept_heic = kept_heic + $h
+                    WHERE job_id = $j;
+                    """, ("$j", jobId), ("$c", delta.Copied), ("$dup", delta.Duplicates), ("$b", delta.Bytes), ("$h", delta.KeptHeic));
+                run.Transaction = tx;
+                run.ExecuteNonQuery();
+            }
+
+            if (batch.Hashes.Count > 0)
+            {
+                using var hash = Command("""
+                    INSERT INTO pc_hashes (path, size, modified, sha256) VALUES ($p, $s, $m, $h)
+                    ON CONFLICT(path) DO UPDATE SET size = excluded.size, modified = excluded.modified, sha256 = excluded.sha256;
+                    """);
+                hash.Transaction = tx;
+                foreach (var (path, (size, modified, sha256)) in batch.Hashes)
+                {
+                    Bind(hash, ("$p", path), ("$s", size), ("$m", modified), ("$h", sha256));
+                    hash.ExecuteNonQuery();
+                }
+            }
+
+            tx.Commit();
+        }
+    }
+
     public void Dispose()
     {
         lock (_gate)
@@ -461,17 +548,30 @@ public sealed class PhotoBackupLedger : IDisposable
     {
         var cmd = _db.CreateCommand();
         cmd.CommandText = sql;
+        Bind(cmd, parameters);
+        return cmd;
+    }
+
+    /// <summary>Sets parameters, adding the ones the command doesn't have yet (a command reused for many rows).</summary>
+    private static void Bind(SqliteCommand cmd, params (string Name, object? Value)[] parameters)
+    {
         foreach (var (name, value) in parameters)
         {
-            cmd.Parameters.AddWithValue(name, value switch
+            object converted = value switch
             {
                 null => DBNull.Value,
                 bool b => b ? 1 : 0,
                 _ => value,
-            });
+            };
+            if (cmd.Parameters.Contains(name))
+            {
+                cmd.Parameters[name].Value = converted;
+            }
+            else
+            {
+                cmd.Parameters.AddWithValue(name, converted);
+            }
         }
-
-        return cmd;
     }
 
     private void Execute(string sql, SqliteTransaction? tx = null)
