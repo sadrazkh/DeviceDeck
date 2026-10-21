@@ -277,6 +277,51 @@ public sealed class ComWpdBackend : IWpdBackend
         }
     }
 
+    /// <summary>
+    /// Round-trips values through WPD's own in-process objects (PortableDeviceTypes.dll; no device needed), so a test can
+    /// check that the COM declarations and the PROPVARIANT layout line up. Returns what it read back.
+    /// </summary>
+    internal static (string? Name, long? Size, bool? CanDelete, uint Count, PropertyKey SecondKey, string? Id, int Error) SelfTest()
+    {
+        var values = Create<IPortableDeviceValues>(WpdClsids.PortableDeviceValues);
+        var keys = Keys(WpdKeys.ObjectOriginalFileName, WpdKeys.ObjectSize, WpdKeys.ObjectCanDelete);
+        var ids = Create<IPortableDevicePropVariantCollection>(WpdClsids.PortableDevicePropVariantCollection);
+        // A collection holds one type (TYPE_E_TYPEMISMATCH otherwise): ids in one, a delete's errors in another.
+        var errors = Create<IPortableDevicePropVariantCollection>(WpdClsids.PortableDevicePropVariantCollection);
+        try
+        {
+            var name = WpdKeys.ObjectOriginalFileName;
+            values.SetStringValue(ref name, "IMG_0001.HEIC");
+            var size = WpdKeys.ObjectSize;
+            values.SetUnsignedIntegerValue(ref size, 1234);
+            values.GetCount(out var count);
+
+            var second = default(PropertyKey);
+            keys.GetAt(1, ref second);
+
+            var id = new PropVariant { Vt = PropVariant.VtLpwstr, Pointer = Marshal.StringToCoTaskMemUni("o1A2B") };
+            ids.Add(ref id);
+            WpdNative.PropVariantClear(ref id);
+            var error = new PropVariant { Vt = PropVariant.VtError, Int32 = WpdErrors.AccessDenied };
+            errors.Add(ref error);
+            var back = default(PropVariant);
+            ids.GetAt(0, ref back);
+            var readId = back.Vt == PropVariant.VtLpwstr ? Marshal.PtrToStringUni(back.Pointer) : null;
+            WpdNative.PropVariantClear(ref back);
+            errors.GetAt(0, ref back);
+            var readError = back.Vt == PropVariant.VtError ? back.Int32 : 0;
+
+            return (Read(values, name) as string, Read(values, size) as long?, Read(values, WpdKeys.ObjectCanDelete) as bool?, count, second, readId, readError);
+        }
+        finally
+        {
+            Marshal.ReleaseComObject(errors);
+            Marshal.ReleaseComObject(ids);
+            Marshal.ReleaseComObject(keys);
+            Marshal.ReleaseComObject(values);
+        }
+    }
+
     /// <summary>A value as string, long, bool, Guid or DateTimeOffset; null when missing or of another type.</summary>
     private static object? Read(IPortableDeviceValues values, PropertyKey key)
     {

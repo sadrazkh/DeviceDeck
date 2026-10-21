@@ -24,6 +24,9 @@ internal static class Commands
                 return await LocalSendCommands.FindAsync(cli, ct);
             case "localsend-send":
                 return await LocalSendCommands.SendAsync(cli, ct);
+            // Round 4: deleting photos through Windows' camera connection.
+            case "wpd-devices":
+                return await PhotoDeleteProbe.DevicesAsync(ct);
         }
 
         if (!DeviceCommands.TryGetValue(cli.Command, out var spec))
@@ -82,6 +85,8 @@ internal static class Commands
         ["uninstall"] = new(["bundleId"], (d, c, ct) => UninstallAsync(d, c.Positional[0], ct), NeedsYes: true),
         ["photos"] = new([], (d, c, ct) => PhotosAsync(d, c.IntOption("limit", 50), c.Option("album"), ct)),
         ["cleanup"] = new([], CleanupProbe.RunAsync),
+        ["wpd"] = new([], PhotoDeleteProbe.WpdAsync),
+        ["photodelete"] = new([], PhotoDeleteProbe.PhotoDeleteAsync),
         ["values"] = new(["domain"], async (d, c, ct) =>
         {
             var domain = c.Positional[0] == "-" ? null : c.Positional[0];

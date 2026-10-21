@@ -60,6 +60,9 @@ public sealed class WpdPhotoDeleter
         _delay = delay ?? Task.Delay;
     }
 
+    /// <summary>The log lines written in this process (the probe prints them).</summary>
+    public IReadOnlyList<string> LogLines => _log.Written;
+
     /// <summary>The last answer of <see cref="CheckAsync"/>, with what deletes on this phone have shown since.</summary>
     public PhotoDeleteSupport Current => WithDestination(Volatile.Read(ref _support));
 

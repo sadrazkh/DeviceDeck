@@ -408,3 +408,35 @@ public sealed class WpdPhotoDeleterTests
         Assert.Null(ComWpdBackend.SerialFromInstanceId(@"USB\VID_05AC&PID_12A8&MI_00\7&2A7C6B1C&0&0000"));
     }
 }
+
+/// <summary>The real COM declarations against Windows' own WPD objects (in-process; no device needed).</summary>
+public sealed class ComWpdInteropTests
+{
+    [Fact]
+    public void Values_keys_and_ids_round_trip_through_windows_portable_devices()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        Assert.Equal(IntPtr.Size == 8 ? 24 : 20, System.Runtime.InteropServices.Marshal.SizeOf<PropVariant>());
+        var (name, size, canDelete, count, second, id, error) = ComWpdBackend.SelfTest();
+
+        Assert.Equal("IMG_0001.HEIC", name);
+        Assert.Equal(1234, size);
+        Assert.Null(canDelete); // not set: missing, not false
+        Assert.Equal(2u, count);
+        Assert.Equal((new Guid("EF6B490D-5CD8-437A-AFFC-DA8B60EE4A3C"), 11u), (second.FormatId, second.Pid)); // WPD_OBJECT_SIZE
+        Assert.Equal("o1A2B", id);
+        Assert.Equal(WpdErrors.AccessDenied, error);
+    }
+
+    [Fact]
+    public void Listing_devices_works_on_this_pc()
+    {
+        if (!OperatingSystem.IsWindows())
+            return;
+
+        // Read-only; the list may be empty (no phone is plugged in while the tests run).
+        Assert.NotNull(new ComWpdBackend().ListDevices());
+    }
+}
