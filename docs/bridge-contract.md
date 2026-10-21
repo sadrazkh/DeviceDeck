@@ -593,11 +593,13 @@ autoUpdate: boolean;       // default true: check GitHub Releases a minute after
 type PcRoot = { path: string; label: string; kind: "home" | "desktop" | "downloads" | "documents" | "pictures" | "videos" | "music"
   | "drive" | "removableDrive" | "networkDrive" | "opticalDrive"; totalBytes: number | null; freeBytes: number | null };
 type PcEntry = { path: string; name: string; isDirectory: boolean; size: number; modified: string | null; readOnly: boolean; hidden: boolean };
-type UpdateStatus = { state: "notInstalled" | "idle" | "checking" | "upToDate" | "downloading" | "ready" | "error";
-  currentVersion: string; newVersion: string | null; percent: number | null; error: string | null; lastChecked: string | null };
+type UpdateStatus = { state: "idle" | "checking" | "upToDate" | "downloading" | "ready" | "available" | "error";
+  currentVersion: string; newVersion: string | null; percent: number | null; error: string | null; lastChecked: string | null;
+  /* round 4: */ install; channel; architecture; lastResult; retryAt; whatsNew };
 ```
 
-`notInstalled`: the portable zip (only a copy installed by the Setup can update itself).
+Round 4 replaced `notInstalled` with `install: "portable"` (the zip, which checks GitHub but can't update itself) and added
+`available`; see "Updates you can see (round 4)" at the end.
 
 ### Notifications from C#
 
@@ -867,3 +869,81 @@ and `.backup.ddpart` (a download always starts over, so none is ever resumed fro
 every run, those in the folders backups went to are removed, but only where no backup is queued, running, paused or
 waiting for that folder, and only when not written in the last minute. Nothing else is touched: not another copy's
 `.ddpart`, not a file outside the backup folders. The host logs what went and how much space it freed.
+
+## Updates you can see (round 4, updates)
+
+Added by the updates session. C#: `src/DeviceDeck.Bridge/IDesktopShell.cs` (the update block), `src/DeviceDeck.Bridge/ReleaseNotes.cs`,
+the update block of `DesktopMethods.cs`, `src/DeviceDeck.Shell/Desktop/Update*.cs`; TypeScript: `web/src/bridge/releaseNotes.ts`, the
+`UpdateStatus` block of `types.ts`, the round-4 block of `methods.ts`; the page's part is `web/src/shell/Update*`, `WhatsNewDialog.tsx`,
+`ReleaseNotesView.tsx`, `releaseNotes.ts`, `updates.ts`.
+
+### Methods
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `app.releaseNotes` | `{ version }` (`0.4.0`, `0.4.0-beta.1`; no `v`) | `ReleaseNotes` |
+| `app.openReleasePage` | `{ version? }` | `{}`: opens `https://github.com/sadrazkh/DeviceDeck/releases/tag/v{version}` (or `…/releases/latest`) in the browser; nothing else is ever opened |
+| `app.whatsNewShown` | `{ version }` | `{}`: "What's new" for that version was shown; `whatsNew` goes back to null and isn't offered by itself again |
+
+A version that isn't `MAJOR.MINOR.PATCH[-prerelease]` is refused with invalid params. Outside the window: `not_supported`.
+
+### Shapes
+
+```ts
+type UpdateStatus = {
+  state: "idle" | "checking" | "upToDate" | "downloading" | "ready" | "available" | "error";
+  currentVersion: string;
+  newVersion: string | null;        // what the last check found (ready: downloaded; available: on GitHub)
+  percent: number | null;           // while downloading
+  error: string | null;             // one English sentence for the log; the page shows its own words
+  lastChecked: string | null;       // also from an earlier run
+  install: "setup" | "portable";    // setup updates itself (Velopack); portable is the zip: it only checks GitHub
+  channel: "stable" | "prerelease"; // prerelease when the version has a "-"
+  architecture: "x64" | "arm64";
+  lastResult: "upToDate" | "newVersion" | "error" | null;
+  retryAt: string | null;           // with error: GitHub asked to wait until then (its rate limit)
+  whatsNew: string | null;          // the first run of a newer version: show "What's new in v{whatsNew}" once
+};
+type ReleaseNotes = {
+  version: string; url: string;     // url: the version's GitHub release page
+  title: string | null;             // "DeviceDeck v0.4.0"
+  markdown: string | null;          // as on GitHub; null when none could be had (show a link to url)
+  published: string | null;
+  source: "github" | "cache" | "app" | "none";
+};
+```
+
+### How it behaves
+
+- **Setup copy** (`install: "setup"`): as in round 2 (Velopack; a minute after start, then every 6 hours while `autoUpdate` is on;
+  `downloading` → `ready`; `app.applyUpdate` restarts into it). A Windows notification once per version.
+- **Portable zip** (`install: "portable"`): a minute after start and then every 12 hours while `autoUpdate` is on, and on Check now,
+  it asks `GET https://api.github.com/repos/sadrazkh/DeviceDeck/releases/latest` (with prereleases: `/releases?per_page=10`, the
+  newest), unauthenticated. A newer version → `available` (also at the next start, from the last check), with a notification once
+  per version whose Download button opens the release page. Nothing is downloaded.
+- **GitHub's API** (`updates/github.json` in the data folder): every answer is kept with its ETag and asked for again with
+  `If-None-Match` (an unchanged release is a 304). When GitHub says the limit is used up (`X-RateLimit-Remaining: 0` with
+  `X-RateLimit-Reset`, or a 403/429 with `Retry-After`; a minute when it says neither) nothing is asked until then, also after a
+  restart. An automatic check that would have to wait changes nothing; Check now answers `error` with `retryAt`. A failed check
+  keeps a version already found (`available` stays, `lastResult: "error"`).
+- **Release notes** for a version: the tag's release from GitHub (cached as above); when GitHub can't be reached, the cached copy
+  (`cache`); with none, the notes that came with this build (`docs/releases/v{version}.md`, embedded) or with the downloaded update
+  (Velopack's package notes) (`app`); else `none` and the page shows a link to `url`.
+- **What's new once after an update**: `updates/state.json` remembers the version that ran last. The first run of a newer one sets
+  `whatsNew` (an update from v0.3.0, which kept no history, counts when the data folder was already there; a first install doesn't).
+  The page shows the dialog and calls `app.whatsNewShown`.
+- **Environment** (the Shell): `DEVICEDECK_UPDATE_FEED=off` (no automatic checks) or a URL used instead of the API's repository
+  address (a test server; checks then run in a dev build too); `DEVICEDECK_WHATSNEW=1` shows What's new now, `0` never. A dev build
+  (`DEVICEDECK_DEV`) never checks or opens What's new by itself.
+
+### The page
+
+- Title bar: "Update ready" (`ready`) or "v0.4.0 on GitHub" (`available`) opens What's new; "Downloading 42%" while it downloads;
+  nothing otherwise. The in-app banner (in the toast stack) shows once per version (remembered in the page's storage).
+- What's new: the Persian `<details>` block when the UI is Persian (right-to-left), the English part otherwise. Only a markdown
+  subset becomes elements (headings, paragraphs, lists with one level of nesting, quotes, code, rules, bold, italics, inline code,
+  `https://github.com` links); raw HTML is dropped (script-like elements with their contents), images are dropped, other links
+  keep their words. Nothing is given to the page as HTML.
+- A click on the update's notification itself (not its button) opens What's new.
+- Mock: `?update=checking|downloading|downloadThenReady|ready|error|rateLimited|upToDate|portable|portableNew|whatsNew` and
+  `?notes=english|hostile|missing|cache` (`web/src/bridge/mock/updates.ts`).
