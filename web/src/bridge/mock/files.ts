@@ -314,6 +314,15 @@ export class MockFileSystem {
     }
     return node.children;
   }
+
+  // ---------- Long names (round 3, ui) ----------
+
+  /** Adds folders and files under a folder of a root, making the root when it is missing (mock/longNames.ts). */
+  addSample(root: string, path: string, specs: SampleSpec[], seed: number): void {
+    if (!this.roots.has(root)) this.roots.set(root, new Map());
+    const into = split(path).length === 0 ? this.roots.get(root)! : this.childrenOf(this.resolveDir(root, path));
+    for (const [key, node] of build(specs, seed)) into.set(key, node);
+  }
 }
 
 function split(path: string): string[] {
@@ -339,3 +348,6 @@ function toEntry(path: string, node: Node): FileEntry {
     readOnly: node.readOnly,
   };
 }
+
+// Long names (round 3, ui): the shape of mock/longNames.ts's sample.
+export type SampleSpec = Spec;
