@@ -8,10 +8,11 @@ import { useState } from 'react';
 import type { UpdateStatus } from '../bridge/types';
 import { useActions } from '../app/actions';
 import { useClient } from '../app/bridgeContext';
-import { useSettings, useUpdateSettings } from '../app/queries';
+import { useSettings, useTransfers, useUpdateSettings } from '../app/queries';
 import { Button } from '../components/Button';
 import { Card, Spinner, Switch } from '../components/ui';
 import { useI18n, type I18n } from '../i18n';
+import { overallProgress } from '../state/transfers';
 import styles from '../screens/Screen.module.css';
 import { updateKey, useUpdateStatus } from './desktop';
 import updateStyles from './Update.module.css';
@@ -67,6 +68,7 @@ export function DesktopSettings() {
   const update = useUpdateSettings();
   const status = useUpdateStatus().data;
   const showWhatsNew = useWhatsNew((s) => s.show);
+  const copying = overallProgress(useTransfers().data ?? []).active > 0;
   const [busy, setBusy] = useState(false);
   if (!settings) return null;
 
@@ -86,6 +88,11 @@ export function DesktopSettings() {
   const act = async () => {
     if (!offer) return;
     markBannerSeen(offer.version);
+    // With copies running, What's new says what a restart would stop first.
+    if (offer.kind === 'ready' && copying) {
+      showWhatsNew({ version: offer.version, reason: 'offer' });
+      return;
+    }
     try {
       if (offer.kind === 'ready') await client.call('app.applyUpdate');
       else await client.call('app.openReleasePage', { version: offer.version });

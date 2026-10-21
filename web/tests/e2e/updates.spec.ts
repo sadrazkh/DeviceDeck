@@ -206,6 +206,12 @@ test('Settings › Updates: version, channel, kind of copy, last check, Check no
   await settle(page);
   await shot(page, 'updates-settings-en');
 
+  // Restart and update with copies running (the sample queue): What's new says what a restart would stop, first.
+  await page.goto(query('light', { screen: 'settings', update: 'ready' }));
+  await page.getByTestId('settings-update-act').click();
+  await expect(page.getByRole('dialog').getByRole('status').filter({ hasText: 'still running' })).toBeVisible();
+  expect((await mockUpdates(page)).applied).toBe(0);
+
   await page.goto(query('light', { screen: 'settings', update: 'rateLimited' }));
   await expect(page.getByTestId('update-status')).toContainText('GitHub’s limit for update checks from this network is used up. Try again after');
   await expect(page.getByTestId('update-last-check')).toContainText('couldn’t reach GitHub');
