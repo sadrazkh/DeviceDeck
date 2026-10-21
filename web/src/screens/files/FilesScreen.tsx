@@ -6,7 +6,7 @@ import { useClient } from '../../app/bridgeContext';
 import { useFileRoots } from '../../app/queries';
 import { Button } from '../../components/Button';
 import { ErrorBanner } from '../../components/ErrorState';
-import { Segmented, Skeleton, Switch, Tooltip } from '../../components/ui';
+import { Skeleton, Switch, Tooltip } from '../../components/ui';
 import { useI18n } from '../../i18n';
 import { useDevicePlace, useUi } from '../../state/ui';
 import { useInsideDrop } from '../../shell/dragOut';
@@ -101,7 +101,9 @@ export function FilesScreen({ device }: { device: DeviceSummary }) {
                   {storageRoots.map((r) => (
                     <button key={r.key} type="button" className={styles.place} aria-current={r.key === root} onClick={() => open(r.key)} {...dropProps(r.key)}>
                       <RootGlyph appId={r.appId} kind={r.kind} iconUrl={iconUrl} className={styles.placeIcon} glyphClass={styles.placeIconGlyph} />
-                      <span className={styles.placeLabel}>{labelOf(r.key)}</span>
+                      <span className={styles.placeLabel} title={labelOf(r.key)} dir="auto">
+                        {labelOf(r.key)}
+                      </span>
                     </button>
                   ))}
                 </>
@@ -113,7 +115,9 @@ export function FilesScreen({ device }: { device: DeviceSummary }) {
                     <span className={styles.placeIconGlyph} aria-hidden>
                       <AppGenericRegular />
                     </span>
-                    <span className={styles.placeLabel}>{t('files.appDocuments')}</span>
+                    <span className={styles.placeLabel} title={t('files.appDocuments')}>
+                      {t('files.appDocuments')}
+                    </span>
                   </button>
                   {appPlaces.map((place) => (
                     <button
@@ -125,7 +129,9 @@ export function FilesScreen({ device }: { device: DeviceSummary }) {
                       {...dropProps(place.folders[0]!.rootKey)}
                     >
                       <PlaceIcon device={device} place={place} className={styles.placeIcon} glyphClassName={styles.placeIconGlyph} />
-                      <span className={styles.placeLabel}>{placeLabel(place, t)}</span>
+                      <span className={styles.placeLabel} title={placeLabel(place, t)} dir="auto">
+                        {placeLabel(place, t)}
+                      </span>
                     </button>
                   ))}
                 </>
@@ -134,7 +140,9 @@ export function FilesScreen({ device }: { device: DeviceSummary }) {
                 ? storageRoots.map((r) => (
                     <button key={r.key} type="button" className={styles.place} aria-current={r.key === root} onClick={() => open(r.key)} {...dropProps(r.key)}>
                       <RootGlyph appId={r.appId} kind={r.kind} iconUrl={iconUrl} className={styles.placeIcon} glyphClass={styles.placeIconGlyph} />
-                      <span className={styles.placeLabel}>{labelOf(r.key)}</span>
+                      <span className={styles.placeLabel} title={labelOf(r.key)} dir="auto">
+                        {labelOf(r.key)}
+                      </span>
                     </button>
                   ))
                 : null}
@@ -159,15 +167,10 @@ export function FilesScreen({ device }: { device: DeviceSummary }) {
                   rootIcon={<PlaceIcon device={device} place={app.place} glyphClassName={styles.crumbGlyph} />}
                   onNavigate={(p) => open(app.folder.rootKey, p)}
                   exit={{ label: t('files.appDocuments'), onExit: () => open(gridRoot) }}
-                  folderSwitch={
-                    app.place.folders.length > 1 ? (
-                      <Segmented
-                        label={t('appFiles.folders')}
-                        value={app.folder.rootKey}
-                        onChange={(key) => open(key)}
-                        options={app.place.folders.map((f) => ({ value: f.rootKey, label: folderLabel(f.label, t) }))}
-                      />
-                    ) : null
+                  folders={
+                    app.place.folders.length > 1
+                      ? { value: app.folder.rootKey, onChange: (key) => open(key), options: app.place.folders.map((f) => ({ value: f.rootKey, label: folderLabel(f.label, t) })) }
+                      : undefined
                   }
                 />
               ) : currentRoot ? (

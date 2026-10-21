@@ -606,4 +606,16 @@ export const fa: Record<MessageKey, string> = {
   ...batteryFa,
   // Backup, contacts and messages (round 2)
   ...backupFa,
+  // File browser and drops from File Explorer (round 3, ui)
+  'files.more': 'بیشتر',
+  'files.crumbsHidden': '{count} پوشهٔ دیگر',
+  'files.addTip': 'افزودن فایل یا پوشه از این رایانه. می‌توانید آن‌ها را از File Explorer هم به اینجا بکشید.',
+  'files.empty.drop': 'فایل یا پوشه را از File Explorer به اینجا بکشید، یا «افزودن» را بزنید.',
+  'files.emptyApp.title': '{app} هنوز فایلی ندارد',
+  'files.addFilesButton': 'افزودن فایل…',
+  'files.addFolderButton': 'افزودن پوشه…',
+  'files.dropRowReadOnly': '«{name}» فقط‌خواندنی است و چیزی در آن کپی نمی‌شود.',
+  'files.dropBlocked': 'اندروید «{name}» را فقط برای برنامهٔ خودش نگه می‌دارد و چیزی در آن کپی نمی‌شود.',
+  'files.dropDenied': 'گوشی این پوشه را خصوصی نگه می‌دارد و چیزی در آن کپی نمی‌شود.',
+  'appDocs.emptyDrop': 'خالی · فایل‌ها را اینجا رها کنید',
 };

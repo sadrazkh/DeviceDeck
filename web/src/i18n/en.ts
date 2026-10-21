@@ -622,6 +622,18 @@ export const en = {
   ...batteryEn,
   // Backup, contacts and messages (round 2)
   ...backupEn,
+  // File browser and drops from File Explorer (round 3, ui)
+  'files.more': 'More',
+  'files.crumbsHidden': '{count, plural, one {# more folder} other {# more folders}}',
+  'files.addTip': 'Add files or a folder from this PC. You can also drag them here from File Explorer.',
+  'files.empty.drop': 'Drag files or folders here from File Explorer, or use Add.',
+  'files.emptyApp.title': '{app} has no files yet',
+  'files.addFilesButton': 'Add files…',
+  'files.addFolderButton': 'Add a folder…',
+  'files.dropRowReadOnly': '“{name}” is read-only, so nothing can be copied into it.',
+  'files.dropBlocked': 'Android keeps “{name}” for its app alone, so nothing can be copied into it.',
+  'files.dropDenied': 'The phone keeps this folder private, so nothing can be copied into it.',
+  'appDocs.emptyDrop': 'Empty · drop files here',
 } as const;
 
 export type MessageKey = keyof typeof en;

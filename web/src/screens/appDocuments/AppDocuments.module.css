@@ -97,6 +97,9 @@ button.card:hover {
   color: var(--color-accent-text);
   font-size: var(--type-caption-size);
   font-weight: var(--type-strong-weight);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .copy {
@@ -258,6 +261,13 @@ button.card:hover {
 .chip svg {
   flex: none;
   color: var(--color-accent-text);
+}
+
+.chipName {
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
 }
 
 .chip[data-over] {
