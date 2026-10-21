@@ -1,7 +1,7 @@
 namespace DeviceDeck.Shell.Hosting;
 
 /// <summary>
-/// Where the page comes from. DEVICEDECK_DEV=1: the Vite dev server on http://localhost:5173.
+/// Where the page comes from. DEVICEDECK_DEV=1: the Vite dev server on http://localhost:5173 (or DEVICEDECK_DEV_URL).
 /// Otherwise a folder mapped to https://app.devicedeck/: DEVICEDECK_WEB_ROOT, then "web" next to the exe
 /// (published layout), then the repo's web/dist, then the Shell's own placeholder page.
 /// DEVICEDECK_PLACEHOLDER=1 forces the placeholder.
@@ -18,7 +18,9 @@ internal sealed record WebContent(Uri StartUri, string? Folder, string Descripti
     {
         if (devMode)
         {
-            return new WebContent(new Uri(DevServer), null, "Vite dev server");
+            // DEVICEDECK_DEV_URL: another dev server's address (parallel worktrees each run their own).
+            var server = Environment.GetEnvironmentVariable("DEVICEDECK_DEV_URL") is { Length: > 0 } url ? url : DevServer;
+            return new WebContent(new Uri(server), null, "Vite dev server");
         }
 
         var start = new Uri($"https://{AppHost}/index.html");

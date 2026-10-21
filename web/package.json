@@ -10,7 +10,8 @@
     "typecheck": "tsc -b",
     "test": "npm run test:unit && npm run test:e2e",
     "test:unit": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:host": "playwright test -c playwright.host.config.ts"
   },
   "dependencies": {
     "@fluentui/react-icons": "2.0.344",
