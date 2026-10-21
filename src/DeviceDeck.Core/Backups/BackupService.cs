@@ -49,7 +49,7 @@ public sealed class BackupServiceOptions
 /// away waits and carries on when the same phone is back. Nothing is deleted without the user confirming a list first.
 /// Unlocked encrypted backups stay open (in memory only) until locked or the app closes; passwords are never kept.
 /// </summary>
-public sealed class BackupService : IAsyncDisposable
+public sealed partial class BackupService : IAsyncDisposable
 {
     private readonly DeviceHub _hub;
     private readonly SettingsStore _settings;
@@ -904,6 +904,9 @@ public sealed class BackupService : IAsyncDisposable
         public SqliteImage? Sms { get; set; }
         public MessageStore? Messages { get; set; }
 
+        /// <summary>WhatsApp's databases (round 4, BackupService.WhatsApp.cs), opened on first use.</summary>
+        public WhatsAppBackup? WhatsApp { get; set; }
+
         public async ValueTask DisposeAsync()
         {
             await Gate.WaitAsync().ConfigureAwait(false);
@@ -912,6 +915,7 @@ public sealed class BackupService : IAsyncDisposable
                 AddressBook?.Dispose();
                 Images?.Dispose();
                 Sms?.Dispose();
+                WhatsApp?.Dispose();
                 Archive.Dispose();
             }
             finally

@@ -14,6 +14,9 @@ public enum TransferKind
 
     /// <summary>Round 3: PC photos and videos to the LocalSend app on the phone, which saves them into Photos (LocalSendHandler).</summary>
     LocalSend,
+
+    /// <summary>Round 4: WhatsApp's media and its own encrypted backups copied off an Android phone (WhatsApp/WhatsAppMediaHandler).</summary>
+    WhatsAppMedia,
 }
 
 public enum TransferState { Queued, Running, Paused, WaitingForDevice, NeedsDecision, Done, Failed, Cancelled }

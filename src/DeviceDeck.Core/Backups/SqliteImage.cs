@@ -58,6 +58,14 @@ public sealed class SqliteImage : IDisposable
     /// <summary>Opens a database image held in memory; the bytes stay pinned until disposal.</summary>
     public static SqliteImage FromBytes(byte[] image)
     {
+        // A phone's databases are in WAL mode (header bytes 18 and 19 are 2), which an image in memory can't be:
+        // SQLite then fails with "unable to open database file". Marked as a rollback-journal database it reads the same.
+        if (image.Length >= 100 && image[18] == 2 && image[19] == 2)
+        {
+            image[18] = 1;
+            image[19] = 1;
+        }
+
         var connection = new SqliteConnection("Data Source=:memory:;Pooling=False");
         var pin = GCHandle.Alloc(image, GCHandleType.Pinned);
         try

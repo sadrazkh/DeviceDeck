@@ -119,5 +119,7 @@ public static class TransferHandlers
         new AppInstallHandler(),
         new AppExportHandler(),
         new PhotosToAppHandler(),
+        // Round 4, WhatsApp on Android.
+        new WhatsApp.WhatsAppMediaHandler(),
     ];
 }
