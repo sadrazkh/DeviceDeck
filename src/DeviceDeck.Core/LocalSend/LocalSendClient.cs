@@ -113,7 +113,7 @@ public sealed class LocalSendClient : IDisposable
     public Task<LocalSendInfo> RegisterAsync(LocalSendInfo me, CancellationToken ct) =>
         CallAsync("register", ct, _timeouts.Short, async token =>
         {
-            using var response = await _http.PostAsJsonAsync("register", me with { Announce = null }, LocalSendProtocol.Json, token).ConfigureAwait(false);
+            using var response = await _http.PostAsync("register", Json(me with { Announce = null }), token).ConfigureAwait(false);
             await ThrowIfFailedAsync(response, Stage.Info, pinGiven: false, token).ConfigureAwait(false);
             return await ReadInfoAsync(response, token).ConfigureAwait(false);
         });
@@ -128,7 +128,7 @@ public sealed class LocalSendClient : IDisposable
         {
             var body = new LocalSendPrepareRequest(me with { Announce = null }, files.ToDictionary(f => f.Id, StringComparer.Ordinal));
             var uri = string.IsNullOrEmpty(pin) ? "prepare-upload" : "prepare-upload?pin=" + Uri.EscapeDataString(pin);
-            using var response = await _http.PostAsJsonAsync(uri, body, LocalSendProtocol.Json, token).ConfigureAwait(false);
+            using var response = await _http.PostAsync(uri, Json(body), token).ConfigureAwait(false);
             if (response.StatusCode == HttpStatusCode.NoContent)
             {
                 return null;
@@ -206,6 +206,14 @@ public sealed class LocalSendClient : IDisposable
     }
 
     private enum Stage { Info, Prepare, Upload }
+
+    // A body with its length (no chunked encoding): the simplest thing for a receiver to read.
+    private static ByteArrayContent Json<T>(T body)
+    {
+        var content = new ByteArrayContent(System.Text.Json.JsonSerializer.SerializeToUtf8Bytes(body, LocalSendProtocol.Json));
+        content.Headers.ContentType = new MediaTypeHeaderValue("application/json") { CharSet = "utf-8" };
+        return content;
+    }
 
     private async Task<T> CallAsync<T>(string what, CancellationToken ct, TimeSpan timeout, Func<CancellationToken, Task<T>> call,
         string timeoutCode = LocalSendErrors.NotListening, string? timeoutMessage = null)

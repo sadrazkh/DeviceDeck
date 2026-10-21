@@ -70,14 +70,15 @@ public enum LocalSendRoute { Usb, Wifi }
 /// The receiver a job sends to. Over USB the phone is known, so only its certificate is pinned; over Wi-Fi the address
 /// comes from discovery. The fingerprint is pinned for HTTPS: a different certificate fails the job.
 /// </summary>
+/// <param name="Address">The receiver's IP address on the network (Wi-Fi only).</param>
 public sealed record LocalSendTarget(
     LocalSendRoute Route,
-    string? Address,
     int Port,
     string Protocol,
-    string? Fingerprint,
-    string? Alias,
-    string? DeviceModel)
+    string? Fingerprint = null,
+    string? Address = null,
+    string? Alias = null,
+    string? DeviceModel = null)
 {
     public bool Https => !string.Equals(Protocol, "http", StringComparison.OrdinalIgnoreCase);
 }
@@ -100,7 +101,7 @@ public sealed record LocalSendReceiver(
     string Fingerprint,
     bool Likely)
 {
-    public LocalSendTarget ToTarget() => new(Route, Address, Port, Protocol, Fingerprint, Alias, DeviceModel);
+    public LocalSendTarget ToTarget() => new(Route, Port, Protocol, Fingerprint, Address, Alias, DeviceModel);
 }
 
 /// <summary>What the cable route found: LocalSend answering, closed (not open on the phone), open but silent, or no cable route at all.</summary>

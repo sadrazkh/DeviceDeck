@@ -99,6 +99,7 @@ internal sealed class HostServices : IAsyncDisposable
         var keepAwake = new WindowsKeepAwake();
         var dragOuts = new DragOutRegistry();
         var localSend = new DeviceDeck.Core.LocalSend.LocalSendService(hub, store.LoadItems);
+        DeviceDeck.Core.LocalSend.LocalSendService.CancelLeftovers(store);
         var transfers = new TransferQueue(hub, store, [.. TransferHandlers.All(transcoder), photoBackup.Handler, new DragOutHandler(dragOuts), localSend.Handler], keepAwake);
         transfers.Start();
         photoBackup.Attach(transfers);

@@ -40,9 +40,26 @@ public sealed class LocalSendService : IAsyncDisposable
     public event EventHandler<LocalSendJobStatus>? Updated;
 
     /// <summary>
-    /// Joins the queue. Sends left unfinished when DeviceDeck closed are cancelled: the phone's side of the session is gone,
-    /// and a send must never start again by itself (the phone would ask Accept out of the blue). Retry sends the rest.
+    /// Call before the queue starts: sends left unfinished when DeviceDeck closed are cancelled in the store, so the queue
+    /// never runs them again by itself. The phone's side of the session is gone, and a send that started on its own would
+    /// put an Accept question on the phone out of the blue. Retry sends the rest.
     /// </summary>
+    public static int CancelLeftovers(ITransferStore store)
+    {
+        var leftovers = store.LoadAll()
+            .Where(j => j.Kind == TransferKind.LocalSend && j.State is not (TransferState.Done or TransferState.Failed or TransferState.Cancelled))
+            .ToList();
+        foreach (var job in leftovers)
+        {
+            job.State = TransferState.Cancelled;
+            job.FinishedAt = DateTimeOffset.Now;
+            store.UpsertJob(job);
+        }
+
+        return leftovers.Count;
+    }
+
+    /// <summary>Joins the queue (after <see cref="CancelLeftovers"/> and the queue's Start).</summary>
     public void Attach(TransferQueue queue)
     {
         _queue = queue;
@@ -53,10 +70,6 @@ public sealed class LocalSendService : IAsyncDisposable
                 Changed(job.Id);
             }
         };
-        foreach (var job in queue.List().Where(j => j.Kind == TransferKind.LocalSend && j.State is not (TransferState.Done or TransferState.Failed or TransferState.Cancelled)))
-        {
-            queue.Cancel(job.Id);
-        }
     }
 
     private TransferQueue Queue => _queue ?? throw new InvalidOperationException("LocalSendService isn't attached to the transfer queue.");

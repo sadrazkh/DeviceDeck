@@ -199,7 +199,8 @@ public sealed class LocalSendFinder : IAsyncDisposable
         }
     }
 
-    private void Saw(LocalSendInfo info, IPAddress address, bool https, string fingerprint)
+    /// <param name="port">The port it answered on (the sweep), or null to take the one it states (multicast).</param>
+    private void Saw(LocalSendInfo info, IPAddress address, int? port, bool https, string fingerprint)
     {
         if (string.Equals(info.Fingerprint, _me.Fingerprint, StringComparison.OrdinalIgnoreCase))
         {
@@ -207,7 +208,7 @@ public sealed class LocalSendFinder : IAsyncDisposable
         }
 
         var receiver = new LocalSendReceiver("wifi:" + fingerprint, LocalSendRoute.Wifi, info.Alias, info.DeviceModel, info.DeviceType,
-            address.ToString(), info.Port is > 0 and <= 65535 ? info.Port.Value : _options.Port, https ? "https" : "http", fingerprint, Likely: false);
+            address.ToString(), port ?? (info.Port is > 0 and <= 65535 ? info.Port.Value : _options.Port), https ? "https" : "http", fingerprint, Likely: false);
         _seen[receiver.Id] = (receiver, DateTimeOffset.UtcNow);
     }
 
@@ -244,7 +245,7 @@ public sealed class LocalSendFinder : IAsyncDisposable
                 return false;
             }
 
-            Saw(info, address, https, fingerprint!);
+            Saw(info, address, _options.Port, https, fingerprint!);
             return true;
         }
         catch (Exception ex) when (ex is DeviceException or ArgumentException)
@@ -313,7 +314,7 @@ public sealed class LocalSendFinder : IAsyncDisposable
                 }
 
                 // Multicast carries no certificate: the fingerprint it states is pinned when the job connects.
-                Saw(info, from.Address, !string.Equals(info.Protocol, "http", StringComparison.OrdinalIgnoreCase), info.Fingerprint);
+                Saw(info, from.Address, null, !string.Equals(info.Protocol, "http", StringComparison.OrdinalIgnoreCase), info.Fingerprint);
             }
         }
         catch (Exception ex) when (ex is SocketException or OperationCanceledException or ObjectDisposedException)

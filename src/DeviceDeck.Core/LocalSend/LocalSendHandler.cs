@@ -30,6 +30,9 @@ public sealed class LocalSendHandler : TransferHandler<LocalSendRequest>
     private readonly ConcurrentDictionary<string, JobMemory> _jobs = new(StringComparer.Ordinal);
     private readonly ConditionalWeakTable<TransferWorkContext, RunSession> _runs = new();
 
+    // The session that has each phone's LocalSend now (by device id).
+    private readonly ConcurrentDictionary<string, RunSession> _turns = new(StringComparer.Ordinal);
+
     /// <param name="itemsOf">A job's items as the queue last saved them (SqliteTransferStore.LoadItems): the files a new session asks for.</param>
     public LocalSendHandler(LocalSendIdentity me, Func<string, IReadOnlyList<TransferItem>> itemsOf, LocalSendTimeouts? timeouts = null)
     {
@@ -224,14 +227,30 @@ public sealed class LocalSendHandler : TransferHandler<LocalSendRequest>
     /// <summary>One run of a job = one LocalSend session.</summary>
     private sealed class RunSession(LocalSendHandler owner, TransferWorkContext context, LocalSendRequest request, JobMemory memory)
     {
+        private static readonly TimeSpan IdleTurn = TimeSpan.FromMinutes(5);
+
         private readonly SemaphoreSlim _lock = new(1, 1);
         private readonly Lock _gate = new();
         private readonly HashSet<string> _finished = new(StringComparer.Ordinal);
+        private readonly string _deviceId = context.Device.Summary.Id;
         private SessionState? _state;
         private DeviceException? _failure;
         private CancellationTokenRegistration _onStop;
         private bool _anyFailed;
         private bool _closed;
+        private long _lastActivity = Environment.TickCount64;
+
+        /// <summary>Done with the phone: closed, failed, or silent for so long that its run must have ended without telling.</summary>
+        private bool IsOver
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _closed || _failure is not null || Environment.TickCount64 - _lastActivity > IdleTurn.TotalMilliseconds;
+                }
+            }
+        }
 
         public async Task<SessionState> EnsureAsync(TransferItem current, CancellationToken ct)
         {
@@ -246,11 +265,13 @@ public sealed class LocalSendHandler : TransferHandler<LocalSendRequest>
 
                 if (_state is { } existing)
                 {
+                    Touch();
                     return existing;
                 }
 
                 owner.Publish(memory, context.JobId, LocalSendPhase.Connecting);
                 memory.SessionError = null;
+                await TakeTurnAsync(ct).ConfigureAwait(false);
                 await CancelLeftoverAsync(ct).ConfigureAwait(false);
 
                 // Every file this run will send: the queue's saved items still to go, plus the one in hand.
@@ -275,6 +296,7 @@ public sealed class LocalSendHandler : TransferHandler<LocalSendRequest>
                 var session = files.Count == 0 ? null : await client.PrepareUploadAsync(owner._me.Info(), files, memory.Pin, ct).ConfigureAwait(false);
                 memory.ReceiverAlias = request.Target.Alias;
                 _state = new SessionState(client, session, asked);
+                Touch();
                 if (session is not null)
                 {
                     memory.Open = (request.Target, session.SessionId);
@@ -289,7 +311,11 @@ public sealed class LocalSendHandler : TransferHandler<LocalSendRequest>
             {
                 // Whatever stopped the session stops it for every file of this run: the phone is asked once per run.
                 var failure = ex as DeviceException ?? new DeviceException(LocalSendErrors.Failed, ex.Message, ex);
-                _failure = failure;
+                lock (_gate)
+                {
+                    _failure = failure;
+                }
+
                 memory.SessionError = new TransferError(failure.Code, failure.Message);
                 if (ReferenceEquals(failure, ex))
                 {
@@ -301,9 +327,36 @@ public sealed class LocalSendHandler : TransferHandler<LocalSendRequest>
             finally
             {
                 client?.Dispose();
+                if (_state is null)
+                {
+                    LeaveTurn();
+                }
+
                 _lock.Release();
             }
         }
+
+        /// <summary>
+        /// LocalSend takes one session at a time (409 to a second one). Another send to the same phone waits here for
+        /// the one before it to finish, rather than failing as busy.
+        /// </summary>
+        private async Task TakeTurnAsync(CancellationToken ct)
+        {
+            while (true)
+            {
+                var holder = owner._turns.GetOrAdd(_deviceId, this);
+                if (ReferenceEquals(holder, this) || (holder.IsOver && owner._turns.TryUpdate(_deviceId, this, holder)))
+                {
+                    return;
+                }
+
+                await Task.Delay(250, ct).ConfigureAwait(false);
+            }
+        }
+
+        private void LeaveTurn() => owner._turns.TryRemove(new KeyValuePair<string, RunSession>(_deviceId, this));
+
+        private void Touch() => Interlocked.Exchange(ref _lastActivity, Environment.TickCount64);
 
         /// <summary>An error that ends the session: the files after it fail the same way without a round trip.</summary>
         public void Fail(DeviceException ex)
@@ -322,6 +375,7 @@ public sealed class LocalSendHandler : TransferHandler<LocalSendRequest>
             bool anyFailed;
             lock (_gate)
             {
+                _lastActivity = Environment.TickCount64;
                 _finished.Add(fileId);
                 _anyFailed |= failed;
                 anyFailed = _anyFailed;
@@ -354,19 +408,23 @@ public sealed class LocalSendHandler : TransferHandler<LocalSendRequest>
                 state = _state;
             }
 
-            return state is null ? Task.CompletedTask : CloseAsync(state, cancelOnPhone: true);
+            if (state is null)
+            {
+                LeaveTurn();
+                return Task.CompletedTask;
+            }
+
+            return CloseAsync(state, cancelOnPhone: true);
         }
 
         private async Task CloseAsync(SessionState state, bool cancelOnPhone)
         {
             try
             {
-                if (cancelOnPhone && state.Session is { } session)
-                {
-                    await state.Client.CancelAsync(session.SessionId, CancellationToken.None).ConfigureAwait(false);
-                }
-
-                if (state.Session is { } done && memory.Open?.SessionId == done.SessionId)
+                // Remembered until the phone has heard it's over: the next run cancels it first, or the phone would be busy.
+                var over = !cancelOnPhone || state.Session is null
+                    || await state.Client.CancelAsync(state.Session.SessionId, CancellationToken.None).ConfigureAwait(false);
+                if (over && state.Session is { } done && memory.Open?.SessionId == done.SessionId)
                 {
                     memory.Open = null;
                 }
@@ -374,6 +432,7 @@ public sealed class LocalSendHandler : TransferHandler<LocalSendRequest>
             finally
             {
                 state.Client.Dispose();
+                LeaveTurn();
             }
         }
 
