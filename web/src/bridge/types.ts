@@ -414,6 +414,17 @@ export interface PhotoBackupCount {
   cloudOnly: number;
   /** New, in the iPhone's Hidden album, left out by the options. */
   hiddenLeftOut: number;
+  /** New, but taken before the options' date range: left out, in no other count. */
+  outOfRange: number;
+}
+
+/** Which photos a backup looks at, by the date taken. Undated photos are always included. */
+export interface PhotoBackupRange {
+  kind: 'all' | 'lastDays' | 'since';
+  /** For lastDays (1–36500). */
+  days: number | null;
+  /** For since: "yyyy-MM-dd", from midnight on the PC. */
+  since: string | null;
 }
 
 export interface PhotoBackupOptions {
@@ -421,6 +432,8 @@ export interface PhotoBackupOptions {
   folderPattern: string;
   convertHeic: boolean;
   includeHidden: boolean;
+  /** The phone's own only (Settings has none): everything by default. */
+  range: PhotoBackupRange;
 }
 
 export type PhotoBackupRunState = 'running' | 'done' | 'failed' | 'cancelled';

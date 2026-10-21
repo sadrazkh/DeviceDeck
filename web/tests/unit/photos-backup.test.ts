@@ -33,7 +33,14 @@ describe('photo backup (mock)', () => {
 
     const status = await client.call('photos.backupStatus', { deviceId: IPHONE_ID });
     expect(Object.keys(status)).toEqual(['deviceId', 'count', 'options', 'customized', 'backedUp', 'lastRun', 'activeJobId', 'heicConversion']);
-    expect(status.options).toEqual({ destination: 'D:\\Phone backups\\Nima’s iPhone', folderPattern: 'yyyy/MM', convertHeic: false, includeHidden: false });
+    expect(status.options).toEqual({
+      destination: 'D:\\Phone backups\\Nima’s iPhone',
+      folderPattern: 'yyyy/MM',
+      convertHeic: false,
+      includeHidden: false,
+      range: { kind: 'all', days: null, since: null },
+    });
+    expect(status.count.outOfRange).toBe(0);
     expect(status.lastRun?.state).toBe('done');
   });
 
@@ -69,6 +76,35 @@ describe('photo backup (mock)', () => {
     const reset = await client.call('photos.backupConfigure', { deviceId: IPHONE_ID, useDefaults: true });
     expect(reset.customized).toBe(false);
     expect(reset.options.folderPattern).toBe('yyyy-MM');
+  });
+
+  it('leaves photos before the date range out, per phone, and checks the range', async () => {
+    const { client, backend } = setup();
+    const all = await client.call('photos.newCount', { deviceId: IPHONE_ID });
+    const last30 = await client.call('photos.backupConfigure', { deviceId: IPHONE_ID, range: { kind: 'lastDays', days: 30, since: null } });
+    expect(last30.options.range).toEqual({ kind: 'lastDays', days: 30, since: null });
+    expect(last30.customized).toBe(true);
+    expect(last30.count.newCount).toBeLessThan(all.newCount);
+    expect(last30.count.outOfRange).toBeGreaterThan(0);
+    // The other phone keeps everything.
+    expect((await client.call('photos.backupStatus', { deviceId: ANDROID_ID })).options.range.kind).toBe('all');
+
+    const { jobId } = await client.call('photos.backup', { deviceId: IPHONE_ID });
+    expect((await client.call('transfers.list')).find((j) => j.id === jobId)!.totalItems).toBe(last30.count.newCount);
+    run(backend, 120_000);
+    const after = await client.call('photos.backupStatus', { deviceId: IPHONE_ID });
+    expect(after.count.newCount).toBe(0);
+    expect(after.count.outOfRange).toBe(last30.count.outOfRange);
+
+    for (const range of [
+      { kind: 'lastDays', days: 0, since: null },
+      { kind: 'since', days: null, since: 'yesterday' },
+      { kind: 'sometimes', days: null, since: null },
+    ]) {
+      await expect(client.call('photos.backupConfigure', { deviceId: IPHONE_ID, range: range as never })).rejects.toMatchObject({ rpcCode: -32602 });
+    }
+    const reset = await client.call('photos.backupConfigure', { deviceId: IPHONE_ID, useDefaults: true });
+    expect(reset.options.range.kind).toBe('all');
   });
 
   it('forgets the history without touching files', async () => {

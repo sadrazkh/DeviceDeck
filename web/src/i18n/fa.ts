@@ -4,6 +4,7 @@
 import { batteryFa } from '../screens/battery/strings';
 import { cleanupFa } from '../screens/cleanup/strings';
 import { backupFa } from './backup';
+import { photoBackupFa } from '../screens/photos/backupStrings';
 import type { MessageKey } from './en';
 
 export const fa: Record<MessageKey, string> = {
@@ -606,4 +607,6 @@ export const fa: Record<MessageKey, string> = {
   ...batteryFa,
   // Backup, contacts and messages (round 2)
   ...backupFa,
+  // Photo backup (round 3)
+  ...photoBackupFa,
 };

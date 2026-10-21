@@ -622,3 +622,29 @@ The window uses Windows App SDK app notifications, or a balloon from its tray ic
 | Path | Serves |
 | --- | --- |
 | `video/{deviceId}/{assetId}?size={PhotoAsset.size}` | the original of a video with HTTP Range (200, 206 or 416; `Accept-Ranges: bytes`), so `<video>` can seek. The file is copied off the phone once into a cache and each range is answered as soon as its bytes are there; the last three videos stay cached. Without `size` the answer waits for the whole copy. |
+
+## Photo backup (round 3, backup session)
+
+Additions to "Photos backup and adding photos (round 2)". C#: `src/DeviceDeck.Core/Photos/**`,
+`PhotosBackupHandler.cs`, `PhotosBackupMethods.cs`; TypeScript: the photo backup types in `types.ts` and `methods.ts`.
+
+### Date range
+
+`photos.backupConfigure` takes `range?: PhotoBackupRange`; `PhotoBackupOptions` gains `range` and `PhotoBackupCount`
+gains `outOfRange`. The range is the phone's own (Settings has none): everything until it is set, and
+`useDefaults: true` brings everything back. A photo is in range by the date it was taken; a photo without any date
+is always in. An iPhone photo newer than the Photos.sqlite copy has no date in the list; it counts as in range until
+the backup asks the phone for its date, and is left out then if it is older.
+
+```ts
+type PhotoBackupRange = {
+  kind: "all" | "lastDays" | "since";
+  days: number | null;      // lastDays: 1–36500 (the panel offers 30)
+  since: string | null;     // since: "yyyy-MM-dd", from midnight on this PC
+};
+// PhotoBackupOptions gains  range: PhotoBackupRange;
+// PhotoBackupCount gains    outOfRange: number;   // new, but taken before the range: left out, in no other count
+```
+
+A field the kind doesn't use is dropped (`{ kind: "since", since: "2026-09-01", days: 7 }` is stored without `days`);
+a missing or bad field is `-32602`. A job queued before ranges existed has no `range` in its request and copies everything.

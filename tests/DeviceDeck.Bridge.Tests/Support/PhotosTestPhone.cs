@@ -23,7 +23,7 @@ internal sealed class PhotosTestProvider : IDeviceProvider
         }
     }
 
-    public string Id => "photos-test";
+    public string Id { get; init; } = "photos-test";
 
     public IReadOnlyList<IDevice> Devices
     {
@@ -182,6 +182,9 @@ internal sealed class PhotosTestLibrary(PhotosTestPhone phone) : IPhotoLibrary, 
     /// <summary>When true the list leaves sizes at 0 and <see cref="CompleteAsync"/> fills them.</summary>
     public bool SizesNeedCompleting { get; set; }
 
+    /// <summary>When true the list leaves dates out (an iPhone's photos newer than its Photos.sqlite copy) and <see cref="CompleteAsync"/> fills them.</summary>
+    public bool DatesNeedCompleting { get; set; }
+
     public int CompleteCalls { get; private set; }
 
     public int Reads { get; private set; }
@@ -262,6 +265,7 @@ internal sealed class PhotosTestLibrary(PhotosTestPhone phone) : IPhotoLibrary, 
         {
             IReadOnlyList<PhotoBackupAsset> list = _assets
                 .Select(a => SizesNeedCompleting ? a with { Size = 0, Motion = a.Motion is { } m ? m with { Size = 0 } : null } : a)
+                .Select(a => DatesNeedCompleting ? a with { TakenAt = null } : a)
                 .ToList();
             return Task.FromResult(list);
         }

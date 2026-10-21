@@ -405,12 +405,12 @@ public sealed class PhotosBackupTests
         var bridge = new BridgeCalls(host.Transport);
 
         var count = (await bridge.ResultAsync("photos.newCount", new { deviceId = phone.Summary.Id }))!.AsObject();
-        Assert.Equal(["deviceId", "newCount", "newPhotos", "newVideos", "newBytes", "cloudOnly", "hiddenLeftOut"], count.Select(p => p.Key));
+        Assert.Equal(["deviceId", "newCount", "newPhotos", "newVideos", "newBytes", "cloudOnly", "hiddenLeftOut", "outOfRange"], count.Select(p => p.Key));
         Assert.Equal(1, (int)count["newCount"]!);
 
         var status = (await bridge.ResultAsync("photos.backupStatus", new { deviceId = phone.Summary.Id }))!.AsObject();
         Assert.Equal(["deviceId", "count", "options", "customized", "backedUp", "lastRun", "activeJobId", "heicConversion"], status.Select(p => p.Key));
-        Assert.Equal(["destination", "folderPattern", "convertHeic", "includeHidden"], status["options"]!.AsObject().Select(p => p.Key));
+        Assert.Equal(["destination", "folderPattern", "convertHeic", "includeHidden", "range"], status["options"]!.AsObject().Select(p => p.Key));
         Assert.Equal("available", (string?)status["heicConversion"]);
 
         var configured = (await bridge.ResultAsync("photos.backupConfigure", new { deviceId = phone.Summary.Id, folderPattern = "" }))!.AsObject();

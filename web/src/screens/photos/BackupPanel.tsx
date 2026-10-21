@@ -1,5 +1,6 @@
 import {
   ArrowResetRegular,
+  CalendarLtrRegular,
   CheckmarkCircleRegular,
   CloudOffRegular,
   FolderOpenRegular,
@@ -18,7 +19,17 @@ import { Banner, LinearProgress, Segmented, Skeleton, Switch } from '../../compo
 import { useI18n, type I18n } from '../../i18n';
 import { jobFraction } from '../../state/transfers';
 import { useUi } from '../../state/ui';
-import { PATTERN_PRESETS, exampleFolder, useBackupActions, useBackupStatus, useConfigureBackup } from './backupQueries';
+import {
+  PATTERN_PRESETS,
+  RANGE_DAYS,
+  exampleFolder,
+  isoDay,
+  rangeFor,
+  useBackupActions,
+  useBackupStatus,
+  useConfigureBackup,
+  type ConfigurePatch,
+} from './backupQueries';
 import styles from './Backup.module.css';
 
 function runSummary(run: PhotoBackupRun, i18n: I18n): string {
@@ -155,7 +166,7 @@ function Body({
   device: DeviceSummary;
   running: TransferJob | undefined;
   onPick(): void;
-  configure(patch: { folderPattern?: string; convertHeic?: boolean; includeHidden?: boolean; useDefaults?: boolean }): void;
+  configure(patch: ConfigurePatch): void;
   i18n: I18n;
 }) {
   const { t, n, bytes, percent } = i18n;
@@ -209,6 +220,11 @@ function Body({
       {count.cloudOnly > 0 ? (
         <Banner icon={<CloudOffRegular />}>{t('photos.backup.cloudOnly', { count: count.cloudOnly })}</Banner>
       ) : null}
+      {count.outOfRange > 0 ? (
+        <div data-testid="backup-out-of-range">
+          <Banner icon={<CalendarLtrRegular />}>{t('photos.backup.outOfRange', { count: count.outOfRange })}</Banner>
+        </div>
+      ) : null}
       {count.hiddenLeftOut > 0 ? (
         <Banner icon={<LockClosedRegular />}>
           {hiddenRevealed ? t('photos.backup.hiddenLeftOut', { count: count.hiddenLeftOut }) : t('photos.backup.hiddenLeftOutLocked')}
@@ -241,6 +257,36 @@ function Body({
             label: p === '' ? t('photos.backup.oneFolder') : <span className="num">{`⁦${exampleFolder(p, today)}⁩`}</span>,
           }))}
         />
+      </div>
+
+      <div className={styles.section} data-testid="backup-range">
+        <span className={styles.label}>{t('photos.backup.range')}</span>
+        <Segmented
+          label={t('photos.backup.range')}
+          value={options.range.kind}
+          onChange={(kind) => configure({ range: rangeFor(kind, today, options.range.since) })}
+          options={[
+            { value: 'all', label: t('photos.backup.range.all') },
+            { value: 'lastDays', label: t('photos.backup.range.lastDays', { count: options.range.days ?? RANGE_DAYS }) },
+            { value: 'since', label: t('photos.backup.range.since') },
+          ]}
+        />
+        {options.range.kind === 'since' ? (
+          <label className={styles.dateField}>
+            <span>{t('photos.backup.range.sinceLabel')}</span>
+            <input
+              type="date"
+              className={styles.dateInput}
+              value={options.range.since ?? ''}
+              max={isoDay(today)}
+              onChange={(e) => {
+                if (e.target.value) configure({ range: rangeFor('since', today, e.target.value) });
+              }}
+              data-testid="backup-range-since"
+            />
+          </label>
+        ) : null}
+        <span className={styles.hint}>{t('photos.backup.range.hint')}</span>
       </div>
 
       <div className={styles.section}>

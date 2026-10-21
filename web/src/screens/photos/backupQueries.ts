@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import type { FileSource } from '../../bridge';
 import type { MethodParams } from '../../bridge/methods';
-import type { DeviceSummary, PhotoBackupStatus } from '../../bridge/types';
+import type { DeviceSummary, PhotoBackupRange, PhotoBackupStatus } from '../../bridge/types';
 import { useClient } from '../../app/bridgeContext';
 import { useActions } from '../../app/actions';
 import { useI18n } from '../../i18n';
@@ -34,7 +34,7 @@ export function useBackupStatus(device: DeviceSummary | null) {
   });
 }
 
-type ConfigurePatch = Omit<MethodParams<'photos.backupConfigure'>, 'deviceId'>;
+export type ConfigurePatch = Omit<MethodParams<'photos.backupConfigure'>, 'deviceId'>;
 
 export function useConfigureBackup(device: DeviceSummary) {
   const client = useClient();
@@ -123,6 +123,21 @@ export function exampleFolder(pattern: string, when: Date): string {
 }
 
 export const PATTERN_PRESETS = ['yyyy/MM', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy', ''] as const;
+
+/** A local calendar day as "yyyy-MM-dd" (what range.since and <input type="date"> use). */
+export function isoDay(when: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}`;
+}
+
+/** The range choices of the panel; "since" starts 30 days back until the user picks a day. */
+export const RANGE_DAYS = 30;
+
+export function rangeFor(choice: 'all' | 'lastDays' | 'since', now: Date, since?: string | null): PhotoBackupRange {
+  if (choice === 'lastDays') return { kind: 'lastDays', days: RANGE_DAYS, since: null };
+  if (choice === 'since') return { kind: 'since', days: null, since: since ?? isoDay(new Date(now.getTime() - RANGE_DAYS * 24 * 3600 * 1000)) };
+  return { kind: 'all', days: null, since: null };
+}
 
 /** The app the user last chose on this phone for photos (per-viewer convenience only). */
 export const lastApp = {

@@ -4,6 +4,7 @@
 import { batteryEn } from '../screens/battery/strings';
 import { cleanupEn } from '../screens/cleanup/strings';
 import { backupEn } from './backup';
+import { photoBackupEn } from '../screens/photos/backupStrings';
 
 export const en = {
   'app.name': 'DeviceDeck',
@@ -622,6 +623,8 @@ export const en = {
   ...batteryEn,
   // Backup, contacts and messages (round 2)
   ...backupEn,
+  // Photo backup (round 3)
+  ...photoBackupEn,
 } as const;
 
 export type MessageKey = keyof typeof en;

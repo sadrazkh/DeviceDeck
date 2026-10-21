@@ -12,6 +12,7 @@ import type {
   DeviceSummary,
   PhotoBackupCount,
   PhotoBackupOptions,
+  PhotoBackupRange,
   PhotoBackupRun,
   PhotoBackupStatus,
   Settings,
@@ -45,6 +46,36 @@ export interface PhotoBackupHost {
 const PATTERN = /^(yyyy|MM|dd)([/\-_. ](yyyy|MM|dd))*$/;
 
 export const isValidPattern = (pattern: string) => pattern === '' || PATTERN.test(pattern);
+
+export const EVERYTHING: PhotoBackupRange = { kind: 'all', days: null, since: null };
+
+/** The range with only the field its kind uses, or an error message (the host's PhotoBackupRange.Validated). */
+export function validRange(range: PhotoBackupRange): PhotoBackupRange | string {
+  switch (range.kind) {
+    case 'all':
+      return EVERYTHING;
+    case 'lastDays':
+      return Number.isInteger(range.days) && range.days! >= 1 && range.days! <= 36_500
+        ? { kind: 'lastDays', days: range.days, since: null }
+        : 'range.days must be between 1 and 36500.';
+    case 'since':
+      return range.since && /^\d{4}-\d{2}-\d{2}$/.test(range.since) && !Number.isNaN(Date.parse(range.since))
+        ? { kind: 'since', days: null, since: range.since }
+        : 'range.since must be a date (yyyy-MM-dd).';
+    default:
+      return 'range.kind must be "all", "lastDays" or "since".';
+  }
+}
+
+/** The oldest time (ms) a photo may be taken at to be in range; null for everything. "since" is midnight local time. */
+export function rangeCutoff(range: PhotoBackupRange, now: number): number | null {
+  if (range.kind === 'lastDays') return now - (range.days ?? 30) * 24 * 3600 * 1000;
+  if (range.kind === 'since' && range.since) {
+    const [y, m, d] = range.since.split('-').map(Number);
+    return new Date(y!, m! - 1, d!).getTime();
+  }
+  return null;
+}
 
 /** Photos taken since the (pretend) last backup a few days ago. */
 const NEW_SINCE_LAST: Record<string, number> = { [IPHONE_ID]: 128, [ANDROID_ID]: 46 };
@@ -125,24 +156,29 @@ export class MockPhotoBackup {
       folderPattern: own.folderPattern ?? s.photoBackupPattern,
       convertHeic: own.convertHeic ?? s.photoBackupConvertHeic,
       includeHidden: own.includeHidden ?? false,
+      range: own.range ?? EVERYTHING,
     };
   }
 
-  private candidates(deviceId: string, options: PhotoBackupOptions): { copy: MockAsset[]; cloud: number; hidden: number } {
+  private candidates(deviceId: string, options: PhotoBackupOptions): { copy: MockAsset[]; cloud: number; hidden: number; outOfRange: number } {
     const library = this.host.library(deviceId);
     const state = this.state(deviceId);
-    const fresh = library.assets.filter((a) => !state.backedUp.has(a.id));
-    const hiddenFresh = library.hidden.filter((a) => !state.backedUp.has(a.id));
+    const cutoff = rangeCutoff(options.range, this.host.now());
+    const inRange = (a: MockAsset) => cutoff === null || !a.takenAt || Date.parse(a.takenAt) >= cutoff;
+    const unknown = [...library.assets, ...library.hidden].filter((a) => !state.backedUp.has(a.id));
+    const fresh = library.assets.filter((a) => !state.backedUp.has(a.id) && inRange(a));
+    const hiddenFresh = library.hidden.filter((a) => !state.backedUp.has(a.id) && inRange(a));
     const copy = fresh.filter((a) => !a.inCloudOnly);
     return {
       copy: options.includeHidden ? [...copy, ...hiddenFresh] : copy,
       cloud: fresh.length - copy.length,
       hidden: options.includeHidden ? 0 : hiddenFresh.length,
+      outOfRange: unknown.filter((a) => !inRange(a)).length,
     };
   }
 
   count(device: DeviceSummary): PhotoBackupCount {
-    const { copy, cloud, hidden } = this.candidates(device.id, this.options(device));
+    const { copy, cloud, hidden, outOfRange } = this.candidates(device.id, this.options(device));
     const videos = copy.filter((a) => a.kind === 'video').length;
     return {
       deviceId: device.id,
@@ -152,6 +188,7 @@ export class MockPhotoBackup {
       newBytes: copy.reduce((n, a) => n + a.size + (a.livePairId ? LIVE_MOTION_BYTES : 0), 0),
       cloudOnly: cloud,
       hiddenLeftOut: hidden,
+      outOfRange,
     };
   }
 
@@ -175,14 +212,17 @@ export class MockPhotoBackup {
   readonly handlers: Handlers = {
     'photos.newCount': ({ deviceId }) => this.count(this.host.requireReady(deviceId, 'photosRead')),
     'photos.backupStatus': ({ deviceId }) => this.status(this.host.requireReady(deviceId, 'photosRead')),
-    'photos.backupConfigure': ({ deviceId, destination, folderPattern, convertHeic, includeHidden, useDefaults }) => {
+    'photos.backupConfigure': ({ deviceId, destination, folderPattern, convertHeic, includeHidden, useDefaults, range }) => {
       const device = this.host.requireReady(deviceId, 'photosRead');
       if (destination !== undefined && !/^[a-z]:\\/i.test(destination)) throw this.host.badParams('destination must be a full folder path on this PC.');
       if (folderPattern !== undefined && !isValidPattern(folderPattern)) {
         throw this.host.badParams('folderPattern must be "" or yyyy, MM and dd joined by / - _ . or a space.');
       }
+      const checkedRange = range === undefined ? undefined : validRange(range);
+      if (typeof checkedRange === 'string') throw this.host.badParams(checkedRange);
       const state = this.state(deviceId);
       if (useDefaults) state.own = {};
+      if (checkedRange !== undefined) state.own.range = checkedRange;
       if (destination !== undefined) state.own.destination = destination;
       if (folderPattern !== undefined) state.own.folderPattern = folderPattern;
       if (convertHeic !== undefined) state.own.convertHeic = convertHeic;

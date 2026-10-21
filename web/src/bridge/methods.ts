@@ -36,6 +36,7 @@ import type {
   PhotoAlbum,
   PhotoAsset,
   PhotoBackupCount,
+  PhotoBackupRange,
   PhotoBackupStatus,
   RebootTarget,
   Settings,
@@ -146,6 +147,7 @@ export interface BridgeMethods {
       convertHeic?: boolean;
       includeHidden?: boolean;
       useDefaults?: boolean;
+      range?: PhotoBackupRange;
     };
     result: PhotoBackupStatus;
   };

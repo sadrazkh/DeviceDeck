@@ -17,6 +17,14 @@ public sealed record PhotoBackupRecord(
     string? JobId,
     DateTimeOffset BackedUpAt);
 
+/// <summary>A phone's own backup options; a null field falls back to Settings (the range: to everything).</summary>
+public sealed record PhotoBackupOwnOptions(
+    string? Destination = null,
+    string? Pattern = null,
+    bool? ConvertHeic = null,
+    bool? IncludeHidden = null,
+    PhotoBackupRange? Range = null);
+
 /// <summary>
 /// What a phone's backups already hold, for telling new photos from old ones without touching the PC's disk. A photo is
 /// known by its key; failing that by its phone path (when the size agrees or isn't known yet), or by name + size + date —
@@ -68,7 +76,7 @@ public sealed class PhotoBackupKnownSet
 /// </summary>
 public sealed class PhotoBackupLedger : IDisposable
 {
-    private const int SchemaVersion = 1;
+    private const int SchemaVersion = 2;
 
     private readonly SqliteConnection _db;
     private readonly Lock _gate = new();
@@ -96,11 +104,40 @@ public sealed class PhotoBackupLedger : IDisposable
     {
         using var check = _db.CreateCommand();
         check.CommandText = "PRAGMA user_version;";
-        if (Convert.ToInt32(check.ExecuteScalar(), CultureInfo.InvariantCulture) >= SchemaVersion)
+        if (Convert.ToInt32(check.ExecuteScalar(), CultureInfo.InvariantCulture) < 1)
         {
-            return;
+            CreateVersion1();
         }
 
+        // Round 3: columns added to version 1's tables. Added when missing, so any older file opens.
+        using var tx = _db.BeginTransaction();
+        AddMissingColumns(tx, "devices", ("range_kind", "TEXT NULL"), ("range_days", "INTEGER NULL"), ("range_since", "TEXT NULL"));
+        Execute($"PRAGMA user_version = {SchemaVersion};", tx);
+        tx.Commit();
+    }
+
+    private void AddMissingColumns(SqliteTransaction tx, string table, params (string Name, string Type)[] columns)
+    {
+        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using (var info = _db.CreateCommand())
+        {
+            info.Transaction = tx;
+            info.CommandText = $"PRAGMA table_info({table});";
+            using var r = info.ExecuteReader();
+            while (r.Read())
+            {
+                existing.Add(r.GetString(1));
+            }
+        }
+
+        foreach (var (name, type) in columns.Where(c => !existing.Contains(c.Name)))
+        {
+            Execute($"ALTER TABLE {table} ADD COLUMN {name} {type};", tx);
+        }
+    }
+
+    private void CreateVersion1()
+    {
         using var tx = _db.BeginTransaction();
         Execute("""
             CREATE TABLE IF NOT EXISTS devices (
@@ -147,43 +184,68 @@ public sealed class PhotoBackupLedger : IDisposable
                 sha256   BLOB NOT NULL
             );
             """, tx);
-        Execute($"PRAGMA user_version = {SchemaVersion};", tx);
+        Execute("PRAGMA user_version = 1;", tx);
         tx.Commit();
     }
 
     // ---------- per-phone options ----------
 
-    /// <summary>The phone's own options; null fields fall back to Settings.</summary>
-    public (string? Destination, string? Pattern, bool? ConvertHeic, bool? IncludeHidden) GetOptions(string deviceId)
-    {
-        lock (_gate)
-        {
-            using var cmd = Command("SELECT destination, pattern, convert_heic, include_hidden FROM devices WHERE device_id = $d;", ("$d", deviceId));
-            using var r = cmd.ExecuteReader();
-            if (!r.Read())
-            {
-                return default;
-            }
-
-            return (
-                r.IsDBNull(0) ? null : r.GetString(0),
-                r.IsDBNull(1) ? null : r.GetString(1),
-                r.IsDBNull(2) ? null : r.GetInt64(2) != 0,
-                r.IsDBNull(3) ? null : r.GetInt64(3) != 0);
-        }
-    }
-
-    public void SetOptions(string deviceId, string? destination, string? pattern, bool? convertHeic, bool? includeHidden)
+    /// <summary>The phone's own options; null fields fall back to Settings (the range: to everything).</summary>
+    public PhotoBackupOwnOptions GetOptions(string deviceId)
     {
         lock (_gate)
         {
             using var cmd = Command("""
-                INSERT INTO devices (device_id, destination, pattern, convert_heic, include_hidden) VALUES ($d, $dest, $p, $c, $h)
+                SELECT destination, pattern, convert_heic, include_hidden, range_kind, range_days, range_since FROM devices WHERE device_id = $d;
+                """, ("$d", deviceId));
+            using var r = cmd.ExecuteReader();
+            if (!r.Read())
+            {
+                return new PhotoBackupOwnOptions();
+            }
+
+            return new PhotoBackupOwnOptions(
+                r.IsDBNull(0) ? null : r.GetString(0),
+                r.IsDBNull(1) ? null : r.GetString(1),
+                r.IsDBNull(2) ? null : r.GetInt64(2) != 0,
+                r.IsDBNull(3) ? null : r.GetInt64(3) != 0,
+                ReadRange(r, 4));
+        }
+    }
+
+    public void SetOptions(string deviceId, PhotoBackupOwnOptions options)
+    {
+        lock (_gate)
+        {
+            using var cmd = Command("""
+                INSERT INTO devices (device_id, destination, pattern, convert_heic, include_hidden, range_kind, range_days, range_since)
+                VALUES ($d, $dest, $p, $c, $h, $rk, $rd, $rs)
                 ON CONFLICT(device_id) DO UPDATE SET destination = excluded.destination, pattern = excluded.pattern,
-                    convert_heic = excluded.convert_heic, include_hidden = excluded.include_hidden;
+                    convert_heic = excluded.convert_heic, include_hidden = excluded.include_hidden,
+                    range_kind = excluded.range_kind, range_days = excluded.range_days, range_since = excluded.range_since;
                 """,
-                ("$d", deviceId), ("$dest", destination), ("$p", pattern), ("$c", convertHeic), ("$h", includeHidden));
+                ("$d", deviceId), ("$dest", options.Destination), ("$p", options.Pattern), ("$c", options.ConvertHeic), ("$h", options.IncludeHidden),
+                ("$rk", options.Range?.Kind.ToString()), ("$rd", options.Range?.Days),
+                ("$rs", options.Range?.Since?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
             cmd.ExecuteNonQuery();
+        }
+    }
+
+    private static PhotoBackupRange? ReadRange(SqliteDataReader r, int at)
+    {
+        if (r.IsDBNull(at) || !Enum.TryParse<PhotoBackupRangeKind>(r.GetString(at), out var kind))
+        {
+            return null;
+        }
+
+        var since = r.IsDBNull(at + 2) ? (DateOnly?)null : DateOnly.ParseExact(r.GetString(at + 2), "yyyy-MM-dd", CultureInfo.InvariantCulture);
+        try
+        {
+            return new PhotoBackupRange(kind, r.IsDBNull(at + 1) ? null : r.GetInt32(at + 1), since).Validated();
+        }
+        catch (ArgumentException)
+        {
+            return null; // a damaged row: everything, as before ranges existed
         }
     }
 

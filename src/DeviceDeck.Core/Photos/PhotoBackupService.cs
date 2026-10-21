@@ -92,9 +92,10 @@ public sealed class PhotoBackupService : IDisposable
 
     /// <summary>
     /// Saves the phone's own options; a null value keeps what it had. <paramref name="useDefaults"/> drops them all
-    /// first, so the phone follows Settings again (its destination too).
+    /// first, so the phone follows Settings again (its destination too, and the range goes back to everything).
     /// </summary>
-    public void Configure(string deviceId, string? destination, string? folderPattern, bool? convertHeic, bool? includeHidden, bool useDefaults = false)
+    public void Configure(string deviceId, string? destination, string? folderPattern, bool? convertHeic, bool? includeHidden, bool useDefaults = false,
+        PhotoBackupRange? range = null)
     {
         if (destination is not null)
         {
@@ -109,13 +110,14 @@ public sealed class PhotoBackupService : IDisposable
             throw new ArgumentException("folderPattern must be \"\" or yyyy, MM and dd joined by / - _ . or a space.");
         }
 
-        var saved = useDefaults ? default : Ledger.GetOptions(deviceId);
-        Ledger.SetOptions(
-            deviceId,
+        range = range?.Validated();
+        var saved = useDefaults ? new PhotoBackupOwnOptions() : Ledger.GetOptions(deviceId);
+        Ledger.SetOptions(deviceId, new PhotoBackupOwnOptions(
             destination ?? saved.Destination,
             folderPattern ?? saved.Pattern,
             convertHeic ?? saved.ConvertHeic,
-            includeHidden ?? saved.IncludeHidden);
+            includeHidden ?? saved.IncludeHidden,
+            range ?? saved.Range));
     }
 
     /// <summary>
@@ -138,7 +140,7 @@ public sealed class PhotoBackupService : IDisposable
             Configure(deviceId, options.Destination, null, null, null);
         }
 
-        var request = new PhotoBackupRequest(options.Destination, options.FolderPattern, options.ConvertHeic, options.IncludeHidden);
+        var request = new PhotoBackupRequest(options.Destination, options.FolderPattern, options.ConvertHeic, options.IncludeHidden, options.Range);
         var job = await queue.EnqueueAsync(deviceId, TransferKind.PhotosBackup, request, ConflictRule.KeepBoth, ct).ConfigureAwait(false);
         Ledger.StartRun(job.Id, deviceId, options.Destination, job.CreatedAt);
 
@@ -163,8 +165,9 @@ public sealed class PhotoBackupService : IDisposable
             own.Destination ?? Path.Combine(settings.PhotoBackupFolder, PhotoBackupNaming.SafeName(device.Summary.Name)),
             own.Pattern ?? settings.PhotoBackupPattern,
             own.ConvertHeic ?? settings.PhotoBackupConvertHeic,
-            own.IncludeHidden ?? false);
-        var customized = own.Pattern is not null || own.ConvertHeic is not null || own.IncludeHidden is not null
+            own.IncludeHidden ?? false,
+            own.Range ?? PhotoBackupRange.Everything);
+        var customized = own.Pattern is not null || own.ConvertHeic is not null || own.IncludeHidden is not null || own.Range is not null
             || (own.Destination is not null && !string.Equals(own.Destination, Path.Combine(settings.PhotoBackupFolder, PhotoBackupNaming.SafeName(device.Summary.Name)), StringComparison.OrdinalIgnoreCase));
         return (options, customized);
     }
@@ -173,7 +176,8 @@ public sealed class PhotoBackupService : IDisposable
     {
         var assets = await PhotoBackupSources.For(device.Photos).GetBackupAssetsAsync(ct).ConfigureAwait(false);
         var known = Ledger.LoadKnown(device.Summary.Id);
-        int photos = 0, videos = 0, cloud = 0, hidden = 0;
+        var cutoff = options.Range.Cutoff(_time.GetLocalNow(), _time.LocalTimeZone);
+        int photos = 0, videos = 0, cloud = 0, hidden = 0, outOfRange = 0;
         long bytes = 0;
         foreach (var asset in assets)
         {
@@ -182,7 +186,11 @@ public sealed class PhotoBackupService : IDisposable
                 continue;
             }
 
-            if (asset.Hidden && !options.IncludeHidden)
+            if (!PhotoBackupRange.Includes(cutoff, asset.TakenAt))
+            {
+                outOfRange++;
+            }
+            else if (asset.Hidden && !options.IncludeHidden)
             {
                 hidden++;
             }
@@ -205,7 +213,7 @@ public sealed class PhotoBackupService : IDisposable
             }
         }
 
-        return new PhotoBackupCount(device.Summary.Id, photos + videos, photos, videos, bytes, cloud, hidden);
+        return new PhotoBackupCount(device.Summary.Id, photos + videos, photos, videos, bytes, cloud, hidden, outOfRange);
     }
 
     private IDevice Require(string deviceId)

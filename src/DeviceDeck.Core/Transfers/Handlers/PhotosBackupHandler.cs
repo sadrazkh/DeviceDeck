@@ -54,8 +54,12 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
         var source = PhotoBackupSources.For(context.Device.Photos);
         var all = await source.GetBackupAssetsAsync(ct).ConfigureAwait(false);
         var known = ledger.LoadKnown(deviceId);
-        var wanted = all.Where(a => !a.InCloudOnly && (request.IncludeHidden || !a.Hidden) && !known.Contains(a)).ToList();
-        var complete = wanted.Count == 0 ? wanted : await source.CompleteAsync(wanted, ct).ConfigureAwait(false);
+        var cutoff = (request.Range ?? PhotoBackupRange.Everything).Cutoff(_time.GetLocalNow(), _time.LocalTimeZone);
+        var wanted = all.Where(a => !a.InCloudOnly && (request.IncludeHidden || !a.Hidden) && !known.Contains(a) && PhotoBackupRange.Includes(cutoff, a.TakenAt)).ToList();
+        IReadOnlyList<PhotoBackupAsset> complete = wanted.Count == 0 ? wanted : await source.CompleteAsync(wanted, ct).ConfigureAwait(false);
+
+        // A photo the list had no date for got one from the phone just now: the range applies to it as well.
+        complete = complete.Where(a => PhotoBackupRange.Includes(cutoff, a.TakenAt)).ToList();
 
         var paths = PhotoBackupNaming.Plan(complete, request.Destination, request.FolderPattern, request.ConvertHeic && transcoder is not null);
         var plans = new List<TransferItemPlan>(complete.Count);
