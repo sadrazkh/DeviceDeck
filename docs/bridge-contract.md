@@ -622,3 +622,74 @@ The window uses Windows App SDK app notifications, or a balloon from its tray ic
 | Path | Serves |
 | --- | --- |
 | `video/{deviceId}/{assetId}?size={PhotoAsset.size}` | the original of a video with HTTP Range (200, 206 or 416; `Accept-Ranges: bytes`), so `<video>` can seek. The file is copied off the phone once into a cache and each range is answered as soon as its bytes are there; the last three videos stay cached. Without `size` the answer waits for the whole copy. |
+
+## Photos into Photos with LocalSend (round 3)
+
+There is still no supported way to write into an iPhone's Photos library over USB. The free **LocalSend** app
+(App Store; Apache-2.0) receives files over its own protocol (v2, MIT; https://github.com/localsend/protocol) and, on
+iOS and Android, saves images and videos straight into Photos (its default). DeviceDeck is a LocalSend **sender** only:
+it runs no LocalSend server and announces nothing but its own multicast "hello" when asked to look on Wi-Fi.
+
+- **Over the cable first.** usbmux Connect to the phone's port 53317 (`IDevicePortTunnel`, iPhone only) reaches
+  LocalSend's server on the phone without Wi-Fi. LocalSend must be open in front: iOS suspends it otherwise.
+  Port refused = `notListening` (not open); open but silent = `notAnswering` (in the background).
+- **Then Wi-Fi.** A multicast announcement on 224.0.0.167:53317 (answers come back by multicast, since DeviceDeck has
+  no server for their `/register`), and `POST /register` to every host of the PC's private /24 networks. Receivers
+  are matched to the phone by alias (= the phone's name) or as the only iPhone found (`likely`); the user picks.
+- **Certificates.** LocalSend's HTTPS certificate is self-signed: its SHA-256 (hex) is the fingerprint. Discovery takes
+  it from the TLS handshake and checks it against the one `/info` (`/register`) states; the job pins it, and a different
+  certificate fails with `localsend_fingerprint`. A receiver with encryption off is reached over HTTP.
+- **The job** (`kind: "localSend"`, through the transfer queue): one item per file (a folder brings its pictures and
+  videos). Each run of the job is one LocalSend session: one `/prepare-upload` with every file still to go (one Accept on
+  the phone, or none with Quick Save on), then one `/upload` per item; HEIC, Live Photos (still + video) and videos go as
+  they are, with their sha256 (files up to 256 MB). A PIN, a decline, a busy phone or no answer ends the session: every
+  remaining item fails at once with that code and `localsend.retry` (with the PIN) asks again for what didn't go.
+  Pause, cancel and an unplugged phone send `/cancel`; a session left open (the phone was gone) is cancelled before the
+  next one. Sends to the same phone take turns. A send left unfinished when DeviceDeck closed is cancelled on the next
+  start (never resumed by itself: the phone would ask Accept out of the blue).
+
+### Methods
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `localsend.discover` | `{ deviceId, wifi?: boolean }` | `LocalSendDiscovery`. Probes the cable each call (a few seconds at most); `wifi: true` starts a Wi-Fi search in the background (about 8 s) — call again to see what it found. |
+| `localsend.send` | `{ deviceId, target: LocalSendTarget, files: string[] }` | `{ jobId }` (files from a drop or picker, like `photos.import`) |
+| `localsend.retry` | `{ jobId, pin?: string }` | `{}` — runs a failed (or cancelled, or partly failed) send again for the files that didn't go |
+| `localsend.job` | `{ jobId }` | `LocalSendJobStatus` with `files` |
+
+`photos.importToApp` (round 2) now answers `{ jobId, folder, parts }`: each send goes into a new dated folder in the
+app's Documents (`DeviceDeck 2026-10-21`, then `DeviceDeck 2026-10-21 (2)`), split into sub-folders of 200
+(`1-200`, `201-400`, …) when bigger, so Files › On My iPhone › app › folder › Select › Select All › Share › Save N Images
+saves them in one go.
+
+### Events
+
+| Event | Params |
+| --- | --- |
+| `localsend.updated` | `LocalSendJobStatus` without `files`, when a send's phase or error changes (progress stays in `transfer.updated`) |
+
+### Shapes
+
+```ts
+type LocalSendRoute = "usb" | "wifi";
+type LocalSendTarget = { route: LocalSendRoute; port: number; protocol: "https" | "http"; fingerprint: string | null;
+  address?: string | null;  // wifi: the receiver's IP
+  alias?: string | null; deviceModel?: string | null };
+type LocalSendReceiver = { id: string; route: LocalSendRoute; alias: string; deviceModel: string | null; deviceType: string | null;
+  address: string | null; port: number; protocol: "https" | "http"; fingerprint: string; likely: boolean };
+type LocalSendDiscovery = { deviceId: string;
+  usb: "found" | "notListening" | "notAnswering" | "unavailable"; usbDetail: string | null; usbReceiver: LocalSendReceiver | null;
+  wifi: LocalSendReceiver[]; wifiSearching: boolean; wifiSearchedAt: string | null };
+type LocalSendPhase = "connecting" | "waitingForAccept" | "sending" | "done" | "failed" | "cancelled";
+type LocalSendJobStatus = { jobId: string; deviceId: string; phase: LocalSendPhase; receiverAlias: string | null; pinGiven: boolean;
+  error: { code: string; message: string } | null;
+  files: { index: number; name: string; size: number; state: "queued" | "sending" | "done" | "failed" | "skipped";
+           error: { code: string; message: string } | null }[] | null };
+type PhotosToAppStarted = { jobId: string; folder: string; parts: { path: string; count: number }[] };
+// TransferKind gains "localSend".
+```
+
+Error codes (`TransferJob.error.code`, item errors): `localsend_not_listening` (open LocalSend and keep it open),
+`localsend_connection_lost` (dropped or stalled mid-file), `localsend_pin_required`, `localsend_pin_wrong`,
+`localsend_rejected` (declined on the phone), `localsend_busy` (409, 429), `localsend_checksum` (422),
+`localsend_session_lost` (403 on upload: cancelled on the phone), `localsend_fingerprint`, `localsend_failed` (anything else).
