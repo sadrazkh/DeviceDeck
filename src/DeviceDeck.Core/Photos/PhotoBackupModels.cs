@@ -92,6 +92,7 @@ public sealed record PhotoBackupRun(
 /// <param name="Customized">The phone has options of its own; false = the Settings defaults.</param>
 /// <param name="BackedUp">Photos this PC remembers copying from the phone.</param>
 /// <param name="ActiveJobId">The backup job still queued, running, paused or waiting, if any.</param>
+/// <param name="Space">Room for the new photos on the destination's drive; a backup is refused when it isn't enough.</param>
 public sealed record PhotoBackupStatus(
     string DeviceId,
     PhotoBackupCount Count,
@@ -100,7 +101,8 @@ public sealed record PhotoBackupStatus(
     int BackedUp,
     PhotoBackupRun? LastRun,
     string? ActiveJobId,
-    HeicConversion HeicConversion);
+    HeicConversion HeicConversion,
+    PhotoBackupSpace Space);
 
 /// <summary>The transfer request of a photosBackup job: the options as they were when it started.</summary>
 /// <param name="Range">Null in jobs queued before ranges existed: everything.</param>

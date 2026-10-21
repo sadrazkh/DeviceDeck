@@ -1,4 +1,5 @@
 using DeviceDeck.Core.Abstractions;
+using DeviceDeck.Core.Backups;
 using DeviceDeck.Core.Hub;
 using DeviceDeck.Core.Imaging;
 using DeviceDeck.Core.Settings;
@@ -17,15 +18,22 @@ public sealed class PhotoBackupService : IDisposable
     private readonly SettingsStore _settings;
     private readonly TimeProvider _time;
     private readonly Lock _gate = new();
+    private readonly Func<string, PcDiskSpace?> _diskSpace;
+    private readonly Func<string, bool> _rootExists;
     private TransferQueue? _queue;
     private HeicConversion _heic;
 
+    /// <param name="diskSpace">Free space of a folder's drive (tests pass their own); <see cref="PhotoBackupSpaces.Probe"/> by default.</param>
+    /// <param name="rootExists">Whether a folder's drive or share is there; <see cref="PhotoBackupSpaces.RootExists"/> by default.</param>
     public PhotoBackupService(string databasePath, DeviceHub hub, SettingsStore settings, IImageTranscoder? transcoder,
-        HeicConversion heicConversion = HeicConversion.Unknown, TimeProvider? time = null)
+        HeicConversion heicConversion = HeicConversion.Unknown, TimeProvider? time = null,
+        Func<string, PcDiskSpace?>? diskSpace = null, Func<string, bool>? rootExists = null)
     {
         _hub = hub;
         _settings = settings;
         _time = time ?? TimeProvider.System;
+        _diskSpace = diskSpace ?? PhotoBackupSpaces.Probe;
+        _rootExists = rootExists ?? PhotoBackupSpaces.RootExists;
         _heic = transcoder is null ? HeicConversion.MissingCodec : heicConversion;
         Ledger = new PhotoBackupLedger(databasePath);
         Handler = new PhotosBackupHandler(Ledger, transcoder, _time);
@@ -71,14 +79,14 @@ public sealed class PhotoBackupService : IDisposable
     public async Task<PhotoBackupCount> CountNewAsync(string deviceId, CancellationToken ct)
     {
         var device = Require(deviceId);
-        return await CountAsync(device, EffectiveOptions(device).Options, ct).ConfigureAwait(false);
+        return (await CountAsync(device, EffectiveOptions(device).Options, ct).ConfigureAwait(false)).Count;
     }
 
     public async Task<PhotoBackupStatus> GetStatusAsync(string deviceId, CancellationToken ct)
     {
         var device = Require(deviceId);
         var (options, customized) = EffectiveOptions(device);
-        var count = await CountAsync(device, options, ct).ConfigureAwait(false);
+        var (count, copyBytes) = await CountAsync(device, options, ct).ConfigureAwait(false);
         return new PhotoBackupStatus(
             deviceId,
             count,
@@ -87,8 +95,41 @@ public sealed class PhotoBackupService : IDisposable
             Ledger.CountBackedUp(deviceId),
             Ledger.GetLastRun(deviceId),
             ActiveJob(deviceId)?.Id,
-            _heic);
+            _heic,
+            CheckSpace(options.Destination, copyBytes));
     }
+
+    /// <summary>Room on the drive of <paramref name="folder"/> for <paramref name="bytes"/> (0: is the drive there, is it nearly full).</summary>
+    public PhotoBackupSpace CheckSpace(string folder, long bytes = 0)
+    {
+        if (string.IsNullOrWhiteSpace(folder) || !Path.IsPathFullyQualified(folder))
+        {
+            throw new ArgumentException("folder must be a full folder path on this PC.");
+        }
+
+        return PhotoBackupSpaces.Check(folder, bytes, _diskSpace, _rootExists);
+    }
+
+    /// <summary>Refuses a backup the destination can't take: its drive isn't there, or the new photos won't fit with room to spare.</summary>
+    private static void RequireRoom(PhotoBackupSpace space, PhotoBackupCount count)
+    {
+        if (space.DriveMissing)
+        {
+            throw new DeviceException(DeviceErrorCodes.PathNotFound,
+                $"The backup folder's drive {space.Root} isn't there. Connect it, or choose another folder.");
+        }
+
+        if (!space.Enough && count.NewCount > 0)
+        {
+            throw new DeviceException(BackupErrors.NoSpace,
+                $"Not enough space on {space.Root} for {count.NewCount:N0} new photos: about {Gb(space.NeededBytes)} needed with room to spare, " +
+                $"{Gb(space.FreeBytes ?? 0)} free. Free some space, or choose another folder.");
+        }
+    }
+
+    private static string Gb(long bytes) => bytes >= 1_000_000_000
+        ? (bytes / 1e9).ToString("0.0", System.Globalization.CultureInfo.InvariantCulture) + " GB"
+        : (bytes / 1e6).ToString("0", System.Globalization.CultureInfo.InvariantCulture) + " MB";
 
     /// <summary>
     /// Saves the phone's own options; a null value keeps what it had. <paramref name="useDefaults"/> drops them all
@@ -135,6 +176,8 @@ public sealed class PhotoBackupService : IDisposable
         }
 
         var (options, _) = EffectiveOptions(device);
+        var (count, copyBytes) = await CountAsync(device, options, ct).ConfigureAwait(false);
+        RequireRoom(CheckSpace(options.Destination, copyBytes), count);
         if (Ledger.GetOptions(deviceId).Destination is null)
         {
             Configure(deviceId, options.Destination, null, null, null);
@@ -172,13 +215,15 @@ public sealed class PhotoBackupService : IDisposable
         return (options, customized);
     }
 
-    private async Task<PhotoBackupCount> CountAsync(IDevice device, PhotoBackupOptions options, CancellationToken ct)
+    /// <summary>The count, and the bytes a backup would write: known sizes, an estimate for the rest, HEIC bigger as JPG.</summary>
+    private async Task<(PhotoBackupCount Count, long CopyBytes)> CountAsync(IDevice device, PhotoBackupOptions options, CancellationToken ct)
     {
         var assets = await PhotoBackupSources.For(device.Photos).GetBackupAssetsAsync(ct).ConfigureAwait(false);
         var known = Ledger.LoadKnown(device.Summary.Id);
         var cutoff = options.Range.Cutoff(_time.GetLocalNow(), _time.LocalTimeZone);
         int photos = 0, videos = 0, cloud = 0, hidden = 0, outOfRange = 0;
         long bytes = 0;
+        var copy = new CopyEstimate(options.ConvertHeic && _heic != HeicConversion.MissingCodec);
         foreach (var asset in assets)
         {
             if (known.Contains(asset))
@@ -210,10 +255,66 @@ public sealed class PhotoBackupService : IDisposable
                 }
 
                 bytes += asset.Size + (asset.Motion?.Size ?? 0);
+                copy.Add(asset);
             }
         }
 
-        return new PhotoBackupCount(device.Summary.Id, photos + videos, photos, videos, bytes, cloud, hidden, outOfRange);
+        return (new PhotoBackupCount(device.Summary.Id, photos + videos, photos, videos, bytes, cloud, hidden, outOfRange), copy.Total);
+    }
+
+    /// <summary>What new photos take on the PC, with averages standing in for sizes the phone hasn't said yet.</summary>
+    private sealed class CopyEstimate(bool toJpeg)
+    {
+        private const long UsualPhoto = 4_000_000;
+        private const long UsualVideo = 60_000_000;
+        private const long UsualMotion = 3_000_000;
+
+        private long _known;
+        private long _photoBytes, _videoBytes;
+        private int _photos, _videos, _unknownPhotos, _unknownVideos, _unknownMotions;
+
+        public void Add(PhotoBackupAsset asset)
+        {
+            var video = asset.Kind == PhotoKind.Video;
+            if (asset.Size > 0)
+            {
+                _known += toJpeg && !video && ImageFormats.IsHeic(asset.FileName) ? (long)(asset.Size * PhotoBackupSpaces.JpegGrowth) : asset.Size;
+                if (video)
+                {
+                    (_videos, _videoBytes) = (_videos + 1, _videoBytes + asset.Size);
+                }
+                else
+                {
+                    (_photos, _photoBytes) = (_photos + 1, _photoBytes + asset.Size);
+                }
+            }
+            else if (video)
+            {
+                _unknownVideos++;
+            }
+            else
+            {
+                _unknownPhotos++;
+            }
+
+            if (asset.Motion is { } motion)
+            {
+                if (motion.Size > 0)
+                {
+                    _known += motion.Size;
+                }
+                else
+                {
+                    _unknownMotions++;
+                }
+            }
+        }
+
+        public long Total =>
+            _known
+            + _unknownPhotos * (long)((_photos > 0 ? _photoBytes / _photos : UsualPhoto) * (toJpeg ? PhotoBackupSpaces.JpegGrowth : 1))
+            + _unknownVideos * (_videos > 0 ? _videoBytes / _videos : UsualVideo)
+            + _unknownMotions * UsualMotion;
     }
 
     private IDevice Require(string deviceId)

@@ -658,3 +658,35 @@ per file, with two FileReads in flight per file (one at a time for the rest of t
 read ahead). The destination folder is read once per run, the ledger is written in batches, and a HEIC is read once to
 be converted. Measured with `tools/PhotoBench --fake` (240 photos, 1.07 GB, a 34 MB/s link): 57.7 s → 32.6 s, 618 → 8
 connections.
+
+### Free space
+
+Before any start (the panel's button, the "Back up now" notification, or the automatic start) the bytes to copy are
+compared with the free space on the destination's drive. The bytes are the sizes the phone reported, an average of
+those for the ones it hasn't said yet, HEIC counted 1.6× when it becomes JPG; the margin is 1 GB or a tenth of that,
+whichever is more. `photos.backup` then fails with:
+
+- `no_space` — "Not enough space on E:\ for 312 new photos: about 8.9 GB needed with room to spare, 2.1 GB free. Free
+  some space, or choose another folder." (only when something is new);
+- `path_not_found` — "The backup folder's drive E:\ isn't there. Connect it, or choose another folder." (an unplugged
+  disk, an offline share).
+
+Nothing is queued then. `PhotoBackupStatus` gains `space`, so the panel says it before the button is pressed (with
+"Choose another folder"); Settings asks about its default folder:
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `photos.backupSpace` | `{ folder }` (a full path) | `PhotoBackupSpace` with `neededBytes: 0` |
+
+```ts
+type PhotoBackupSpace = {
+  root: string;                 // "E:\\" or the share
+  freeBytes: number | null;     // null: the drive isn't there, or (a share) can't say
+  totalBytes: number | null;
+  neededBytes: number;          // the new photos plus the margin; 0 when nothing is new
+  enough: boolean;
+  nearlyFull: boolean;          // under 20 GB, or under a tenth of the drive, left
+  driveMissing: boolean;
+};
+// PhotoBackupStatus gains  space: PhotoBackupSpace;
+```

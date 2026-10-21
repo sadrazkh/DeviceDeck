@@ -409,7 +409,7 @@ public sealed class PhotosBackupTests
         Assert.Equal(1, (int)count["newCount"]!);
 
         var status = (await bridge.ResultAsync("photos.backupStatus", new { deviceId = phone.Summary.Id }))!.AsObject();
-        Assert.Equal(["deviceId", "count", "options", "customized", "backedUp", "lastRun", "activeJobId", "heicConversion"], status.Select(p => p.Key));
+        Assert.Equal(["deviceId", "count", "options", "customized", "backedUp", "lastRun", "activeJobId", "heicConversion", "space"], status.Select(p => p.Key));
         Assert.Equal(["destination", "folderPattern", "convertHeic", "includeHidden", "range"], status["options"]!.AsObject().Select(p => p.Key));
         Assert.Equal("available", (string?)status["heicConversion"]);
 

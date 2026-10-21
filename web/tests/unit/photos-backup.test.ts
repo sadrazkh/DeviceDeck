@@ -32,7 +32,9 @@ describe('photo backup (mock)', () => {
     expect((await client.call('photos.newCount', { deviceId: ANDROID_ID })).newCount).toBe(46);
 
     const status = await client.call('photos.backupStatus', { deviceId: IPHONE_ID });
-    expect(Object.keys(status)).toEqual(['deviceId', 'count', 'options', 'customized', 'backedUp', 'lastRun', 'activeJobId', 'heicConversion']);
+    expect(Object.keys(status)).toEqual(['deviceId', 'count', 'options', 'customized', 'backedUp', 'lastRun', 'activeJobId', 'heicConversion', 'space']);
+    expect(status.space).toMatchObject({ root: 'D:\\', enough: true, nearlyFull: false, driveMissing: false });
+    expect(status.space.neededBytes).toBeGreaterThan(status.count.newBytes);
     expect(status.options).toEqual({
       destination: 'D:\\Phone backups\\Nima’s iPhone',
       folderPattern: 'yyyy/MM',
@@ -105,6 +107,26 @@ describe('photo backup (mock)', () => {
     }
     const reset = await client.call('photos.backupConfigure', { deviceId: IPHONE_ID, useDefaults: true });
     expect(reset.options.range.kind).toBe('all');
+  });
+
+  it('refuses a backup that would not fit or whose drive is gone, and says when a drive is nearly full', async () => {
+    const { client } = setup();
+    const short = await client.call('photos.backupConfigure', { deviceId: IPHONE_ID, destination: 'F:\\Phone backups' });
+    expect(short.space).toMatchObject({ root: 'F:\\', enough: false, nearlyFull: true, driveMissing: false });
+    await expect(client.call('photos.backup', { deviceId: IPHONE_ID })).rejects.toMatchObject({ code: 'no_space' });
+
+    const gone = await client.call('photos.backupConfigure', { deviceId: IPHONE_ID, destination: 'G:\\Phone backups' });
+    expect(gone.space).toMatchObject({ driveMissing: true, enough: false, freeBytes: null });
+    await expect(client.call('photos.backup', { deviceId: IPHONE_ID })).rejects.toMatchObject({ code: 'path_not_found' });
+    expect(await client.call('transfers.list')).not.toContainEqual(expect.objectContaining({ kind: 'photosBackup', deviceId: IPHONE_ID }));
+
+    expect(await client.call('photos.backupSpace', { folder: 'C:\\Users\\Nima\\Pictures\\DeviceDeck Backup' })).toMatchObject({
+      root: 'C:\\',
+      neededBytes: 0,
+      enough: true,
+      nearlyFull: true,
+    });
+    await expect(client.call('photos.backupSpace', { folder: 'Pictures' })).rejects.toMatchObject({ rpcCode: -32602 });
   });
 
   it('forgets the history without touching files', async () => {

@@ -37,6 +37,7 @@ import type {
   PhotoAsset,
   PhotoBackupCount,
   PhotoBackupRange,
+  PhotoBackupSpace,
   PhotoBackupStatus,
   RebootTarget,
   Settings,
@@ -254,6 +255,8 @@ export interface BridgeMethods {
     params: { backupId: string; conversationIds: string[]; format: MessagesFormat; destination: string };
     result: BackupJob;
   };
+  // Photo backup (round 3)
+  'photos.backupSpace': { params: { folder: string }; result: PhotoBackupSpace };
 }
 
 export type MethodName = keyof BridgeMethods;
@@ -386,6 +389,8 @@ const methodTable = {
   'messages.conversations': true,
   'messages.list': true,
   'messages.export': true,
+  // Photo backup (round 3)
+  'photos.backupSpace': true,
 } as const satisfies Record<MethodName, true>;
 
 export const METHOD_NAMES = Object.keys(methodTable) as MethodName[];

@@ -24,6 +24,17 @@ export function addsPhotosThroughApps(device: DeviceSummary): boolean {
   return device.platform === 'ios' && device.capabilities.includes('appDocuments') && !device.capabilities.includes('photosImport');
 }
 
+/** Room on the drive of a backup folder (Settings' default folder; a phone's own comes with its status). */
+export function useBackupSpace(folder: string | undefined) {
+  const client = useClient();
+  return useQuery({
+    queryKey: ['photos.backupSpace', folder ?? ''],
+    queryFn: () => client.call('photos.backupSpace', { folder: folder! }),
+    enabled: !!folder,
+    staleTime: 60_000,
+  });
+}
+
 export function useBackupStatus(device: DeviceSummary | null) {
   const client = useClient();
   return useQuery({
@@ -75,6 +86,8 @@ export function useBackupActions(device: DeviceSummary) {
           return jobId;
         } catch (error) {
           actions.fail(error);
+          // Refused for room or a missing drive: the panel shows why, with "Choose another folder".
+          await queryClient.invalidateQueries({ queryKey: backupKeys.status(device.id) });
           return null;
         }
       },

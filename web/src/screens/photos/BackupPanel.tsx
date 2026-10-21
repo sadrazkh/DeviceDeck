@@ -105,7 +105,7 @@ export function BackupPanel({ device, open, onOpenChange }: { device: DeviceSumm
                 variant="accent"
                 onClick={() => void start()}
                 loading={busy}
-                disabled={!count || count.newCount === 0}
+                disabled={!count || count.newCount === 0 || !data.space.enough}
                 data-testid="backup-start"
               >
                 {count && count.newCount > 0 ? t('photos.backup.start', { count: count.newCount }) : t('photos.backup.upToDate')}
@@ -152,6 +152,44 @@ export function BackupPanel({ device, open, onOpenChange }: { device: DeviceSumm
       />
     </>
   );
+}
+
+/** No room, no drive, or nearly full: said before the button is pressed, with a way out. */
+function SpaceBanner({ data, onPick, disabled }: { data: PhotoBackupStatus; onPick(): void; disabled: boolean }) {
+  const { t, bytes } = useI18n();
+  const { space, count } = data;
+  const choose = (
+    <Button onClick={onPick} disabled={disabled} data-testid="backup-space-choose">
+      {t('photos.backup.space.choose')}
+    </Button>
+  );
+  const root = `⁦${space.root}⁩`;
+  if (space.driveMissing) {
+    return (
+      <div data-testid="backup-space" data-state="missing">
+        <Banner tone="danger" title={t('photos.backup.space.missing.title', { root })} actions={choose}>
+          {t('photos.backup.space.missing.body')}
+        </Banner>
+      </div>
+    );
+  }
+  if (!space.enough && count.newCount > 0) {
+    return (
+      <div data-testid="backup-space" data-state="short">
+        <Banner tone="warning" title={t('photos.backup.space.short.title', { root })} actions={choose}>
+          {t('photos.backup.space.short.body', { needed: bytes(space.neededBytes), free: bytes(space.freeBytes ?? 0) })}
+        </Banner>
+      </div>
+    );
+  }
+  if (space.nearlyFull && space.freeBytes !== null) {
+    return (
+      <div data-testid="backup-space" data-state="nearlyFull">
+        <Banner tone="warning">{t('photos.backup.space.nearlyFull', { root, free: bytes(space.freeBytes) })}</Banner>
+      </div>
+    );
+  }
+  return null;
 }
 
 function Body({
@@ -230,6 +268,8 @@ function Body({
           {hiddenRevealed ? t('photos.backup.hiddenLeftOut', { count: count.hiddenLeftOut }) : t('photos.backup.hiddenLeftOutLocked')}
         </Banner>
       ) : null}
+
+      <SpaceBanner data={data} onPick={onPick} disabled={!!running} />
 
       <div className={styles.section}>
         <span className={styles.label}>{t('photos.backup.destination')}</span>

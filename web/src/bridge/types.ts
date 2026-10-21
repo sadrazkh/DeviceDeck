@@ -466,6 +466,23 @@ export interface PhotoBackupStatus {
   lastRun: PhotoBackupRun | null;
   activeJobId: string | null;
   heicConversion: HeicConversion;
+  /** Room for the new photos on the destination's drive; photos.backup is refused when it isn't enough. */
+  space: PhotoBackupSpace;
+}
+
+/** Room on a backup folder's drive (round 3). */
+export interface PhotoBackupSpace {
+  /** "E:\" or the share. */
+  root: string;
+  /** null when the drive isn't there or can't say. */
+  freeBytes: number | null;
+  totalBytes: number | null;
+  /** The new photos (estimated where the phone hasn't said; HEIC counted bigger as JPG) plus a margin; 0 when nothing is new. */
+  neededBytes: number;
+  enough: boolean;
+  /** Under 20 GB, or under a tenth of the drive, left. */
+  nearlyFull: boolean;
+  driveMissing: boolean;
 }
 
 // Backup, contacts and messages (round 2).

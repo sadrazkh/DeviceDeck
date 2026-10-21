@@ -20,6 +20,8 @@ public sealed record PhotosImportToAppParams(string DeviceId, string AppId, IRea
 
 public sealed record ForgottenResult(int Forgotten);
 
+public sealed record PhotosBackupSpaceParams(string Folder);
+
 /// <summary>photos.newCount, photos.backup*, photos.importToApp.</summary>
 public static class PhotosBackupMethods
 {
@@ -40,6 +42,7 @@ public static class PhotosBackupMethods
             s.Hub.GetUsableDevice(p.DeviceId);
             return Task.FromResult(new ForgottenResult(Backup(s).Forget(p.DeviceId)));
         });
+        rpc.Register<PhotosBackupSpaceParams, PhotoBackupSpace>("photos.backupSpace", (p, _) => Task.FromResult(Backup(s).CheckSpace(p.Folder)));
         rpc.Register<PhotosImportToAppParams, JobIdResult>("photos.importToApp", async (p, ct) =>
         {
             var job = await s.Transfers.EnqueueAsync(p.DeviceId, TransferKind.PhotosToApp, new PhotosToAppRequest(p.AppId, p.Files),

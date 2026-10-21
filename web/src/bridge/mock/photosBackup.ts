@@ -14,6 +14,7 @@ import type {
   PhotoBackupOptions,
   PhotoBackupRange,
   PhotoBackupRun,
+  PhotoBackupSpace,
   PhotoBackupStatus,
   Settings,
 } from '../types';
@@ -25,7 +26,8 @@ export type PhotoBackupMethod =
   | 'photos.backupConfigure'
   | 'photos.backup'
   | 'photos.backupForget'
-  | 'photos.importToApp';
+  | 'photos.importToApp'
+  | 'photos.backupSpace';
 
 type Handlers = { [M in PhotoBackupMethod & MethodName]: (params: MethodParams<M>) => MethodResult<M> };
 
@@ -48,6 +50,32 @@ const PATTERN = /^(yyyy|MM|dd)([/\-_. ](yyyy|MM|dd))*$/;
 export const isValidPattern = (pattern: string) => pattern === '' || PATTERN.test(pattern);
 
 export const EVERYTHING: PhotoBackupRange = { kind: 'all', days: null, since: null };
+
+/** The PC's drives as the mock sees them: C: as short of space as the owner's, F: a USB stick that is nearly full. */
+export const MOCK_DRIVES: Record<string, { free: number; total: number }> = {
+  'C:\\': { free: 12.4 * GB, total: 237.9 * GB },
+  'D:\\': { free: 412.7 * GB, total: 931.5 * GB },
+  'E:\\': { free: 227.1 * GB, total: 439.9 * GB },
+  'F:\\': { free: 0.4 * GB, total: 29.8 * GB },
+};
+
+/** The host's PhotoBackupSpaces.Check: the photos plus a margin (1 GB or a tenth), nearly full under 20 GB or a tenth. */
+export function spaceFor(folder: string, bytes: number): PhotoBackupSpace {
+  const root = /^[a-z]:\\/i.test(folder) ? folder.slice(0, 3).toUpperCase() : folder;
+  const drive = MOCK_DRIVES[root];
+  const needed = bytes <= 0 ? 0 : Math.round(bytes + Math.max(2 ** 30, bytes / 10));
+  if (!drive) return { root, freeBytes: null, totalBytes: null, neededBytes: needed, enough: false, nearlyFull: false, driveMissing: true };
+  const free = Math.round(drive.free);
+  return {
+    root,
+    freeBytes: free,
+    totalBytes: Math.round(drive.total),
+    neededBytes: needed,
+    enough: needed === 0 || free >= needed,
+    nearlyFull: free < 20e9 || free < drive.total / 10,
+    driveMissing: false,
+  };
+}
 
 /** The range with only the field its kind uses, or an error message (the host's PhotoBackupRange.Validated). */
 export function validRange(range: PhotoBackupRange): PhotoBackupRange | string {
@@ -206,6 +234,7 @@ export class MockPhotoBackup {
       lastRun: state.lastRun ? { ...state.lastRun, destination: state.lastRun.destination || options.destination } : null,
       activeJobId: state.activeJobId,
       heicConversion: 'available',
+      space: spaceFor(options.destination, this.count(device).newBytes),
     };
   }
 
@@ -237,6 +266,11 @@ export class MockPhotoBackup {
       if (running && !['done', 'failed', 'cancelled'].includes(running.state)) return { jobId: running.id };
 
       const options = this.options(device);
+      const space = spaceFor(options.destination, this.count(device).newBytes);
+      if (space.driveMissing) throw this.host.fault('path_not_found', `The backup folder's drive ${space.root} isn't there. Connect it, or choose another folder.`);
+      if (!space.enough && this.count(device).newCount > 0) {
+        throw this.host.fault('no_space', `Not enough space on ${space.root} for the new photos. Free some space, or choose another folder.`);
+      }
       state.own.destination ??= options.destination;
       const { copy } = this.candidates(deviceId, options);
       const assetOf = new Map<JobItem, MockAsset>();
@@ -288,6 +322,10 @@ export class MockPhotoBackup {
       const forgotten = state.backedUp.size;
       state.backedUp.clear();
       return { forgotten };
+    },
+    'photos.backupSpace': ({ folder }) => {
+      if (!/^[a-z]:\\/i.test(folder)) throw this.host.badParams('folder must be a full folder path on this PC.');
+      return spaceFor(folder, 0);
     },
     'photos.importToApp': ({ deviceId, appId, files }) => {
       const device = this.host.requireReady(deviceId, 'appDocuments');
