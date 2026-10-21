@@ -1,6 +1,7 @@
 import { BridgeClient } from './client';
 import type { MockBackend, MockScenario } from './mock/backend';
 import { createMockTransport, type MockTransportOptions } from './mock/transport';
+import { MOCK_LOCALSEND_SCENARIOS } from './mock/localSend';
 import { createWebViewTransport, getWebView } from './webview';
 
 export { BridgeClient, type FileSource } from './client';
@@ -30,6 +31,8 @@ export function mockOptionsFromUrl(search: string): MockTransportOptions {
     latencyMs: latency !== null && !Number.isNaN(Number(latency)) ? Number(latency) : undefined,
     indexing: query.get('indexing') !== '0',
     seedQueue: query.get('queue') !== '0',
+    // LocalSend on the phone (round 3): ?localsend=closed|opening|background|wifi|pin|reject|busy|quickSave
+    localSend: MOCK_LOCALSEND_SCENARIOS.find((s) => s === query.get('localsend')) ?? 'ready',
     settings: {
       ...(lang === 'fa' || lang === 'en' ? { language: lang } : {}),
       ...(theme === 'light' || theme === 'dark' || theme === 'system' ? { theme } : {}),

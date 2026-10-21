@@ -4,6 +4,7 @@
 import { batteryFa } from '../screens/battery/strings';
 import { cleanupFa } from '../screens/cleanup/strings';
 import { backupFa } from './backup';
+import { localSendFa } from './localSend';
 import type { MessageKey } from './en';
 
 export const fa: Record<MessageKey, string> = {
@@ -582,7 +583,7 @@ export const fa: Record<MessageKey, string> = {
   'photos.backup.forgotten': '{count} عکس فراموش شد',
   'photos.job.details': 'جزئیات',
   'photos.toApp.button': 'افزودن به آیفون',
-  'photos.toApp.drop': 'رها کنید تا برنامه‌ای در آیفون برایشان انتخاب کنید',
+  'photos.toApp.drop': 'رها کنید تا به آیفون اضافه شوند',
   'photos.toApp.title': 'افزودن عکس به {device}',
   'photos.toApp.whyTitle': 'به یک برنامه می‌روند، نه به Photos',
   'photos.toApp.why': 'آیفون اجازه نمی‌دهد PC از راه USB چیزی به کتابخانهٔ Photos اضافه کند. DeviceDeck فایل‌ها را در پوشهٔ Documents برنامه‌ای می‌گذارد که اشتراک فایل دارد؛ از آن‌جا روی آیفون در Photos ذخیره‌شان می‌کنید.',
@@ -606,4 +607,6 @@ export const fa: Record<MessageKey, string> = {
   ...batteryFa,
   // Backup, contacts and messages (round 2)
   ...backupFa,
+  // Add to iPhone: LocalSend and the save-them-all steps (round 3)
+  ...localSendFa,
 };
