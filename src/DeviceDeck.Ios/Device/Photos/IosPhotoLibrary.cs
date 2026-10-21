@@ -35,6 +35,9 @@ public sealed partial class IosPhotoLibrary(IosDevice device, string cacheDirect
     /// <summary>Connections opened for originals and bulk stats so far (PhotoBench and the probe print it).</summary>
     public int OriginalConnectionsOpened => _originals.Opened;
 
+    /// <summary>"untried", "works" or "off" (the phone dropped a read ahead, so one chunk at a time): for PhotoBench.</summary>
+    public string ReadsAhead => _readAhead.ToString().ToLowerInvariant();
+
     internal ValueTask CloseConnectionsAsync() => _originals.DisposeAsync();
 
     public string CacheDirectory { get; } = cacheDirectory;

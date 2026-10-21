@@ -18,6 +18,9 @@ opened (each lockdown session and each service connection is one), then looks ag
 - It only reads from the phone. Copies go into `--dest`; the ledger, the queue and the Photos.sqlite copy go into
   `<dest>.photobench` next to it. Nothing is deleted. `--dest` on C: is refused.
 - Running it again into the same folder starts from that ledger: it must find 0 new photos.
+- `--edits` also says, read-only, how many photos Photos.sqlite marks as edited and whether their rendered versions
+  are where the backup looks (`PhotoData/Mutations/<DCIM path>/Adjustments/FullSizeRender.*`); `--save-edited` backs
+  them up too, as the panel's "Also save edited versions".
 - Quit DeviceDeck first only if the phone misbehaves with two clients; usbmux itself allows both.
 
 ## Fake mode

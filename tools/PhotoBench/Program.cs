@@ -122,7 +122,11 @@ internal static class Program
         Console.WriteLine($"into: {dest}");
         queue.Start();
         backup.Attach(queue);
-        backup.Configure(device.Id, dest, "yyyy/MM", convertHeic: false, includeHidden: false, range: options.Range);
+        backup.Configure(device.Id, dest, "yyyy/MM", convertHeic: false, includeHidden: false, range: options.Range, saveEdited: options.SaveEdited);
+        if (options.Edits)
+        {
+            await ReportEditsAsync(hub.GetUsableDevice(device.Id), ct);
+        }
 
         var clock = Stopwatch.StartNew();
         var count = await backup.CountNewAsync(device.Id, ct);
@@ -135,6 +139,7 @@ internal static class Program
         var done = new TaskCompletionSource<TransferJob>(TaskCreationOptions.RunContinuationsAsynchronously);
         string? jobId = null;
         var lastPrint = Stopwatch.StartNew();
+        var lastState = TransferState.Queued;
         queue.JobUpdated += (_, job) =>
         {
             if (job.Id != jobId)
@@ -142,9 +147,21 @@ internal static class Program
                 return;
             }
 
+            var previous = lastState;
+            lastState = job.State;
+            if (previous == job.State && job.State != TransferState.Running)
+            {
+                return;
+            }
+
             if (job.State is TransferState.Done or TransferState.Failed or TransferState.Cancelled)
             {
                 done.TrySetResult(job);
+            }
+            else if (job.State != TransferState.Running && job.State != previous)
+            {
+                // Waiting for the phone (a dropped connection is waited out and the photo tried again), paused, queued.
+                Console.WriteLine($"  {clock.Elapsed.TotalSeconds,6:0.0} s  {job.State}{(job.Error is { } e ? $": {e.Message}" : "")}");
             }
             else if (lastPrint.Elapsed > TimeSpan.FromSeconds(5) && job.TotalItems > 0)
             {
@@ -178,7 +195,45 @@ internal static class Program
 
         var again = await backup.CountNewAsync(device.Id, ct);
         Console.WriteLine($"second look: {again.NewCount:N0} new");
+        if (hub.TryGetDevice(device.Id, out var phone) && phone.Photos is DeviceDeck.Ios.Device.Photos.IosPhotoLibrary library)
+        {
+            Console.WriteLine($"originals: {library.OriginalConnectionsOpened} pooled AFC connections opened; reads ahead: {library.ReadsAhead}");
+        }
         return new Result(elapsed, finished.TotalItems, finished.FailedItems + (finished.State == TransferState.Done ? 0 : 1), line);
+    }
+
+    /// <summary>
+    /// --edits: what the backup would find for edited photos, read-only. How many Photos.sqlite marks as edited
+    /// (ZHASADJUSTMENTS), and for up to 50 of them whether PhotoData/Mutations/…/Adjustments/FullSizeRender.* is there.
+    /// </summary>
+    private static async Task ReportEditsAsync(IDevice device, CancellationToken ct)
+    {
+        if (device.Photos is not IPhotoBackupSource source)
+        {
+            Console.WriteLine("edits: this phone's library can't say");
+            return;
+        }
+
+        var assets = await source.GetBackupAssetsAsync(ct);
+        var edited = assets.Where(a => a.Edited is not null && !a.InCloudOnly).ToList();
+        Console.WriteLine($"edits: {edited.Count:N0} of {assets.Count:N0} assets edited according to Photos.sqlite");
+        if (edited.Count == 0)
+        {
+            return;
+        }
+
+        var looked = await source.CompleteAsync(edited.Take(50).ToList(), ct);
+        var found = looked.Where(a => a.Edited?.AssetId is not null).ToList();
+        Console.WriteLine($"edits: rendered version found for {found.Count} of {looked.Count} looked at");
+        foreach (var a in found.Take(5))
+        {
+            Console.WriteLine($"  found      {a.AssetId} -> {a.Edited!.AssetId} ({a.Edited.Size:N0} bytes)");
+        }
+
+        foreach (var a in looked.Where(a => a.Edited?.AssetId is null).Take(5))
+        {
+            Console.WriteLine($"  not found  {a.AssetId} (stamp {a.Edited!.Stamp})");
+        }
     }
 
     private static async Task<DeviceSummary> WaitForIphoneAsync(DeviceHub hub, string? udid, TimeSpan timeout, CancellationToken ct)
@@ -255,7 +310,9 @@ internal sealed record Options(
     int Seed,
     int Repeat,
     bool Keep,
-    FakeIphone.Link Link)
+    FakeIphone.Link Link,
+    bool Edits = false,
+    bool SaveEdited = false)
 {
     public const string Usage = """
         photobench — times DeviceDeck's photo backup.
@@ -275,6 +332,9 @@ internal sealed record Options(
                                          the simulated link: shared bandwidth (34), round trip (1), opening a usbmux
                                          connection (5) and a lockdown session's TLS handshake (40)
         --keep                           keep the fake run's files
+        --edits                          also say, read-only, how many photos Photos.sqlite marks as edited and whether
+                                         their rendered versions are where the backup looks
+        --save-edited                    back up edited versions too ("IMG_1234 (edited).jpg"), as the panel's switch does
 
         It only reads from the phone. Never point --dest at C: (the copies are real files).
         """;
@@ -299,6 +359,8 @@ internal sealed record Options(
                 case "--seed": o = o with { Seed = (int)Number() }; break;
                 case "--repeat": o = o with { Repeat = Math.Max(1, (int)Number()) }; break;
                 case "--keep": o = o with { Keep = true }; break;
+                case "--edits": o = o with { Edits = true }; break;
+                case "--save-edited": o = o with { SaveEdited = true }; break;
                 case "--mbps": o = o with { Link = o.Link with { MegabytesPerSecond = Math.Max(0.1, Number()) } }; break;
                 case "--rtt-ms": o = o with { Link = o.Link with { RoundTripMs = Number() } }; break;
                 case "--connect-ms": o = o with { Link = o.Link with { ConnectMs = Number() } }; break;
