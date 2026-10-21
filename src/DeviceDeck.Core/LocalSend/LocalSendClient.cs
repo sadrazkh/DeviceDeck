@@ -45,7 +45,12 @@ public sealed class LocalSendClient : IDisposable
     private readonly string? _pinned;
     private volatile bool _certificateRejected;
 
-    public LocalSendClient(LocalSendEndpoint endpoint, string? pinnedFingerprint, LocalSendTimeouts? timeouts = null)
+    /// <param name="clientCertificate">
+    /// The sender's own certificate (<see cref="LocalSendIdentity.Certificate"/>). LocalSend asks for one in the TLS handshake
+    /// and drops the connection without it, right after the handshake and before any answer.
+    /// </param>
+    public LocalSendClient(LocalSendEndpoint endpoint, string? pinnedFingerprint, LocalSendTimeouts? timeouts = null,
+        System.Security.Cryptography.X509Certificates.X509Certificate2? clientCertificate = null)
     {
         Endpoint = endpoint;
         _pinned = endpoint.Https ? pinnedFingerprint : null;
@@ -60,6 +65,8 @@ public sealed class LocalSendClient : IDisposable
             SslOptions = new SslClientAuthenticationOptions
             {
                 RemoteCertificateValidationCallback = (_, certificate, _, _) => Validate(certificate),
+                ClientCertificates = clientCertificate is null ? null : [clientCertificate],
+                LocalCertificateSelectionCallback = clientCertificate is null ? null : (_, _, _, _, _) => clientCertificate,
             },
         };
         if (endpoint.Connect is { } connect)

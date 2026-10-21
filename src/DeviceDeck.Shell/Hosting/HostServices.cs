@@ -100,7 +100,7 @@ internal sealed class HostServices : IAsyncDisposable
         photoBackup.CleanedUp += (_, c) => ShellLog.Info($"Photo backup: removed {c.Files.Count} unfinished downloads ({c.Bytes / 1e6:0.0} MB) no backup will resume.");
         var keepAwake = new WindowsKeepAwake();
         var dragOuts = new DragOutRegistry();
-        var localSend = new DeviceDeck.Core.LocalSend.LocalSendService(hub, store.LoadItems);
+        var localSend = new DeviceDeck.Core.LocalSend.LocalSendService(hub, store.LoadItems, DeviceDeck.Core.LocalSend.LocalSendIdentity.ForThisPc(paths.Root));
         DeviceDeck.Core.LocalSend.LocalSendService.CancelLeftovers(store);
         var transfers = new TransferQueue(hub, store, [.. TransferHandlers.All(transcoder), photoBackup.Handler, new DragOutHandler(dragOuts), localSend.Handler], keepAwake);
         transfers.Start();

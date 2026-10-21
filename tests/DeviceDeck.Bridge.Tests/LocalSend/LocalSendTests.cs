@@ -415,19 +415,27 @@ public sealed class LocalSendTests
     public async Task The_client_maps_an_unknown_token_to_session_lost_and_never_sends_to_a_wrong_certificate()
     {
         await using var receiver = new FakeLocalSendReceiver();
-        var me = new LocalSendIdentity("DeviceDeck (TEST-PC)", "X").Info();
+        var identity = LocalSendIdentity.Create("DeviceDeck (TEST-PC)");
+        var me = identity.Info();
         var file = new LocalSendFile("0", "a.jpg", 3, "image/jpeg", null, null, null);
-        using var client = new LocalSendClient(new LocalSendEndpoint("127.0.0.1", receiver.Port, true), receiver.Fingerprint, LocalSendTestHost.FastTimeouts);
 
+        // LocalSend asks for the sender's certificate and drops a connection that has none (seen on iOS, LocalSend 2.2).
+        using var anonymous = new LocalSendClient(new LocalSendEndpoint("127.0.0.1", receiver.Port, true), receiver.Fingerprint, LocalSendTestHost.FastTimeouts);
+        Assert.Equal(LocalSendErrors.NotListening, (await Assert.ThrowsAsync<DeviceException>(() => anonymous.GetInfoAsync(None))).Code);
+
+        using var client = new LocalSendClient(new LocalSendEndpoint("127.0.0.1", receiver.Port, true), receiver.Fingerprint, LocalSendTestHost.FastTimeouts, identity.Certificate);
         var info = await client.GetInfoAsync(None);
         Assert.Equal(receiver.Fingerprint, info.Fingerprint);
         Assert.True(LocalSendProtocol.SameFingerprint(receiver.Fingerprint, client.PeerFingerprint));
+        Assert.Contains(identity.Fingerprint, receiver.ClientFingerprints);
+        Assert.Equal(64, identity.Fingerprint.Length);
+        Assert.Equal(identity.Fingerprint.ToUpperInvariant(), identity.Fingerprint);
         var session = (await client.PrepareUploadAsync(me, [file], null, None))!;
         var lost = await Assert.ThrowsAsync<DeviceException>(() => client.UploadAsync(session.SessionId, "0", "not-the-token", new MemoryStream([1, 2, 3]), 3, null, None));
         Assert.Equal(LocalSendErrors.SessionLost, lost.Code);
         Assert.True(await client.CancelAsync(session.SessionId, None));
 
-        using var pinnedWrong = new LocalSendClient(new LocalSendEndpoint("127.0.0.1", receiver.Port, true), new string('A', 64), LocalSendTestHost.FastTimeouts);
+        using var pinnedWrong = new LocalSendClient(new LocalSendEndpoint("127.0.0.1", receiver.Port, true), new string('A', 64), LocalSendTestHost.FastTimeouts, identity.Certificate);
         var wrong = await Assert.ThrowsAsync<DeviceException>(() => pinnedWrong.PrepareUploadAsync(me, [file], null, None));
         Assert.Equal(LocalSendErrors.Fingerprint, wrong.Code);
         Assert.Single(receiver.Prepares);

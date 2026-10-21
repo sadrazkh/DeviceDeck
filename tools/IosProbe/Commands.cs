@@ -45,6 +45,7 @@ internal static class Commands
     private static readonly Dictionary<string, Spec> DeviceCommands = new(StringComparer.Ordinal)
     {
         ["info"] = new([], InfoAsync),
+        ["localsend-raw"] = new([], (d, c, ct) => LocalSendRaw.RunAsync(d, c.IntOption("port", 53317), c.IntOption("wait-ms", 3000), c.Option("ip"), ct)),
         ["storage"] = new([], (d, _, ct) => StorageAsync(d, ct)),
         ["battery"] = new([], (d, _, ct) => BatteryAsync(d, ct)),
         ["roots"] = new([], (d, _, ct) => RootsAsync(d, ct)),
