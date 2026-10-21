@@ -52,6 +52,22 @@ public sealed class DropInTests
     }
 
     [Fact]
+    public void Each_drop_says_which_route_it_came_by()
+    {
+        var page = new Page();
+        var log = new List<string>();
+        var forwarder = new DropInForwarder(page.Post, log.Add);
+        forwarder.Enter(1, 1, [new(@"E:\a.txt", false), new(@"E:\b.txt", false)], "XAML");
+        forwarder.Drop(1, 1);
+        forwarder.Enter(1, 1, [new(@"E:\a.txt", false)]);
+        forwarder.OnFeedback(Answer(false));
+        forwarder.Drop(1, 1);
+        Assert.Equal(
+            ["Drop from File Explorer (XAML): 2 item(s), taken by the page.", "Drop from File Explorer (OLE): 1 item(s), refused where it landed."],
+            log);
+    }
+
+    [Fact]
     public void The_effect_follows_the_page_answer()
     {
         var page = new Page();

@@ -36,7 +36,7 @@ internal sealed class DropInHost : IDisposable
         _core = core;
         _environment = environment;
         _post = post;
-        Forwarder = new DropInForwarder(Post);
+        Forwarder = new DropInForwarder(Post, ShellLog.Info);
 
         _root.AllowDrop = true;
         _root.AddHandler(UIElement.DragEnterEvent, new DragEventHandler(OnXamlDragEnter), true);
@@ -95,7 +95,7 @@ internal sealed class DropInHost : IDisposable
         {
             var point = e.GetPosition(_root);
             var items = await ReadItemsAsync(e.DataView);
-            Forwarder.Enter(point.X, point.Y, items);
+            Forwarder.Enter(point.X, point.Y, items, "XAML");
             e.AcceptedOperation = Forwarder.Accepts ? DataPackageOperation.Copy : DataPackageOperation.None;
         }
         catch (Exception ex)

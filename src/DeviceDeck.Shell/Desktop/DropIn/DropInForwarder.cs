@@ -27,11 +27,18 @@ internal sealed class DropInForwarder
     public const string FeedbackName = "nativeDragFeedback";
 
     private readonly Action<string, IReadOnlyList<DroppedItem>?> _post;
+    private readonly Action<string>? _log;
     private IReadOnlyList<DroppedItem>? _items;
+    private string _route = "";
     private volatile bool _accepts;
 
     /// <param name="post">Sends a message to the page; on a drop, with the items whose handles go along.</param>
-    public DropInForwarder(Action<string, IReadOnlyList<DroppedItem>?> post) => _post = post;
+    /// <param name="log">Says which route each drop came by (OLE or XAML), for the log.</param>
+    public DropInForwarder(Action<string, IReadOnlyList<DroppedItem>?> post, Action<string>? log = null)
+    {
+        _post = post;
+        _log = log;
+    }
 
     /// <summary>A drag of files from outside is over the window.</summary>
     public bool Active => _items is not null;
@@ -39,8 +46,8 @@ internal sealed class DropInForwarder
     /// <summary>The page's last answer: the element under the pointer takes files.</summary>
     public bool Accepts => _items is not null && _accepts;
 
-    /// <summary>Page pixels (CSS px from the window's client origin).</summary>
-    public void Enter(double x, double y, IReadOnlyList<DroppedItem> items)
+    /// <summary>Page pixels (CSS px from the window's client origin); <paramref name="route"/>: "OLE" or "XAML".</summary>
+    public void Enter(double x, double y, IReadOnlyList<DroppedItem> items, string route = "OLE")
     {
         if (items.Count == 0)
         {
@@ -48,6 +55,7 @@ internal sealed class DropInForwarder
         }
 
         _items = items;
+        _route = route;
         // Until the page has answered: the window as a whole takes files (the page refuses where it can't).
         _accepts = true;
         _post(Message("enter", x, y, items), null);
@@ -84,6 +92,7 @@ internal sealed class DropInForwarder
         }
 
         _post(Message("drop", x, y, dropped), dropped);
+        _log?.Invoke($"Drop from File Explorer ({_route}): {dropped.Count} item(s), {(accepted ? "taken by the page" : "refused where it landed")}.");
         return accepted;
     }
 
