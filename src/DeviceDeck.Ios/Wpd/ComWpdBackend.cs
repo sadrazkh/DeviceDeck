@@ -390,7 +390,7 @@ public sealed class ComWpdBackend : IWpdBackend
     /// </summary>
     internal static string? UsbSerialOf(string pnpId)
     {
-        var instanceId = InstanceIdOf(pnpId);
+        var instanceId = WpdPnp.InstanceIdOf(pnpId);
         if (instanceId is null)
         {
             return null;
@@ -411,32 +411,12 @@ public sealed class ComWpdBackend : IWpdBackend
                 id = DeviceIdOf(parent);
             }
 
-            return SerialFromInstanceId(id);
+            return WpdPnp.SerialFromInstanceId(id);
         }
         catch (Exception ex) when (ex is DllNotFoundException or EntryPointNotFoundException)
         {
             return null;
         }
-    }
-
-    /// <summary>"\\?\usb#vid_05ac&amp;pid_12a8&amp;mi_00#7&amp;2a&amp;0&amp;0000#{guid}" → "USB\VID_05AC&amp;PID_12A8&amp;MI_00\7&amp;2A&amp;0&amp;0000".</summary>
-    internal static string? InstanceIdOf(string pnpId)
-    {
-        var path = pnpId.StartsWith(@"\\?\", StringComparison.Ordinal) ? pnpId[4..] : pnpId;
-        var parts = path.Split('#');
-        return parts.Length >= 3 ? string.Join('\\', parts[..3]).ToUpperInvariant() : null;
-    }
-
-    /// <summary>"USB\VID_05AC&amp;PID_12A8\00008110001A2B3C0E12801E" → "00008110001A2B3C0E12801E"; null for a generated id ("7&amp;2a…&amp;0").</summary>
-    internal static string? SerialFromInstanceId(string? instanceId)
-    {
-        if (instanceId is null || !instanceId.StartsWith(@"USB\", StringComparison.OrdinalIgnoreCase))
-        {
-            return null;
-        }
-
-        var last = instanceId[(instanceId.LastIndexOf('\\') + 1)..];
-        return last.Length == 0 || last.Contains('&') ? null : last;
     }
 
     private static string? DeviceIdOf(uint node)
@@ -478,5 +458,29 @@ public sealed class ComWpdBackend : IWpdBackend
         {
             throw new WpdException($"Windows couldn't {what}: Windows Portable Devices isn't available.", ex.HResult, ex);
         }
+    }
+}
+
+/// <summary>Reading WPD's PnP ids (plain text, any OS).</summary>
+public static class WpdPnp
+{
+    /// <summary>"\\?\usb#vid_05ac&amp;pid_12a8&amp;mi_00#7&amp;2a&amp;0&amp;0000#{guid}" → "USB\VID_05AC&amp;PID_12A8&amp;MI_00\7&amp;2A&amp;0&amp;0000".</summary>
+    public static string? InstanceIdOf(string pnpId)
+    {
+        var path = pnpId.StartsWith(@"\\?\", StringComparison.Ordinal) ? pnpId[4..] : pnpId;
+        var parts = path.Split('#');
+        return parts.Length >= 3 ? string.Join('\\', parts[..3]).ToUpperInvariant() : null;
+    }
+
+    /// <summary>"USB\VID_05AC&amp;PID_12A8\00008110001A2B3C0E12801E" → "00008110001A2B3C0E12801E"; null for a generated id ("7&amp;2a…&amp;0").</summary>
+    public static string? SerialFromInstanceId(string? instanceId)
+    {
+        if (instanceId is null || !instanceId.StartsWith(@"USB\", StringComparison.OrdinalIgnoreCase))
+        {
+            return null;
+        }
+
+        var last = instanceId[(instanceId.LastIndexOf('\\') + 1)..];
+        return last.Length == 0 || last.Contains('&') ? null : last;
     }
 }

@@ -416,9 +416,9 @@ public sealed class WpdPhotoDeleterTests
         Assert.Equal(WpdPhotoDeleter.Normalize("00008140-000a1b2c3d4e801e"), WpdPhotoDeleter.Normalize("00008140000A1B2C3D4E801E"));
         Assert.Equal("", WpdPhotoDeleter.Normalize(null));
         Assert.Equal(@"USB\VID_05AC&PID_12A8&MI_00\7&2A7C6B1C&0&0000",
-            ComWpdBackend.InstanceIdOf(@"\\?\usb#vid_05ac&pid_12a8&mi_00#7&2a7c6b1c&0&0000#{6ac27878-a6fa-4155-ba85-f98f491d4f33}"));
-        Assert.Equal("00008140000A1B2C3D4E801E", ComWpdBackend.SerialFromInstanceId(@"USB\VID_05AC&PID_12A8\00008140000A1B2C3D4E801E"));
-        Assert.Null(ComWpdBackend.SerialFromInstanceId(@"USB\VID_05AC&PID_12A8&MI_00\7&2A7C6B1C&0&0000"));
+            WpdPnp.InstanceIdOf(@"\\?\usb#vid_05ac&pid_12a8&mi_00#7&2a7c6b1c&0&0000#{6ac27878-a6fa-4155-ba85-f98f491d4f33}"));
+        Assert.Equal("00008140000A1B2C3D4E801E", WpdPnp.SerialFromInstanceId(@"USB\VID_05AC&PID_12A8\00008140000A1B2C3D4E801E"));
+        Assert.Null(WpdPnp.SerialFromInstanceId(@"USB\VID_05AC&PID_12A8&MI_00\7&2A7C6B1C&0&0000"));
     }
 }
 
