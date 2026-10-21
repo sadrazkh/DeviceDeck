@@ -40,6 +40,7 @@ const KIND_ICON: Record<TransferKind, typeof ArrowDownloadRegular> = {
   photosBackup: ImageMultipleRegular,
   photosToApp: ArrowUploadRegular,
   localSend: ImageMultipleRegular,
+  whatsAppMedia: ArrowDownloadRegular, // round 4, whatsapp session
 };
 
 const GROUP_LABEL: Record<TransferGroup, 'transfers.group.active' | 'transfers.group.queued' | 'transfers.group.done' | 'transfers.group.failed'> = {

@@ -113,10 +113,16 @@ const androidRoots: Record<string, Spec[]> = {
       ['data', [], { denied: true }],
       ['obb', [], { denied: true }],
       ['media', [
-        ['com.whatsapp', [['WhatsApp', [['Media', [
-          ['WhatsApp Documents', [['Invoice-0921.pdf', Math.round(211 * KB)]]],
-          ['WhatsApp Voice Notes', [['PTT-20261012-WA0003.opus', Math.round(48 * KB)]]],
-        ]]]]]],
+        ['com.whatsapp', [['WhatsApp', [
+          ['Media', [
+            ['WhatsApp Documents', [['Invoice-0921.pdf', Math.round(211 * KB)]]],
+            ['WhatsApp Voice Notes', [['PTT-20261012-WA0003.opus', Math.round(48 * KB)]]],
+            // Round 4 (whatsapp): photos, and WhatsApp's own encrypted chat backups next to the media.
+            ['WhatsApp Images', [['IMG-20261012-WA0001.jpg', Math.round(212 * KB)], ['IMG-20261013-WA0004.jpg', Math.round(188 * KB), { daysAgo: 2 }]]],
+          ]],
+          ['Databases', [['msgstore.db.crypt14', Math.round(38 * MB), { daysAgo: 0 }], ['msgstore-2026-10-19.1.db.crypt14', Math.round(37.6 * MB), { daysAgo: 1 }]]],
+          ['Backups', [['backup_settings.json.crypt1', Math.round(1 * KB)]]],
+        ]]]],
         ['org.telegram.messenger', [['Telegram', [
           ['Telegram Documents', [['Lecture 7 slides.pdf', Math.round(6.1 * MB), { daysAgo: 6 }]]],
           ['Telegram Video', [['VID_20261012_211500.mp4', Math.round(48 * MB), { daysAgo: 8 }]]],

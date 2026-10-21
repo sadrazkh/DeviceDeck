@@ -12,7 +12,7 @@ internal static class BackupSamples
     public static readonly byte[] Jpeg = [0xFF, 0xD8, 0xFF, 0xE0, 0x00, 0x10, .. "JFIF"u8, 0x00, 1, 2, 3, 4, 5, 6, 7, 8, 0xFF, 0xD9];
     public static readonly byte[] Heic = [0x00, 0x00, 0x00, 0x18, .. "ftypheic"u8, 0, 0, 0, 0, .. "mif1heic"u8];
 
-    /// <summary>The usual content: contacts with a photo, three conversations with attachments, an app with documents.</summary>
+    /// <summary>The usual content: contacts with a photo, three conversations with attachments, an app with documents, WhatsApp's chats (WhatsAppSamples).</summary>
     public static BackupFixtureBuilder AddStandardContent(this BackupFixtureBuilder b)
     {
         b.AppNames["net.whatsapp.WhatsApp"] = "WhatsApp";
@@ -30,7 +30,7 @@ internal static class BackupSamples
             .Dir("AppDomain-net.whatsapp.WhatsApp", "Documents")
             .Text("AppDomain-net.whatsapp.WhatsApp", "Documents/notes.txt", "hello from whatsapp")
             .Text("AppDomain-net.whatsapp.WhatsApp", "Documents/Sub folder/deep.txt", "deep")
-            .Text("AppDomainGroup-group.net.whatsapp.WhatsApp.shared", "ChatStorage.sqlite", "chat storage")
+            .AddWhatsApp()
             .Text("AppDomainPlugin-net.whatsapp.WhatsApp.Intents", "Library/Preferences/x.plist", "plugin")
             .Text("AppDomain-com.apple.Pages", "Documents/Report.pages", "pages");
     }

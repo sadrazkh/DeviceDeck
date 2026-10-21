@@ -44,6 +44,7 @@ import { TransferEngine, type JobItem } from './transfers';
 import { MockToolbox } from './toolbox';
 import { MockLocalSend, type MockLocalSendScenario } from './localSend';
 import { MockUpdates, type MockNotesScenario, type MockUpdateScenario } from './updates';
+import { MockWhatsApp } from './whatsApp';
 
 export type MockScenario = 'ready' | 'empty' | 'trust' | 'limited' | 'driverMissing' | 'iphoneOnly';
 
@@ -352,6 +353,19 @@ export class MockBackend {
     badParams: (message) => badParams(message),
   });
 
+  /** WhatsApp (round 4): ./whatsApp.ts; its handlers end the table below. */
+  private readonly whatsApp = new MockWhatsApp({
+    backups: () => this.backups.handlers['backup.list']({}),
+    startExport: (backup, title, destination, files, bytes, ms) => this.backups.startExport(backup, title, destination, files, bytes, ms),
+    requireReady: (deviceId, capability) => this.requireReady(deviceId, capability),
+    fs: (deviceId) => this.fs(deviceId),
+    apps: (deviceId) => this.appLists.get(deviceId) ?? [],
+    addJob: (spec) => this.engine.add(spec),
+    now: () => this.now(),
+    fault: (code, message) => fault(code, message),
+    badParams: (message) => badParams(message),
+  });
+
   readonly handlers: { [M in MethodName]: Handler<M> } = {
     ...this.backups.handlers,
     'app.hello': () => ({ version: this.updates.version, isWebView: false }),
@@ -637,6 +651,7 @@ export class MockBackend {
     ...this.toolbox.handlers,
     ...this.localSend.handlers,
     ...this.updates.handlers,
+    ...this.whatsApp.handlers,
   };
 
   private pcCall<T>(run: () => T): T {

@@ -177,6 +177,8 @@ internal static class FakeBackupContent
             }
         }
 
+        // WhatsApp's chats (round 4), when the fake phone has WhatsApp.
+        files.AddRange(WhatsApp.FakeWhatsAppBackup.For(device, Base));
         return files;
     }
 

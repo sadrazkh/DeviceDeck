@@ -55,6 +55,7 @@ const SPEED: Record<TransferKind, number> = {
   photosBackup: 36 * MB,
   photosToApp: 32 * MB,
   localSend: 28 * MB,
+  whatsAppMedia: 36 * MB, // round 4
 };
 
 export class TransferEngine {

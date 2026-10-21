@@ -258,6 +258,9 @@ public static class BridgeMethods
         // Photos into Photos with LocalSend (round 3).
         LocalSend.LocalSendMethods.Register(rpc, s);
 
+        // WhatsApp (round 4).
+        WhatsAppMethods.Register(rpc, s);
+
         return rpc;
     }
 

@@ -7,6 +7,7 @@ import { backupFa } from './backup';
 import { localSendFa } from './localSend';
 import { photoBackupFa } from '../screens/photos/backupStrings';
 import { updatesFa } from '../shell/updateStrings';
+import { whatsAppFa } from '../screens/contacts/whatsAppStrings';
 import type { MessageKey } from './en';
 
 export const fa: Record<MessageKey, string> = {
@@ -616,4 +617,6 @@ export const fa: Record<MessageKey, string> = {
   ...photoBackupFa,
   // Updates you can see (round 4)
   ...updatesFa,
+  // WhatsApp (round 4)
+  ...whatsAppFa,
 };

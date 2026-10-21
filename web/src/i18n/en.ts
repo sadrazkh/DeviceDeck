@@ -7,6 +7,7 @@ import { backupEn } from './backup';
 import { localSendEn } from './localSend';
 import { photoBackupEn } from '../screens/photos/backupStrings';
 import { updatesEn } from '../shell/updateStrings';
+import { whatsAppEn } from '../screens/contacts/whatsAppStrings';
 
 export const en = {
   'app.name': 'DeviceDeck',
@@ -632,6 +633,8 @@ export const en = {
   ...photoBackupEn,
   // Updates you can see (round 4)
   ...updatesEn,
+  // WhatsApp (round 4)
+  ...whatsAppEn,
 } as const;
 
 export type MessageKey = keyof typeof en;
