@@ -24,6 +24,9 @@ internal static class Commands
                 return await LocalSendCommands.FindAsync(cli, ct);
             case "localsend-send":
                 return await LocalSendCommands.SendAsync(cli, ct);
+            // Round 4: WhatsApp in a backup on this PC (no phone needed; counts only).
+            case "whatsapp":
+                return await WhatsAppProbe.RunAsync(cli, ct);
         }
 
         if (!DeviceCommands.TryGetValue(cli.Command, out var spec))

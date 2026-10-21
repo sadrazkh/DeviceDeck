@@ -66,6 +66,12 @@ internal sealed class Cli
                                               send files the way "Add to iPhone" does: over USB, or Wi-Fi with
                                               --wifi / --ip; prints each phase and each file's result
 
+        WhatsApp (a backup on this PC; no phone needed; counts and column names only, never a message or a name)
+          whatsapp <backup folder> [--password-env NAME]
+                                              what DeviceDeck reads of WhatsApp there: chats, messages, media found,
+                                              missing columns, WhatsApp's type numbers; NAME holds an encrypted
+                                              backup's password
+
         Power
           reboot --yes                        restart the phone
           shutdown --yes                      shut the phone down

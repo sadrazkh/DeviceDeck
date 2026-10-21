@@ -550,6 +550,18 @@ export class MockBackups {
   private iso(): string {
     return new Date(this.ctx.now()).toISOString();
   }
+
+  // ---------- round 4 (whatsapp session) ----------
+
+  /** Runs another feature's export of this backup as a backup job, like messages.export (./whatsApp.ts). */
+  startExport(backup: BackupInfo, title: string, destination: string, files: number, bytes: number, ms: number): BackupJob {
+    const job = this.newJob('export', null, title, backup.deviceName);
+    job.backupId = backup.id;
+    job.destination = destination;
+    job.totalFiles = files;
+    this.start(job, bytes, files, [{ phase: 'transferring', ms }], (j) => this.complete(j));
+    return { ...job };
+  }
 }
 
 function stamp(date: Date): string {

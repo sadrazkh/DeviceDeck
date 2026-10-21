@@ -119,13 +119,14 @@ function Thread({ backup, conversation }: { backup: BackupInfo; conversation: Co
   // Pages asked for so far: development mode runs the first effect twice, and a page must land once.
   const requested = useRef(new Set<number>());
 
-  const load = async (from: number) => {
+  // `limit` stops at the page already shown, so the first page of a long thread isn't read twice.
+  const load = async (from: number, limit = PAGE) => {
     if (requested.current.has(from)) return;
     requested.current.add(from);
     setLoading(true);
     setError(null);
     try {
-      const page = await client.call('messages.list', { backupId: backup.id, conversationId: conversation.id, offset: from, limit: PAGE });
+      const page = await client.call('messages.list', { backupId: backup.id, conversationId: conversation.id, offset: from, limit });
       setMessages((m) => [...page.items, ...m]);
       setOffset(from);
     } catch (e) {
@@ -160,7 +161,8 @@ function Thread({ backup, conversation }: { backup: BackupInfo; conversation: Co
     if (offset === null || offset === 0 || loading) return;
     const el = scroller.current;
     keepBottom.current = el ? el.scrollHeight - el.scrollTop : null;
-    void load(Math.max(0, offset - PAGE));
+    const from = Math.max(0, offset - PAGE);
+    void load(from, offset - from);
   };
 
   let lastDay = '';

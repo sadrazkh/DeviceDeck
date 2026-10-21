@@ -205,7 +205,9 @@ export type TransferKind =
   | 'photosBackup'
   | 'photosToApp'
   /** Round 3: PC photos to the LocalSend app on the phone, which saves them into Photos. */
-  | 'localSend';
+  | 'localSend'
+  /** Round 4: WhatsApp's media and encrypted backups copied off an Android phone. */
+  | 'whatsAppMedia';
 
 export type TransferState =
   | 'queued'
@@ -506,3 +508,5 @@ export interface PhotoBackupSpace {
 
 // Backup, contacts and messages (round 2).
 export * from './backupTypes';
+// WhatsApp (round 4).
+export * from './whatsApp';

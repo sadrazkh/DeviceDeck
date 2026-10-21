@@ -61,6 +61,7 @@ import type {
   WirelessResult,
 } from './toolbox';
 import type { LocalSendDiscovery, LocalSendJobStatus, LocalSendTarget, PhotosToAppStarted } from './localSend';
+import type { WhatsAppAndroidInfo, WhatsAppChat, WhatsAppMessage, WhatsAppStatus } from './whatsApp';
 
 type DeviceParams = { deviceId: string };
 
@@ -267,6 +268,16 @@ export interface BridgeMethods {
   'localsend.job': { params: { jobId: string }; result: LocalSendJobStatus };
   // Photo backup (round 3)
   'photos.backupSpace': { params: { folder: string }; result: PhotoBackupSpace };
+  // WhatsApp (round 4)
+  'whatsapp.status': { params: { backupId: string }; result: WhatsAppStatus };
+  'whatsapp.chats': { params: { backupId: string }; result: WhatsAppChat[] };
+  'whatsapp.messages': { params: { backupId: string; chatId: string; offset: number; limit: number }; result: Page<WhatsAppMessage> };
+  'whatsapp.thumbnail': { params: { backupId: string; mediaId: string; size?: number }; result: { dataUrl: string | null } };
+  'whatsapp.media': { params: { backupId: string; mediaId: string }; result: { dataUrl: string; mimeType: string; size: number } };
+  'whatsapp.export': { params: { backupId: string; format: MessagesFormat; destination: string; chatIds?: string[] }; result: BackupJob };
+  'whatsapp.exportMedia': { params: { backupId: string; destination: string; chatIds?: string[] }; result: BackupJob };
+  'whatsapp.android': { params: DeviceParams; result: WhatsAppAndroidInfo };
+  'whatsapp.backupAndroid': { params: DeviceParams & { destination: string }; result: { jobId: string; folder: string } };
 }
 
 export type MethodName = keyof BridgeMethods;
@@ -406,6 +417,16 @@ const methodTable = {
   'localsend.job': true,
   // Photo backup (round 3)
   'photos.backupSpace': true,
+  // WhatsApp (round 4)
+  'whatsapp.status': true,
+  'whatsapp.chats': true,
+  'whatsapp.messages': true,
+  'whatsapp.thumbnail': true,
+  'whatsapp.media': true,
+  'whatsapp.export': true,
+  'whatsapp.exportMedia': true,
+  'whatsapp.android': true,
+  'whatsapp.backupAndroid': true,
 } as const satisfies Record<MethodName, true>;
 
 export const METHOD_NAMES = Object.keys(methodTable) as MethodName[];

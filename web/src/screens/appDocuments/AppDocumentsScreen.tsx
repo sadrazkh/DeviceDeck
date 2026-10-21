@@ -12,6 +12,7 @@ import { FileBrowser } from '../files/FileBrowser';
 import { ScreenLayout } from '../ScreenLayout';
 import { findFolder, isEmptyPlace, useAppFiles, type AppPlace } from './appFiles';
 import { AppGrid, folderLabel, PlaceIcon, placeLabel } from './AppGrid';
+import { MessengerGuide } from './MessengerGuide';
 import styles from './AppDocuments.module.css';
 
 /** Matches a place by its name or id, ignoring case. */
@@ -100,6 +101,7 @@ export function AppDocumentsScreen({ device }: { device: DeviceSummary }) {
       }
     >
       <div className={styles.page}>
+        <MessengerGuide device={device} />
         {appFiles.error ? (
           <ErrorBanner error={appFiles.error} onRetry={appFiles.refetch} />
         ) : appFiles.isPending ? (

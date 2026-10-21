@@ -1,0 +1,356 @@
+/* WhatsApp (round 4): the summary line, chat rows, media in the thread, and the Android cards. The list and thread
+   frames come from Contacts.module.css. */
+
+.wrap {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+.summaryText {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0 var(--space-3);
+  color: var(--color-text-secondary);
+  font-variant-numeric: var(--type-numeric);
+}
+
+.summaryText strong {
+  color: var(--color-text-primary);
+  font-weight: var(--type-strong-weight);
+}
+
+.summaryActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+}
+
+.details {
+  margin-top: var(--space-1);
+}
+
+.details summary {
+  cursor: pointer;
+  color: var(--color-text-secondary);
+}
+
+.details code {
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-size: var(--type-caption-size);
+}
+
+.titleText {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.badge {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: var(--color-surface-subtle);
+  color: var(--color-text-secondary);
+  font-size: var(--type-micro-size);
+  font-weight: var(--type-strong-weight);
+  line-height: 18px;
+}
+
+.counts {
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  font-variant-numeric: var(--type-numeric);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.headActions {
+  display: flex;
+  flex: none;
+  gap: var(--space-2);
+}
+
+.ltr {
+  direction: ltr;
+  unicode-bidi: isolate;
+}
+
+/* ---------- in the thread ---------- */
+
+.quote {
+  display: flex;
+  flex-direction: column;
+  max-width: 100%;
+  margin: 2px 0 var(--space-1);
+  padding: 4px 8px;
+  border-inline-start: 3px solid currentColor;
+  border-radius: 6px;
+  background: color-mix(in srgb, currentColor 10%, transparent);
+  font-size: var(--type-caption-size);
+  white-space: normal;
+}
+
+.quoteFrom {
+  font-weight: var(--type-strong-weight);
+}
+
+.quoteText {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.tile {
+  position: relative;
+  display: grid;
+  place-items: center;
+  /* A definite width: the bubble sizes itself to its content, and a percentage of that would collapse the tile. */
+  width: 240px;
+  max-width: 100%;
+  aspect-ratio: 4 / 3;
+  margin: 2px 0 var(--space-1);
+  border-radius: 12px;
+  overflow: hidden;
+  background: color-mix(in srgb, currentColor 8%, transparent);
+  white-space: normal;
+}
+
+.tile img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.sticker {
+  width: 128px;
+  aspect-ratio: 1;
+  background: none;
+}
+
+.sticker img {
+  object-fit: contain;
+}
+
+.tileEmpty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--space-1);
+  padding: var(--space-2);
+  text-align: center;
+  font-size: var(--type-caption-size);
+  opacity: 0.85;
+}
+
+.tileEmpty svg {
+  font-size: 28px;
+}
+
+.playBadge {
+  position: absolute;
+  inset-inline-start: 8px;
+  bottom: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: rgba(0, 0, 0, 0.62);
+  color: #fff;
+  font-size: var(--type-caption-size);
+  font-variant-numeric: var(--type-numeric);
+}
+
+.file {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 2px 0 var(--space-1);
+  font-size: var(--type-caption-size);
+  white-space: normal;
+}
+
+.file svg {
+  flex: none;
+  font-size: 20px;
+}
+
+.fileText {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.fileName {
+  overflow-wrap: anywhere;
+}
+
+.fileMeta {
+  opacity: 0.8;
+  font-variant-numeric: var(--type-numeric);
+}
+
+.voice {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin: 2px 0 var(--space-1);
+  white-space: normal;
+}
+
+.voice audio {
+  max-width: 100%;
+  height: 36px;
+}
+
+.note {
+  font-style: italic;
+  opacity: 0.85;
+}
+
+.missing {
+  opacity: 0.75;
+}
+
+.star {
+  vertical-align: -2px;
+  margin-inline-end: 2px;
+}
+
+/* ---------- Android ---------- */
+
+.android {
+  flex: 1;
+  min-height: 0;
+  overflow: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  padding-bottom: var(--space-4);
+}
+
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 440px), 1fr));
+  gap: var(--space-3);
+}
+
+.cardHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  margin-bottom: var(--space-3);
+}
+
+.appIcon {
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: 8px;
+}
+
+.cardTitle {
+  font-weight: var(--type-strong-weight);
+  font-size: var(--type-subtitle-size, 16px);
+}
+
+.facts {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  margin: 0;
+}
+
+.facts dt {
+  color: var(--color-text-secondary);
+}
+
+.facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-variant-numeric: var(--type-numeric);
+}
+
+.facts ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.facts li {
+  display: flex;
+  flex-wrap: wrap;
+  column-gap: var(--space-2);
+}
+
+.factMeta {
+  color: var(--color-text-secondary);
+}
+
+.path {
+  direction: ltr;
+  unicode-bidi: isolate;
+  font-family: var(--font-mono, ui-monospace, Consolas, monospace);
+  font-size: var(--type-caption-size);
+  overflow-wrap: anywhere;
+}
+
+.backupCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.backupRow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  font-variant-numeric: var(--type-numeric);
+}
+
+.group {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.groupLabel {
+  color: var(--color-text-secondary);
+  font-weight: var(--type-strong-weight);
+}
+
+.prose {
+  margin: 0;
+  color: var(--color-text-secondary);
+  max-width: 80ch;
+}

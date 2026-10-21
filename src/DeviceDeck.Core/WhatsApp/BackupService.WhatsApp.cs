@@ -18,6 +18,9 @@ public sealed partial class BackupService
     /// <summary>Pictures larger than this aren't read just to make a thumbnail.</summary>
     private const long MaxWhatsAppThumbnailSource = 40L * 1024 * 1024;
 
+    /// <summary>A database and its log are joined in one array; .NET arrays stop just short of 2 GB.</summary>
+    private const long MaxInMemoryDatabase = 1_900_000_000;
+
     /// <summary>Whether the backup holds WhatsApp (and WhatsApp Business), with counts, and what this version lacks.</summary>
     public async Task<WhatsAppStatus> GetWhatsAppStatusAsync(string backupId, CancellationToken ct)
     {
@@ -447,6 +450,13 @@ public sealed partial class BackupService
     }
 
     /// <summary>
+    /// For tools/IosProbe's read-only counts: one app's ChatStorage.sqlite in an opened backup, opened the way the app
+    /// opens it (with its log folded in). Null when the backup doesn't hold it.
+    /// </summary>
+    public static Task<SqliteImage?> OpenWhatsAppDatabaseAsync(IBackupArchive archive, WhatsAppAccount account, CancellationToken ct) =>
+        OpenWithLogAsync(archive, account == WhatsAppAccount.Business ? WhatsAppStore.BusinessDomain : WhatsAppStore.WhatsAppDomain, WhatsAppStore.DatabasePath, ct);
+
+    /// <summary>
     /// A database with its write-ahead log when the backup holds one ("-wal" next to it): the newest messages may be only
     /// there. The two are joined in memory; without a log the database opens as contacts and messages do.
     /// </summary>
@@ -457,7 +467,8 @@ public sealed partial class BackupService
             return null;
         }
 
-        if (archive.Find(domain, path + "-wal") is not { IsDirectory: false, Size: > 32 } log)
+        // A database too big for one array in memory opens as it is, without its log's newest pages.
+        if (archive.Find(domain, path + "-wal") is not { IsDirectory: false, Size: > 32 } log || entry.Size + log.Size > MaxInMemoryDatabase)
         {
             return await OpenDatabaseAsync(archive, domain, path, ct).ConfigureAwait(false);
         }
