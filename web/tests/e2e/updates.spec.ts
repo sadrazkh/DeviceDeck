@@ -241,11 +241,14 @@ for (const [width, height] of SIZES) {
         if (contrast) expect(await contrastProblems(page), `${what} contrast at ${width}×${height} (${variant})`).toEqual([]);
       };
 
-      // The title bar in each state that shows something, with the banner under it.
+      // The title bar in each state that shows something, with the banner under it; the sample queue's copies make the
+      // Transfers pill as wide as it gets. Nothing may push the page sideways.
       for (const update of ['ready', 'portableNew', 'downloading']) {
-        await page.goto(query(variant, { update, queue: '0' }));
+        await page.goto(query(variant, { update }));
         await expect(page.getByTestId(update === 'downloading' ? 'update-downloading' : 'update-button')).toBeVisible();
+        await expect(page.getByTestId('transfer-pill')).toHaveAttribute('data-active', 'true');
         await check(`title bar (${update})`, 'header');
+        expect(await page.evaluate(() => document.documentElement.scrollWidth - document.documentElement.clientWidth), `title bar (${update}) width`).toBe(0);
         if (update !== 'downloading') {
           await expect(page.getByTestId('update-banner')).toBeVisible();
           expect(await layoutProblems(page, '[data-testid=update-banner]'), `banner (${update})`).toEqual([]);
@@ -258,6 +261,7 @@ for (const [width, height] of SIZES) {
         await page.getByTestId('update-button').click();
         await expect(page.getByRole('dialog').getByTestId('release-notes')).toBeVisible();
         await check(`What’s new (${update})`, '[role=dialog]');
+        if (width === 1024) await shot(page, `updates-dialog-${update}-${variant}-1024`);
       }
 
       // Settings › Updates in its states.

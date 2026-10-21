@@ -31,8 +31,9 @@ export interface Host {
  * Starts DeviceDeck with the page from this worktree's dev server and DevTools on CDP_PORT.
  * `providers`: DEVICEDECK_PROVIDERS ("fake" for the sample phones, "ios" for the owner's iPhone).
  * `data`: its own data folder (settings, logs), never the owner's.
+ * `env`: more environment for this check (round 4: DEVICEDECK_UPDATE_FEED, DEVICEDECK_WHATSNEW).
  */
-export async function launch(options: { providers: string; data: string }): Promise<Host> {
+export async function launch(options: { providers: string; data: string; env?: Record<string, string> }): Promise<Host> {
   if (!existsSync(EXE)) throw new Error(`${EXE} is missing: run "dotnet build DeviceDeck.slnx" first.`);
   if (running()) throw new Error('DeviceDeck is already running. It is left alone: close it yourself, then run this again.');
 
@@ -46,6 +47,7 @@ export async function launch(options: { providers: string; data: string }): Prom
       DEVICEDECK_PROVIDERS: options.providers,
       DEVICEDECK_DATA: options.data,
       WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${CDP_PORT}`,
+      ...options.env,
     },
   });
   child.unref();

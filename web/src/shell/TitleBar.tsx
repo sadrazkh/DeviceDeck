@@ -50,7 +50,7 @@ export function TitleBar() {
       />
 
       <div className={styles.titleSpacer} />
-      <button type="button" className={`${styles.search} no-drag`} onClick={() => openPalette(true)} aria-keyshortcuts="Control+K">
+      <button type="button" className={`${styles.search} no-drag`} onClick={() => openPalette(true)} aria-keyshortcuts="Control+K" title={t('shell.search')}>
         <span className={styles.searchIcon} aria-hidden>
           <SearchRegular />
         </span>

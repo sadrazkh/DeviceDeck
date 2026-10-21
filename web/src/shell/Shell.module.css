@@ -135,6 +135,8 @@
   align-items: center;
   gap: var(--space-2);
   width: min(360px, 32vw);
+  /* It gives way first when the title bar is full (round 4: the update button, Persian, 1024 px). */
+  min-width: 160px;
   height: var(--control-height);
   padding: 0 var(--space-3);
   border-radius: var(--radius-control);

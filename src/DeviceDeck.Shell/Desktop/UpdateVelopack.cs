@@ -13,11 +13,15 @@ internal sealed class VelopackUpdateEngine : IUpdateEngine
 {
     private readonly UpdateManager? _manager;
 
-    public VelopackUpdateEngine(bool prerelease)
+    /// <param name="source">Instead of GitHub Releases, a folder or web address with vpk pack's output (DEVICEDECK_UPDATE_SOURCE):
+    /// to try a whole update on a test install without publishing anything.</param>
+    public VelopackUpdateEngine(bool prerelease, string? source = null)
     {
         try
         {
-            var manager = new UpdateManager(new GithubSource(ReleaseLinks.Repository, null, prerelease));
+            var manager = string.IsNullOrWhiteSpace(source)
+                ? new UpdateManager(new GithubSource(ReleaseLinks.Repository, null, prerelease))
+                : new UpdateManager(source, null, null);
             if (manager.IsInstalled)
             {
                 _manager = manager;
@@ -67,6 +71,7 @@ internal static class UpdateSetup
     /// before. Environment: DEVICEDECK_UPDATE_FEED=off (no automatic checks) or a URL in place of GitHub's API for the
     /// repository (a test server; checks then run in a dev build too); DEVICEDECK_WHATSNEW=1 (show "What's new" now) or 0.
     /// A dev build (DEVICEDECK_DEV) checks only when asked and never opens "What's new" by itself.
+    /// DEVICEDECK_UPDATE_SOURCE: a Setup copy updates from that folder or address (vpk pack's output) instead of GitHub Releases.
     /// </summary>
     public static UpdateService Create(HostServices host, INotificationService notifications, Action quit)
     {
@@ -89,7 +94,13 @@ internal static class UpdateSetup
             ShellLog.Info($"Release feed: {custom}.");
         }
 
-        return new UpdateService(version, host.Settings, notifications, quit, new VelopackUpdateEngine(prerelease: version.Contains('-')), feed,
+        var source = Environment.GetEnvironmentVariable("DEVICEDECK_UPDATE_SOURCE");
+        if (!string.IsNullOrWhiteSpace(source))
+        {
+            ShellLog.Info($"Velopack updates from {source} instead of GitHub Releases.");
+        }
+
+        return new UpdateService(version, host.Settings, notifications, quit, new VelopackUpdateEngine(prerelease: version.Contains('-'), source), feed,
             new UpdateHistory(Path.Combine(folder, "state.json")), new UpdateServiceOptions
             {
                 AutomaticChecks = automatic,
