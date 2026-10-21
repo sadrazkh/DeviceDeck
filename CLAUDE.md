@@ -2,18 +2,18 @@
 
 Windows 11 app that manages an iPhone and an Android phone (photos, files, app documents, apps, backups, tools).
 Plan and design brief: https://claude.ai/code/artifact/e6bbc0f8-d924-42c0-86a0-f7f6ae279bfd (tabs "Design brief" and "Build plan").
-v0.2.0 is released (tag `v0.2.0`); round 3 builds v0.3.0.
+v0.3.0 is released (tag `v0.3.0`); round 4 builds v0.4.0.
 
-## Round 3: three parallel sessions
+## Round 4: three parallel sessions
 
 Every session works in its own worktree on its own branch, cut from `main`. Each owns a feature end to end
 (provider code, core, bridge, UI), so files overlap at the edges. The rules that keep merges small:
 
 | Session | Feature | Its own files |
 | --- | --- | --- |
-| ui | file browser toolbar and breadcrumbs that never overlap (Files and App documents, every width, Persian); drop from Explorer proven end to end, with visible drop hints; App documents and Files in the layout test | `web/src/screens/files/**`, `web/src/screens/appDocuments/**`, `web/src/components/DropZone.tsx`, `web/tests/e2e/layout*.ts`, drop handling in `src/DeviceDeck.Shell/**` |
-| backup | photo backup that starts by itself when a phone connects (when the user turns that on), a "from date" range, faster downloads, a free-space check, edited iPhone photos | `*/Photo*Backup*`, the iOS photo library and AFC code, `src/DeviceDeck.Core/Transfers/TransferQueue.cs` (speed only), `web/src/screens/photos/BackupPanel.tsx`, `PhotosBackupSettings.tsx`, `tools/PhotoBench/**` |
-| localsend | photos straight into the iPhone's Photos app through the LocalSend app (over the USB cable via usbmux, or Wi-Fi); a better "save them all" path without LocalSend | new `*/LocalSend/**`, `web/src/screens/photos/ImportToAppDialog.tsx` and new dialog files, `PhotosToAppHandler.cs` |
+| updates | updates you can see: an "update ready" button in the title bar, a "What's new" dialog with the release notes, a GitHub check for the portable zip, a fuller Settings card | `src/DeviceDeck.Shell/Desktop/Update*`, the update block of `DesktopMethods.cs`, `web/src/shell/**`, new `*/WhatsNew*` / `*/ReleaseNotes*` files |
+| whatsapp | WhatsApp chats and media from an iPhone backup (read, export to HTML/PDF), copying WhatsApp's media off Android, a Telegram/WhatsApp guide card in App documents on an iPhone | new `*/WhatsApp/**`, `web/src/screens/contacts/**`, a new guide component under `web/src/screens/appDocuments/` (plus one line to show it) |
+| photodelete | deleting photos from an iPhone the way File Explorer does (Windows Portable Devices / PTP), in Photos and Clean-up, always confirmed; an explanation where it can't | new `*/Wpd/**` or `*/PhotoDelete*/**`, `src/DeviceDeck.Ios/Device/LockdownMapping.cs` (capability), `IosPhotoLibrary.DeleteAsync`, the delete parts of `web/src/screens/photos/PhotosScreen.tsx`, the media and duplicates parts of `web/src/screens/cleanup/Sections.tsx`, `StorageAnalyzer.CanDeleteMedia` |
 
 - **New capabilities = new files.** Add a new optional interface in its own file under `src/DeviceDeck.Core/Abstractions/`
   that a device may also implement, instead of adding members to `IDevice`.
@@ -21,9 +21,10 @@ Every session works in its own worktree on its own branch, cut from `main`. Each
   `web/src/bridge/methods.ts`, `web/src/bridge/client.ts` (NO_TIMEOUT), the mock backend, `web/src/i18n/*`, Settings,
   `TransferModels.cs` (new job kinds at the end), `HostServices.cs`, `BridgeServices.cs`, `tests/**/TestHost.cs`.
   One self-contained block per feature at the end, so the coordinator can merge them; never reformat or reorder someone else's part.
-- `web/src/screens/photos/backupQueries.ts` is shared by backup and localsend: each edits only its own functions.
 - `DeviceDeck.slnx`: only add a project if you really need a new one, and say so in your report.
-- Ports this round: Playwright `PW_PORT` ui 5201, backup 5202, localsend 5203; DevTools ports 9361, 9362, 9363.
+- Ports this round: Playwright `PW_PORT` updates 5221, whatsapp 5222, photodelete 5223; DevTools ports 9371, 9372, 9373.
+- Tests never call the internet (GitHub included): fake the release feed. A single manual read-only call to GitHub's API to
+  check a response shape is fine.
 
 ## Conventions
 
@@ -41,10 +42,11 @@ Every session works in its own worktree on its own branch, cut from `main`. Each
 - **No phone until the final phase.** The owner connects his iPhone only at the end of the round, after the merge.
   Build and test everything with the fake providers, fixtures and test servers. Whatever needs the real phone, write into
   your report as an exact checklist (commands, expected results); the coordinator runs it at the end.
-- In that final phase, on the owner's iPhone 16 (iOS 27): read-only checks are fine; the photo backup test copies
-  **only the last month of photos** into a folder under `E:\DeviceDeck-test\`, never the whole library; LocalSend may send
-  **3 generated, clearly labelled test images** into Photos (the owner deletes them himself). Never install, uninstall,
-  reboot, restore or run a full iPhone backup on it, and never delete his photos or files.
+- In that final phase, on the owner's iPhone 16 (iOS 27): read-only checks are fine. The only photos that may be deleted are
+  the **3 test images "DeviceDeck test 1/3, 2/3, 3/3"** already in his Photos (copies in `E:\DeviceDeck-test\localsend\`), and
+  only after the owner says yes at that moment. A full iPhone backup (for WhatsApp) only with his separate yes, into
+  `E:\DeviceDeck-test\`. Never install, uninstall, reboot or restore, never delete any other photo or file, and never print
+  or log the text of his chats (counts and shapes only).
 - The PC's C: drive has little free space (about 12 GB): never put photo copies, backups or other large test output there.
 - No Android phone: fixtures and the fake adb server.
 - Never move the mouse, type into his desktop, or capture the screen. Check the running app through the WebView2 DevTools port
