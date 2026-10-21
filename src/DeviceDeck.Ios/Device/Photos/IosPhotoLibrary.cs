@@ -432,11 +432,12 @@ public sealed partial class IosPhotoLibrary(IosDevice device, string cacheDirect
 
     private static bool NeedsStat(PhotoAsset a) => !a.InCloudOnly && (a.Size == 0 || a.TakenAt is null);
 
-    /// <summary>Asset ids are DCIM paths; anything else (or anything climbing out) is refused.</summary>
+    /// <summary>Asset ids are DCIM paths (and, for a backup of edits, the rendered files under PhotoData/Mutations/DCIM); anything else, or anything climbing out, is refused.</summary>
     private static DeviceException? TryValidateId(string assetId, out string id)
     {
         id = (assetId ?? "").Replace('\\', '/').TrimStart('/');
-        if (!id.StartsWith("DCIM/", StringComparison.OrdinalIgnoreCase) || id.Split('/').Any(p => p is ".." or "." or ""))
+        var photo = id.StartsWith("DCIM/", StringComparison.OrdinalIgnoreCase) || id.StartsWith(MutationsRoot + "DCIM/", StringComparison.OrdinalIgnoreCase);
+        if (!photo || id.Split('/').Any(p => p is ".." or "." or ""))
             return new DeviceException(DeviceErrorCodes.NotFound, $"'{assetId}' is not a photo on this iPhone.");
         return null;
     }

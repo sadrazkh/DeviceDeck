@@ -170,8 +170,34 @@ internal sealed class PhotosTestPhone : IDevice
 }
 
 /// <summary>The phone's photos. Content is made from the asset id unless given, so equal ids give equal bytes.</summary>
-internal sealed class PhotosTestLibrary(PhotosTestPhone phone) : IPhotoLibrary, IPhotoBackupSource
+internal sealed class PhotosTestLibrary(PhotosTestPhone phone) : IPhotoLibrary, IPhotoBackupSource, IPhotoRangeReader
 {
+    /// <summary>Part reads (the backup's sample check), apart from whole reads in <see cref="Reads"/>.</summary>
+    public int RangeReads { get; private set; }
+
+    /// <summary>False: a phone that can't read part of a file (the backup copies before comparing).</summary>
+    public bool CanReadRanges { get; set; } = true;
+
+    public Task<byte[]> ReadRangeAsync(string assetId, long offset, int count, CancellationToken ct)
+    {
+        phone.EnsureConnected();
+        if (!CanReadRanges)
+        {
+            throw new DeviceException(DeviceErrorCodes.NotSupported, "n/a");
+        }
+
+        lock (_gate)
+        {
+            RangeReads++;
+            if (!_files.TryGetValue(assetId, out var bytes))
+            {
+                throw new DeviceException(DeviceErrorCodes.PathNotFound, "That photo isn't on the phone any more.");
+            }
+
+            return Task.FromResult(bytes.AsSpan((int)Math.Min(offset, bytes.Length), (int)Math.Min(count, Math.Max(0, bytes.Length - offset))).ToArray());
+        }
+    }
+
     private readonly Lock _gate = new();
     private readonly List<PhotoBackupAsset> _assets = [];
     private readonly Dictionary<string, byte[]> _files = new(StringComparer.Ordinal);
@@ -277,8 +303,40 @@ internal sealed class PhotosTestLibrary(PhotosTestPhone phone) : IPhotoLibrary, 
         CompleteCalls++;
         lock (_gate)
         {
-            IReadOnlyList<PhotoBackupAsset> list = assets.Select(a => _assets.First(x => x.AssetId == a.AssetId)).ToList();
+            IReadOnlyList<PhotoBackupAsset> list = assets.Select(a =>
+            {
+                var stored = _assets.First(x => x.AssetId == a.AssetId);
+                // As on an iPhone: the edited version is looked up only for a photo asked about with its edit.
+                var edit = a.Edited is null ? null
+                    : _edits.TryGetValue(a.AssetId, out var e) && e.Render is not null
+                        ? new PhotoBackupEdit(e.Stamp, EditId(a.AssetId, e.Stamp), e.RenderName, e.Render.Length)
+                        : stored.Edited;
+                return stored with { Edited = edit };
+            }).ToList();
             return Task.FromResult(list);
+        }
+    }
+
+    private readonly Dictionary<string, (string Stamp, byte[]? Render, string RenderName)> _edits = new(StringComparer.Ordinal);
+
+    private static string EditId(string assetId, string stamp) => assetId + "#edit-" + stamp;
+
+    /// <summary>
+    /// Edits a photo on the phone: Photos.sqlite says so with a new <paramref name="stamp"/>, and the rendered version has
+    /// <paramref name="render"/> (null: the phone has none where Photos keeps them).
+    /// </summary>
+    public void Edit(PhotoBackupAsset asset, string stamp, byte[]? render, string renderName = "FullSizeRender.heic")
+    {
+        lock (_gate)
+        {
+            _edits[asset.AssetId] = (stamp, render, renderName);
+            if (render is not null)
+            {
+                _files[EditId(asset.AssetId, stamp)] = render;
+            }
+
+            var i = _assets.FindIndex(a => a.AssetId == asset.AssetId);
+            _assets[i] = _assets[i] with { Edited = new PhotoBackupEdit(stamp) };
         }
     }
 

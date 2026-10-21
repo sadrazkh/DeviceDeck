@@ -5,6 +5,8 @@ using Microsoft.Data.Sqlite;
 namespace DeviceDeck.Core.Photos;
 
 /// <summary>One photo the PC holds a copy of. <see cref="PcPath"/> is the still (or the video); <see cref="MotionPcPath"/> a Live Photo's video.</summary>
+/// <param name="EditStamp">The phone's edit the PC has the edited version of (or looked for, when <paramref name="EditPcPath"/> is null).</param>
+/// <param name="EditPcPath">"IMG_1234 (edited).jpg" next to the still.</param>
 public sealed record PhotoBackupRecord(
     string Key,
     string? SourcePath,
@@ -15,7 +17,9 @@ public sealed record PhotoBackupRecord(
     string? MotionPcPath,
     bool Duplicate,
     string? JobId,
-    DateTimeOffset BackedUpAt);
+    DateTimeOffset BackedUpAt,
+    string? EditStamp = null,
+    string? EditPcPath = null);
 
 /// <summary>
 /// Ledger writes a running backup gathers and saves together (<see cref="PhotoBackupLedger.Save"/>): one transaction
@@ -25,23 +29,30 @@ public sealed class PhotoBackupLedgerBatch
 {
     internal List<(string DeviceId, PhotoBackupRecord Record)> Records { get; } = [];
 
-    internal Dictionary<string, (int Copied, int Duplicates, long Bytes, int KeptHeic)> Runs { get; } = new(StringComparer.Ordinal);
+    internal Dictionary<string, (int Copied, int Duplicates, long Bytes, int KeptHeic, int Edited, int EditsMissing)> Runs { get; } = new(StringComparer.Ordinal);
 
-    internal Dictionary<string, (long Size, long Modified, byte[] Sha256)> Hashes { get; } = new(StringComparer.OrdinalIgnoreCase);
+    internal List<(string DeviceId, string Key, string Stamp, string? PcPath)> Edits { get; } = [];
 
-    public bool IsEmpty => Records.Count == 0 && Runs.Count == 0 && Hashes.Count == 0;
+    internal Dictionary<string, (long Size, long Modified, byte[] Sha256, long? OriginSize, byte[]? OriginSample)> Hashes { get; } = new(StringComparer.OrdinalIgnoreCase);
 
-    public int Count => Records.Count + Runs.Count + Hashes.Count;
+    public bool IsEmpty => Records.Count == 0 && Runs.Count == 0 && Hashes.Count == 0 && Edits.Count == 0;
+
+    public int Count => Records.Count + Runs.Count + Hashes.Count + Edits.Count;
 
     public void Record(string deviceId, PhotoBackupRecord record) => Records.Add((deviceId, record));
 
-    public void AddToRun(string jobId, int copied, int duplicates, long bytes, int keptHeic)
+    /// <summary>The edit a photo already in the ledger now has a copy of (or was looked for: <paramref name="pcPath"/> null).</summary>
+    public void RecordEdit(string deviceId, string key, string stamp, string? pcPath) => Edits.Add((deviceId, key, stamp, pcPath));
+
+    public void AddToRun(string jobId, int copied, int duplicates, long bytes, int keptHeic, int edited = 0, int editsMissing = 0)
     {
-        var (c, d, b, h) = Runs.GetValueOrDefault(jobId);
-        Runs[jobId] = (c + copied, d + duplicates, b + bytes, h + keptHeic);
+        var (c, d, b, h, e, m) = Runs.GetValueOrDefault(jobId);
+        Runs[jobId] = (c + copied, d + duplicates, b + bytes, h + keptHeic, e + edited, m + editsMissing);
     }
 
-    public void PutHash(string path, long size, long modifiedTicks, byte[] sha256) => Hashes[path] = (size, modifiedTicks, sha256);
+    /// <param name="originSize">For a JPEG made from a HEIC: the HEIC's size and sample, so the JPEG is found again without converting.</param>
+    public void PutHash(string path, long size, long modifiedTicks, byte[] sha256, long? originSize = null, byte[]? originSample = null) =>
+        Hashes[path] = (size, modifiedTicks, sha256, originSize, originSample);
 }
 
 /// <summary>A phone's own backup options; a null field falls back to Settings (the range: to everything).</summary>
@@ -50,7 +61,8 @@ public sealed record PhotoBackupOwnOptions(
     string? Pattern = null,
     bool? ConvertHeic = null,
     bool? IncludeHidden = null,
-    PhotoBackupRange? Range = null);
+    PhotoBackupRange? Range = null,
+    bool? SaveEdited = null);
 
 /// <summary>
 /// What a phone's backups already hold, for telling new photos from old ones without touching the PC's disk. A photo is
@@ -63,12 +75,17 @@ public sealed class PhotoBackupKnownSet
     private readonly HashSet<string> _keys = new(StringComparer.Ordinal);
     private readonly Dictionary<string, long> _paths = new(StringComparer.OrdinalIgnoreCase);
     private readonly HashSet<(string Name, long Size, long Taken)> _fingerprints = [];
+    private readonly Dictionary<string, (string PcPath, string? EditStamp, string? EditPcPath)> _byKey = new(StringComparer.Ordinal);
 
     public int Count => _keys.Count;
 
-    internal void Add(string key, string? sourcePath, string fileName, long size, long? taken)
+    /// <summary>Where the PC has the photo with this key and which edit of it, when the ledger knows it by its key.</summary>
+    public bool TryGetCopy(string key, out (string PcPath, string? EditStamp, string? EditPcPath) copy) => _byKey.TryGetValue(key, out copy);
+
+    internal void Add(string key, string? sourcePath, string fileName, long size, long? taken, string pcPath, string? editStamp, string? editPcPath)
     {
         _keys.Add(key);
+        _byKey[key] = (pcPath, editStamp, editPcPath);
         if (sourcePath is not null)
         {
             _paths[sourcePath] = size;
@@ -140,7 +157,11 @@ public sealed class PhotoBackupLedger : IDisposable
         using var tx = _db.BeginTransaction();
         AddMissingColumns(tx, "devices", ("range_kind", "TEXT NULL"), ("range_days", "INTEGER NULL"), ("range_since", "TEXT NULL"),
             ("on_connect", "TEXT NULL"));
-        AddMissingColumns(tx, "runs", ("started_by", "TEXT NULL"));
+        AddMissingColumns(tx, "runs", ("started_by", "TEXT NULL"), ("edited", "INTEGER NOT NULL DEFAULT 0"), ("edits_missing", "INTEGER NOT NULL DEFAULT 0"));
+        AddMissingColumns(tx, "assets", ("edit_stamp", "TEXT NULL"), ("edit_pc_path", "TEXT NULL"));
+        AddMissingColumns(tx, "devices", ("save_edited", "INTEGER NULL"));
+        AddMissingColumns(tx, "pc_hashes", ("origin_size", "INTEGER NULL"), ("origin_sample", "BLOB NULL"));
+        Execute("CREATE INDEX IF NOT EXISTS pc_hashes_origin ON pc_hashes (origin_size) WHERE origin_size IS NOT NULL;", tx);
         Execute($"PRAGMA user_version = {SchemaVersion};", tx);
         tx.Commit();
     }
@@ -225,7 +246,7 @@ public sealed class PhotoBackupLedger : IDisposable
         lock (_gate)
         {
             using var cmd = Command("""
-                SELECT destination, pattern, convert_heic, include_hidden, range_kind, range_days, range_since FROM devices WHERE device_id = $d;
+                SELECT destination, pattern, convert_heic, include_hidden, range_kind, range_days, range_since, save_edited FROM devices WHERE device_id = $d;
                 """, ("$d", deviceId));
             using var r = cmd.ExecuteReader();
             if (!r.Read())
@@ -238,7 +259,8 @@ public sealed class PhotoBackupLedger : IDisposable
                 r.IsDBNull(1) ? null : r.GetString(1),
                 r.IsDBNull(2) ? null : r.GetInt64(2) != 0,
                 r.IsDBNull(3) ? null : r.GetInt64(3) != 0,
-                ReadRange(r, 4));
+                ReadRange(r, 4),
+                r.IsDBNull(7) ? null : r.GetInt64(7) != 0);
         }
     }
 
@@ -247,15 +269,16 @@ public sealed class PhotoBackupLedger : IDisposable
         lock (_gate)
         {
             using var cmd = Command("""
-                INSERT INTO devices (device_id, destination, pattern, convert_heic, include_hidden, range_kind, range_days, range_since)
-                VALUES ($d, $dest, $p, $c, $h, $rk, $rd, $rs)
+                INSERT INTO devices (device_id, destination, pattern, convert_heic, include_hidden, range_kind, range_days, range_since, save_edited)
+                VALUES ($d, $dest, $p, $c, $h, $rk, $rd, $rs, $se)
                 ON CONFLICT(device_id) DO UPDATE SET destination = excluded.destination, pattern = excluded.pattern,
                     convert_heic = excluded.convert_heic, include_hidden = excluded.include_hidden,
-                    range_kind = excluded.range_kind, range_days = excluded.range_days, range_since = excluded.range_since;
+                    range_kind = excluded.range_kind, range_days = excluded.range_days, range_since = excluded.range_since,
+                    save_edited = excluded.save_edited;
                 """,
                 ("$d", deviceId), ("$dest", options.Destination), ("$p", options.Pattern), ("$c", options.ConvertHeic), ("$h", options.IncludeHidden),
                 ("$rk", options.Range?.Kind.ToString()), ("$rd", options.Range?.Days),
-                ("$rs", options.Range?.Since?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
+                ("$rs", options.Range?.Since?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)), ("$se", options.SaveEdited));
             cmd.ExecuteNonQuery();
         }
     }
@@ -323,11 +346,14 @@ public sealed class PhotoBackupLedger : IDisposable
         var known = new PhotoBackupKnownSet();
         lock (_gate)
         {
-            using var cmd = Command("SELECT asset_key, source_path, file_name, size, taken_at FROM assets WHERE device_id = $d;", ("$d", deviceId));
+            using var cmd = Command(
+                "SELECT asset_key, source_path, file_name, size, taken_at, pc_path, edit_stamp, edit_pc_path FROM assets WHERE device_id = $d;",
+                ("$d", deviceId));
             using var r = cmd.ExecuteReader();
             while (r.Read())
             {
-                known.Add(r.GetString(0), r.IsDBNull(1) ? null : r.GetString(1), r.GetString(2), r.GetInt64(3), r.IsDBNull(4) ? null : r.GetInt64(4));
+                known.Add(r.GetString(0), r.IsDBNull(1) ? null : r.GetString(1), r.GetString(2), r.GetInt64(3), r.IsDBNull(4) ? null : r.GetInt64(4),
+                    r.GetString(5), r.IsDBNull(6) ? null : r.GetString(6), r.IsDBNull(7) ? null : r.GetString(7));
             }
         }
 
@@ -357,15 +383,17 @@ public sealed class PhotoBackupLedger : IDisposable
         lock (_gate)
         {
             using var cmd = Command("""
-                INSERT INTO assets (device_id, asset_key, source_path, file_name, size, taken_at, pc_path, motion_pc_path, duplicate, job_id, backed_up_at)
-                VALUES ($d, $k, $path, $name, $size, $taken, $pc, $motion, $dup, $job, $at)
+                INSERT INTO assets (device_id, asset_key, source_path, file_name, size, taken_at, pc_path, motion_pc_path, duplicate, job_id, backed_up_at,
+                    edit_stamp, edit_pc_path)
+                VALUES ($d, $k, $path, $name, $size, $taken, $pc, $motion, $dup, $job, $at, $es, $ep)
                 ON CONFLICT(device_id, asset_key) DO UPDATE SET source_path = excluded.source_path, file_name = excluded.file_name,
                     size = excluded.size, taken_at = excluded.taken_at, pc_path = excluded.pc_path, motion_pc_path = excluded.motion_pc_path,
-                    duplicate = excluded.duplicate, job_id = excluded.job_id, backed_up_at = excluded.backed_up_at;
+                    duplicate = excluded.duplicate, job_id = excluded.job_id, backed_up_at = excluded.backed_up_at,
+                    edit_stamp = excluded.edit_stamp, edit_pc_path = excluded.edit_pc_path;
                 """,
                 ("$d", deviceId), ("$k", record.Key), ("$path", record.SourcePath), ("$name", record.FileName), ("$size", record.Size),
                 ("$taken", record.TakenAt?.ToUnixTimeSeconds()), ("$pc", record.PcPath), ("$motion", record.MotionPcPath),
-                ("$dup", record.Duplicate), ("$job", record.JobId), ("$at", Text(record.BackedUpAt)));
+                ("$dup", record.Duplicate), ("$job", record.JobId), ("$at", Text(record.BackedUpAt)), ("$es", record.EditStamp), ("$ep", record.EditPcPath));
             cmd.ExecuteNonQuery();
         }
     }
@@ -375,7 +403,7 @@ public sealed class PhotoBackupLedger : IDisposable
         lock (_gate)
         {
             using var cmd = Command("""
-                SELECT asset_key, source_path, file_name, size, taken_at, pc_path, motion_pc_path, duplicate, job_id, backed_up_at
+                SELECT asset_key, source_path, file_name, size, taken_at, pc_path, motion_pc_path, duplicate, job_id, backed_up_at, edit_stamp, edit_pc_path
                 FROM assets WHERE device_id = $d AND asset_key = $k;
                 """, ("$d", deviceId), ("$k", key));
             using var r = cmd.ExecuteReader();
@@ -390,7 +418,9 @@ public sealed class PhotoBackupLedger : IDisposable
                     r.IsDBNull(6) ? null : r.GetString(6),
                     r.GetInt64(7) != 0,
                     r.IsDBNull(8) ? null : r.GetString(8),
-                    DateTimeOffset.Parse(r.GetString(9), CultureInfo.InvariantCulture))
+                    DateTimeOffset.Parse(r.GetString(9), CultureInfo.InvariantCulture),
+                    r.IsDBNull(10) ? null : r.GetString(10),
+                    r.IsDBNull(11) ? null : r.GetString(11))
                 : null;
         }
     }
@@ -472,7 +502,8 @@ public sealed class PhotoBackupLedger : IDisposable
         lock (_gate)
         {
             using var cmd = Command($"""
-                SELECT job_id, destination, state, planned, copied, duplicates, failed, bytes, kept_heic, started_at, finished_at, started_by FROM runs {where};
+                SELECT job_id, destination, state, planned, copied, duplicates, failed, bytes, kept_heic, started_at, finished_at, started_by,
+                    edited, edits_missing FROM runs {where};
                 """, ("$x", value));
             using var r = cmd.ExecuteReader();
             return r.Read()
@@ -488,7 +519,9 @@ public sealed class PhotoBackupLedger : IDisposable
                     r.GetInt32(8),
                     DateTimeOffset.Parse(r.GetString(9), CultureInfo.InvariantCulture),
                     r.IsDBNull(10) ? null : DateTimeOffset.Parse(r.GetString(10), CultureInfo.InvariantCulture),
-                    !r.IsDBNull(11) && Enum.TryParse<PhotoBackupTrigger>(r.GetString(11), out var trigger) ? trigger : PhotoBackupTrigger.Manual)
+                    !r.IsDBNull(11) && Enum.TryParse<PhotoBackupTrigger>(r.GetString(11), out var trigger) ? trigger : PhotoBackupTrigger.Manual,
+                    r.GetInt32(12),
+                    r.GetInt32(13))
                 : null;
         }
     }
@@ -534,28 +567,43 @@ public sealed class PhotoBackupLedger : IDisposable
             if (batch.Records.Count > 0)
             {
                 using var record = Command("""
-                    INSERT INTO assets (device_id, asset_key, source_path, file_name, size, taken_at, pc_path, motion_pc_path, duplicate, job_id, backed_up_at)
-                    VALUES ($d, $k, $path, $name, $size, $taken, $pc, $motion, $dup, $job, $at)
+                    INSERT INTO assets (device_id, asset_key, source_path, file_name, size, taken_at, pc_path, motion_pc_path, duplicate, job_id, backed_up_at,
+                        edit_stamp, edit_pc_path)
+                    VALUES ($d, $k, $path, $name, $size, $taken, $pc, $motion, $dup, $job, $at, $es, $ep)
                     ON CONFLICT(device_id, asset_key) DO UPDATE SET source_path = excluded.source_path, file_name = excluded.file_name,
                         size = excluded.size, taken_at = excluded.taken_at, pc_path = excluded.pc_path, motion_pc_path = excluded.motion_pc_path,
-                        duplicate = excluded.duplicate, job_id = excluded.job_id, backed_up_at = excluded.backed_up_at;
+                        duplicate = excluded.duplicate, job_id = excluded.job_id, backed_up_at = excluded.backed_up_at,
+                        edit_stamp = excluded.edit_stamp, edit_pc_path = excluded.edit_pc_path;
                     """);
                 record.Transaction = tx;
                 foreach (var (deviceId, r) in batch.Records)
                 {
                     Bind(record, ("$d", deviceId), ("$k", r.Key), ("$path", r.SourcePath), ("$name", r.FileName), ("$size", r.Size),
                         ("$taken", r.TakenAt?.ToUnixTimeSeconds()), ("$pc", r.PcPath), ("$motion", r.MotionPcPath), ("$dup", r.Duplicate),
-                        ("$job", r.JobId), ("$at", Text(r.BackedUpAt)));
+                        ("$job", r.JobId), ("$at", Text(r.BackedUpAt)), ("$es", r.EditStamp), ("$ep", r.EditPcPath));
                     record.ExecuteNonQuery();
+                }
+            }
+
+            if (batch.Edits.Count > 0)
+            {
+                using var edit = Command("UPDATE assets SET edit_stamp = $es, edit_pc_path = $ep WHERE device_id = $d AND asset_key = $k;");
+                edit.Transaction = tx;
+                foreach (var (deviceId, key, stamp, pcPath) in batch.Edits)
+                {
+                    Bind(edit, ("$d", deviceId), ("$k", key), ("$es", stamp), ("$ep", pcPath));
+                    edit.ExecuteNonQuery();
                 }
             }
 
             foreach (var (jobId, delta) in batch.Runs)
             {
                 using var run = Command("""
-                    UPDATE runs SET copied = copied + $c, duplicates = duplicates + $dup, bytes = bytes + $b, kept_heic = kept_heic + $h
+                    UPDATE runs SET copied = copied + $c, duplicates = duplicates + $dup, bytes = bytes + $b, kept_heic = kept_heic + $h,
+                        edited = edited + $e, edits_missing = edits_missing + $em
                     WHERE job_id = $j;
-                    """, ("$j", jobId), ("$c", delta.Copied), ("$dup", delta.Duplicates), ("$b", delta.Bytes), ("$h", delta.KeptHeic));
+                    """, ("$j", jobId), ("$c", delta.Copied), ("$dup", delta.Duplicates), ("$b", delta.Bytes), ("$h", delta.KeptHeic),
+                    ("$e", delta.Edited), ("$em", delta.EditsMissing));
                 run.Transaction = tx;
                 run.ExecuteNonQuery();
             }
@@ -563,18 +611,37 @@ public sealed class PhotoBackupLedger : IDisposable
             if (batch.Hashes.Count > 0)
             {
                 using var hash = Command("""
-                    INSERT INTO pc_hashes (path, size, modified, sha256) VALUES ($p, $s, $m, $h)
-                    ON CONFLICT(path) DO UPDATE SET size = excluded.size, modified = excluded.modified, sha256 = excluded.sha256;
+                    INSERT INTO pc_hashes (path, size, modified, sha256, origin_size, origin_sample) VALUES ($p, $s, $m, $h, $os, $oh)
+                    ON CONFLICT(path) DO UPDATE SET size = excluded.size, modified = excluded.modified, sha256 = excluded.sha256,
+                        origin_size = excluded.origin_size, origin_sample = excluded.origin_sample;
                     """);
                 hash.Transaction = tx;
-                foreach (var (path, (size, modified, sha256)) in batch.Hashes)
+                foreach (var (path, (size, modified, sha256, originSize, originSample)) in batch.Hashes)
                 {
-                    Bind(hash, ("$p", path), ("$s", size), ("$m", modified), ("$h", sha256));
+                    Bind(hash, ("$p", path), ("$s", size), ("$m", modified), ("$h", sha256), ("$os", originSize), ("$oh", originSample));
                     hash.ExecuteNonQuery();
                 }
             }
 
             tx.Commit();
+        }
+    }
+
+    /// <summary>JPEGs this PC made from a HEIC of <paramref name="originSize"/> bytes: where, as written then, and the HEIC's sample.</summary>
+    public IReadOnlyList<(string Path, long Size, long Modified, byte[] OriginSample)> FindByOrigin(long originSize)
+    {
+        lock (_gate)
+        {
+            using var cmd = Command(
+                "SELECT path, size, modified, origin_sample FROM pc_hashes WHERE origin_size = $o AND origin_sample IS NOT NULL;", ("$o", originSize));
+            using var r = cmd.ExecuteReader();
+            var found = new List<(string, long, long, byte[])>();
+            while (r.Read())
+            {
+                found.Add((r.GetString(0), r.GetInt64(1), r.GetInt64(2), (byte[])r.GetValue(3)));
+            }
+
+            return found;
         }
     }
 

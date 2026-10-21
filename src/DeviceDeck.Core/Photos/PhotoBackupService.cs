@@ -120,7 +120,7 @@ public sealed class PhotoBackupService : IDisposable
                 $"The backup folder's drive {space.Root} isn't there. Connect it, or choose another folder.");
         }
 
-        if (!space.Enough && count.NewCount > 0)
+        if (!space.Enough && count.NewCount + count.NewEdits > 0)
         {
             throw new DeviceException(BackupErrors.NoSpace,
                 $"Not enough space on {space.Root} for {count.NewCount:N0} new photos: about {Gb(space.NeededBytes)} needed with room to spare, " +
@@ -137,7 +137,7 @@ public sealed class PhotoBackupService : IDisposable
     /// first, so the phone follows Settings again (its destination too, and the range goes back to everything).
     /// </summary>
     public void Configure(string deviceId, string? destination, string? folderPattern, bool? convertHeic, bool? includeHidden, bool useDefaults = false,
-        PhotoBackupRange? range = null, PhotoBackupOnConnect? onConnect = null)
+        PhotoBackupRange? range = null, PhotoBackupOnConnect? onConnect = null, bool? saveEdited = null)
     {
         if (onConnect is { } mode)
         {
@@ -170,7 +170,8 @@ public sealed class PhotoBackupService : IDisposable
             folderPattern ?? saved.Pattern,
             convertHeic ?? saved.ConvertHeic,
             includeHidden ?? saved.IncludeHidden,
-            range ?? saved.Range));
+            range ?? saved.Range,
+            saveEdited ?? saved.SaveEdited));
     }
 
     /// <summary>
@@ -201,7 +202,8 @@ public sealed class PhotoBackupService : IDisposable
             Configure(deviceId, options.Destination, null, null, null);
         }
 
-        var request = new PhotoBackupRequest(options.Destination, options.FolderPattern, options.ConvertHeic, options.IncludeHidden, options.Range, trigger);
+        var request = new PhotoBackupRequest(options.Destination, options.FolderPattern, options.ConvertHeic, options.IncludeHidden, options.Range, trigger,
+            options.SaveEdited);
         var job = await queue.EnqueueAsync(deviceId, TransferKind.PhotosBackup, request, ConflictRule.KeepBoth, ct).ConfigureAwait(false);
         Ledger.StartRun(job.Id, deviceId, options.Destination, job.CreatedAt, trigger);
 
@@ -227,8 +229,9 @@ public sealed class PhotoBackupService : IDisposable
             own.Pattern ?? settings.PhotoBackupPattern,
             own.ConvertHeic ?? settings.PhotoBackupConvertHeic,
             own.IncludeHidden ?? false,
-            own.Range ?? PhotoBackupRange.Everything);
-        var customized = own.Pattern is not null || own.ConvertHeic is not null || own.IncludeHidden is not null || own.Range is not null
+            own.Range ?? PhotoBackupRange.Everything,
+            own.SaveEdited ?? false);
+        var customized = own.Pattern is not null || own.ConvertHeic is not null || own.IncludeHidden is not null || own.Range is not null || own.SaveEdited is not null
             || (own.Destination is not null && !string.Equals(own.Destination, Path.Combine(settings.PhotoBackupFolder, PhotoBackupNaming.SafeName(device.Summary.Name)), StringComparison.OrdinalIgnoreCase));
         return (options, customized);
     }
@@ -239,11 +242,18 @@ public sealed class PhotoBackupService : IDisposable
         var assets = await PhotoBackupSources.For(device.Photos).GetBackupAssetsAsync(ct).ConfigureAwait(false);
         var known = Ledger.LoadKnown(device.Summary.Id);
         var cutoff = options.Range.Cutoff(_time.GetLocalNow(), _time.LocalTimeZone);
-        int photos = 0, videos = 0, cloud = 0, hidden = 0, outOfRange = 0;
+        int photos = 0, videos = 0, cloud = 0, hidden = 0, outOfRange = 0, edits = 0;
         long bytes = 0;
         var copy = new CopyEstimate(options.ConvertHeic && _heic != HeicConversion.MissingCodec);
         foreach (var asset in assets)
         {
+            if (options.SaveEdited && PhotoBackupEdits.Wanted(asset, known) && PhotoBackupRange.Includes(cutoff, asset.TakenAt)
+                && !asset.InCloudOnly && (options.IncludeHidden || !asset.Hidden))
+            {
+                edits++;
+                copy.AddEdit();
+            }
+
             if (known.Contains(asset))
             {
                 continue;
@@ -277,7 +287,7 @@ public sealed class PhotoBackupService : IDisposable
             }
         }
 
-        return (new PhotoBackupCount(device.Summary.Id, photos + videos, photos, videos, bytes, cloud, hidden, outOfRange), copy.Total);
+        return (new PhotoBackupCount(device.Summary.Id, photos + videos, photos, videos, bytes, cloud, hidden, outOfRange, edits), copy.Total);
     }
 
     /// <summary>What new photos take on the PC, with averages standing in for sizes the phone hasn't said yet.</summary>
@@ -290,6 +300,9 @@ public sealed class PhotoBackupService : IDisposable
         private long _known;
         private long _photoBytes, _videoBytes;
         private int _photos, _videos, _unknownPhotos, _unknownVideos, _unknownMotions;
+
+        /// <summary>An edited version: its size isn't known before the backup looks for it; a photo's average stands in.</summary>
+        public void AddEdit() => _unknownPhotos++;
 
         public void Add(PhotoBackupAsset asset)
         {

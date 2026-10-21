@@ -26,6 +26,12 @@ export const photoBackupEn = {
   'photos.backup.onConnect.backUpHint': 'Starts by itself, also when DeviceDeck runs in the notification area. Never into a missing or full drive; a notification says when it’s done.',
   'photos.backup.run.automatic': 'started when the phone connected',
   'photos.backup.run.fromNotification': 'started from a notification',
+  'photos.backup.saveEdited': 'Also save edited versions',
+  'photos.backup.saveEditedHint': 'A photo you edited in Photos also gets its edited version next to the original, as “IMG_1234 (edited).jpg”, brought up to date when you edit it again. The original stays as it is.',
+  'photos.backup.newEdits': '{count, plural, one {# edited version} other {# edited versions}}',
+  'photos.backup.startEdits': '{count, plural, one {Save # edited version} other {Save # edited versions}}',
+  'photos.backup.run.edited': '{count, plural, one {# edited version saved} other {# edited versions saved}}',
+  'photos.backup.run.editsMissing': '{count, plural, one {# edit not found on the iPhone} other {# edits not found on the iPhone}}',
 } as const;
 
 export const photoBackupFa: Record<keyof typeof photoBackupEn, string> = {
@@ -53,4 +59,10 @@ export const photoBackupFa: Record<keyof typeof photoBackupEn, string> = {
   'photos.backup.onConnect.backUpHint': 'خودش شروع می‌شود، حتی وقتی DeviceDeck در ناحیهٔ اعلان‌ها است. هرگز روی درایوی که نیست یا پر است نمی‌نویسد؛ وقتی تمام شد اعلانی خبر می‌دهد.',
   'photos.backup.run.automatic': 'با وصل شدن گوشی شروع شد',
   'photos.backup.run.fromNotification': 'از اعلان شروع شد',
+  'photos.backup.saveEdited': 'نسخه‌های ویرایش‌شده را هم نگه دار',
+  'photos.backup.saveEditedHint': 'عکسی که در برنامهٔ Photos ویرایش کرده‌اید، نسخهٔ ویرایش‌شده‌اش را هم کنار اصل می‌گیرد، با نام «IMG_1234 (edited).jpg»، و با هر ویرایش تازه به‌روز می‌شود. خود اصل دست نمی‌خورد.',
+  'photos.backup.newEdits': '{count, plural, one {# نسخهٔ ویرایش‌شده} other {# نسخهٔ ویرایش‌شده}}',
+  'photos.backup.startEdits': '{count, plural, one {ذخیرهٔ # نسخهٔ ویرایش‌شده} other {ذخیرهٔ # نسخهٔ ویرایش‌شده}}',
+  'photos.backup.run.edited': '{count, plural, one {# نسخهٔ ویرایش‌شده ذخیره شد} other {# نسخهٔ ویرایش‌شده ذخیره شد}}',
+  'photos.backup.run.editsMissing': '{count, plural, one {نسخهٔ ویرایش‌شدهٔ # عکس در آیفون پیدا نشد} other {نسخهٔ ویرایش‌شدهٔ # عکس در آیفون پیدا نشد}}',
 };

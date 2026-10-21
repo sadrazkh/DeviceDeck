@@ -6,7 +6,9 @@ namespace DeviceDeck.Core.Photos;
 
 /// <summary>How one phone is backed up. Each value falls back to Settings when the phone has none of its own.</summary>
 /// <param name="Range">Which photos, by the date they were taken. The phone's own only (Settings has none): everything by default.</param>
-public sealed record PhotoBackupOptions(string Destination, string FolderPattern, bool ConvertHeic, bool IncludeHidden, PhotoBackupRange Range);
+/// <param name="SaveEdited">An iPhone photo edited in Photos also gets its edited version, "IMG_1234 (edited).jpg", kept up to date. Off by default.</param>
+public sealed record PhotoBackupOptions(string Destination, string FolderPattern, bool ConvertHeic, bool IncludeHidden, PhotoBackupRange Range,
+    bool SaveEdited = false);
 
 public enum PhotoBackupRangeKind { All, LastDays, Since }
 
@@ -68,8 +70,9 @@ public enum HeicConversion { Available, MissingCodec, Unknown }
 /// <param name="CloudOnly">New ones whose original is only in iCloud: not copyable over USB, not in <paramref name="NewCount"/>.</param>
 /// <param name="HiddenLeftOut">New ones in the iPhone's Hidden album, left out unless the options include it.</param>
 /// <param name="OutOfRange">New ones taken before the options' date range: left out, in no other count.</param>
+/// <param name="NewEdits">Edited versions to copy (new photos' and new edits of photos already copied), when the options save them.</param>
 public sealed record PhotoBackupCount(string DeviceId, int NewCount, int NewPhotos, int NewVideos, long NewBytes, int CloudOnly, int HiddenLeftOut,
-    int OutOfRange = 0);
+    int OutOfRange = 0, int NewEdits = 0);
 
 public enum PhotoBackupRunState { Running, Done, Failed, Cancelled }
 
@@ -82,6 +85,8 @@ public enum PhotoBackupTrigger { Manual, Notification, Automatic }
 /// <param name="Copied">Items written to the PC this run.</param>
 /// <param name="Duplicates">Items that were already in the destination (same size and SHA-256), now remembered.</param>
 /// <param name="KeptHeic">HEIC files kept as HEIC because this PC couldn't convert them.</param>
+/// <param name="Edited">Edited versions written (new or updated).</param>
+/// <param name="EditsMissing">Photos the phone says were edited whose edited version it doesn't have where Photos keeps them.</param>
 public sealed record PhotoBackupRun(
     string JobId,
     string Destination,
@@ -94,7 +99,9 @@ public sealed record PhotoBackupRun(
     int KeptHeic,
     DateTimeOffset StartedAt,
     DateTimeOffset? FinishedAt,
-    PhotoBackupTrigger Trigger = PhotoBackupTrigger.Manual);
+    PhotoBackupTrigger Trigger = PhotoBackupTrigger.Manual,
+    int Edited = 0,
+    int EditsMissing = 0);
 
 /// <param name="Customized">The phone has options of its own; false = the Settings defaults.</param>
 /// <param name="BackedUp">Photos this PC remembers copying from the phone.</param>
@@ -115,7 +122,7 @@ public sealed record PhotoBackupStatus(
 /// <summary>The transfer request of a photosBackup job: the options as they were when it started.</summary>
 /// <param name="Range">Null in jobs queued before ranges existed: everything.</param>
 public sealed record PhotoBackupRequest(string Destination, string FolderPattern, bool ConvertHeic, bool IncludeHidden, PhotoBackupRange? Range = null,
-    PhotoBackupTrigger Trigger = PhotoBackupTrigger.Manual);
+    PhotoBackupTrigger Trigger = PhotoBackupTrigger.Manual, bool SaveEdited = false);
 
 /// <summary>The transfer request of a photosToApp job: PC pictures and videos into an iPhone app's Documents.</summary>
 public sealed record PhotosToAppRequest(string AppId, IReadOnlyList<string> Files);

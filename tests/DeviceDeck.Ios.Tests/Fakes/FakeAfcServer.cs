@@ -249,6 +249,17 @@ internal sealed class FakeAfcServer
             case AfcOperation.FileClose:
                 _open.Remove(BinaryPrimitives.ReadUInt64LittleEndian(h));
                 return Status(AfcStatus.Success);
+            case AfcOperation.FileSeek:
+            {
+                var handle = BinaryPrimitives.ReadUInt64LittleEndian(h);
+                var whence = BinaryPrimitives.ReadUInt64LittleEndian(h.AsSpan(8));
+                var offset = BinaryPrimitives.ReadInt64LittleEndian(h.AsSpan(16));
+                if (!_open.TryGetValue(handle, out var f)) return Status(AfcStatus.InvalidArgument);
+                var position = whence switch { 0 => offset, 1 => f.Position + offset, _ => _entries[f.Path].Length + offset };
+                if (position < 0) return Status(AfcStatus.InvalidArgument);
+                f.Position = position;
+                return Status(AfcStatus.Success);
+            }
             case (AfcOperation)0x1B when LockReply is { } lockReply:
                 return Status(lockReply);
             default:

@@ -83,19 +83,37 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
         var all = await source.GetBackupAssetsAsync(ct).ConfigureAwait(false);
         var known = ledger.LoadKnown(deviceId);
         var cutoff = (request.Range ?? PhotoBackupRange.Everything).Cutoff(_time.GetLocalNow(), _time.LocalTimeZone);
-        var wanted = all.Where(a => !a.InCloudOnly && (request.IncludeHidden || !a.Hidden) && !known.Contains(a) && PhotoBackupRange.Includes(cutoff, a.TakenAt)).ToList();
-        IReadOnlyList<PhotoBackupAsset> complete = wanted.Count == 0 ? wanted : await source.CompleteAsync(wanted, ct).ConfigureAwait(false);
+        bool Eligible(PhotoBackupAsset a) => !a.InCloudOnly && (request.IncludeHidden || !a.Hidden) && PhotoBackupRange.Includes(cutoff, a.TakenAt);
+        var wanted = all.Where(a => Eligible(a) && !known.Contains(a)).Select(a => request.SaveEdited ? a : a with { Edited = null }).ToList();
+
+        // Photos copied before whose edit the PC doesn't have yet (edited since, or never looked for).
+        var editsOnly = request.SaveEdited
+            ? all.Where(a => Eligible(a) && known.Contains(a) && PhotoBackupEdits.Wanted(a, known)).ToList()
+            : [];
+        var asked = wanted.Concat(editsOnly).ToList();
+        IReadOnlyList<PhotoBackupAsset> complete = asked.Count == 0 ? asked : await source.CompleteAsync(asked, ct).ConfigureAwait(false);
 
         // A photo the list had no date for got one from the phone just now: the range applies to it as well.
         complete = complete.Where(a => PhotoBackupRange.Includes(cutoff, a.TakenAt)).ToList();
+        var editKeys = editsOnly.Select(a => a.Key).ToHashSet(StringComparer.Ordinal);
+        var photos = complete.Where(a => !editKeys.Contains(a.Key)).ToList();
+        var convert = request.ConvertHeic && transcoder is not null;
 
-        var paths = PhotoBackupNaming.Plan(complete, request.Destination, request.FolderPattern, request.ConvertHeic && transcoder is not null);
+        var paths = PhotoBackupNaming.Plan(photos, request.Destination, request.FolderPattern, convert);
         var plans = new List<TransferItemPlan>(complete.Count);
-        for (var i = 0; i < complete.Count; i++)
+        for (var i = 0; i < photos.Count; i++)
         {
-            var asset = complete[i];
+            var asset = photos[i];
             var itemSource = JsonSerializer.Serialize(ItemSource.From(asset), DeviceDeckJson.Options);
-            plans.Add(new TransferItemPlan(itemSource, paths[i].Still, asset.FileName, asset.Size + (asset.Motion?.Size ?? 0)));
+            plans.Add(new TransferItemPlan(itemSource, paths[i].Still, asset.FileName, asset.Size + (asset.Motion?.Size ?? 0) + (asset.Edited?.Size ?? 0)));
+        }
+
+        foreach (var asset in complete.Where(a => editKeys.Contains(a.Key)))
+        {
+            known.TryGetCopy(asset.Key, out var copy);
+            var edited = PhotoBackupEdits.EditedPath(copy.PcPath, asset.Edited?.FileName ?? Path.GetExtension(copy.PcPath), convert);
+            var itemSource = JsonSerializer.Serialize(ItemSource.From(asset) with { EditOnly = true }, DeviceDeckJson.Options);
+            plans.Add(new TransferItemPlan(itemSource, edited, Path.GetFileName(edited), asset.Edited?.Size ?? 0));
         }
 
         ledger.SetPlanned(context.JobId, plans.Count);
@@ -108,6 +126,11 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
         var info = JsonSerializer.Deserialize<ItemSource>(item.Source, DeviceDeckJson.Options)
             ?? throw new ArgumentException("The backup item is malformed.");
         var asset = info.ToAsset();
+        if (info.EditOnly)
+        {
+            return await RunEditAsync(context, request, item, info, run, progress, ct).ConfigureAwait(false);
+        }
+
         if (run.Known.Contains(asset))
         {
             // Copied before the app stopped: its ledger entry was saved, the item's state not yet.
@@ -119,6 +142,12 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
         var folder = Path.GetDirectoryName(planned)!;
         run.EnsureFolder(folder);
         var convert = request.ConvertHeic && transcoder is not null && ImageFormats.IsHeic(info.FileName);
+        if (await AlreadyThereAsync(context, run, info, asset, convert, ct).ConfigureAwait(false))
+        {
+            item.Size = info.Size + info.MotionSize;
+            return TransferItemState.Skipped;
+        }
+
         var temps = new List<string>();
         try
         {
@@ -138,7 +167,9 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
                 }
             }
 
-            item.Size = original.Size + (motion?.Size ?? 0);
+            var edit = info.EditId is null ? null
+                : await DownloadEditAsync(photos, info, planned, progress, original.Size + (motion?.Size ?? 0), temps, request.ConvertHeic, ct).ConfigureAwait(false);
+            item.Size = original.Size + (motion?.Size ?? 0) + (edit?.File.Size ?? 0);
             asset = asset with { Size = original.Size };
 
             // Already in the folder as it came off the phone?
@@ -149,7 +180,7 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
                 still = await run.Index.FindAsync(original.Size, original.Hash, ct).ConfigureAwait(false);
                 if (still is not null || !convert)
                 {
-                    return await PlaceAsync(run, info, asset, folder, still, original, null, motion, keptHeic: false, ct).ConfigureAwait(false);
+                    return await PlaceAsync(run, info, asset, folder, still, original, null, motion, edit, keptHeic: false, ct).ConfigureAwait(false);
                 }
             }
             finally
@@ -170,7 +201,7 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
                 still = jpeg is null
                     ? await run.Index.FindAsync(original.Size, original.Hash, ct).ConfigureAwait(false)
                     : await run.Index.FindAsync(jpeg.Length, jpeg.Hash, ct).ConfigureAwait(false);
-                return await PlaceAsync(run, info, asset, folder, still, original, jpeg, motion, keptHeic: jpeg is null, ct).ConfigureAwait(false);
+                return await PlaceAsync(run, info, asset, folder, still, original, jpeg, motion, edit, keptHeic: jpeg is null, ct).ConfigureAwait(false);
             }
             finally
             {
@@ -191,28 +222,31 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
     /// <see cref="RunState.Placing"/>: the disk decides the free name, and the index sees every file as soon as it lands.
     /// </summary>
     private async Task<TransferItemState> PlaceAsync(RunState run, ItemSource info, PhotoBackupAsset asset, string folder, string? still,
-        Downloaded original, Converted? jpeg, Downloaded? motion, bool keptHeic, CancellationToken ct)
+        Downloaded original, Converted? jpeg, Downloaded? motion, EditFile? edit, bool keptHeic, CancellationToken ct)
     {
         if (still is not null)
         {
-            // The photo is already in the folder. Its video belongs next to it under the same name.
+            // The photo is already in the folder. Its video (and its edit) belong next to it under the same name.
             if (motion is null)
             {
-                Remember(run, asset, still, null, duplicate: true);
-                return TransferItemState.Skipped;
+                var editPath = await PlaceEditAsync(run, info, still, edit, null, ct).ConfigureAwait(false);
+                Remember(run, asset, still, null, duplicate: true, edit: (info, editPath, edit));
+                return editPath is null ? TransferItemState.Skipped : TransferItemState.Done;
             }
 
             var paired = PhotoBackupNaming.MotionPath(still, motion.FileName);
             if (File.Exists(paired) && await run.Index.SameAsync(paired, motion.Size, motion.Hash, ct).ConfigureAwait(false))
             {
-                Remember(run, asset, still, paired, duplicate: true);
-                return TransferItemState.Skipped;
+                var editPath = await PlaceEditAsync(run, info, still, edit, null, ct).ConfigureAwait(false);
+                Remember(run, asset, still, paired, duplicate: true, edit: (info, editPath, edit));
+                return editPath is null ? TransferItemState.Skipped : TransferItemState.Done;
             }
 
             if (!File.Exists(paired) && !Directory.Exists(paired))
             {
                 await PutAsync(motion, paired, info.TakenAt, run.Index, ct).ConfigureAwait(false);
-                Remember(run, asset, still, paired, duplicate: false, bytes: motion.Size);
+                var editPath = await PlaceEditAsync(run, info, still, edit, null, ct).ConfigureAwait(false);
+                Remember(run, asset, still, paired, duplicate: false, bytes: motion.Size, edit: (info, editPath, edit));
                 return TransferItemState.Done;
             }
 
@@ -227,7 +261,7 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
         {
             await WritePcFileAsync(stillPath, jpeg.Length, async target => await target.WriteAsync(jpeg.Bytes, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
             SetTimes(stillPath, info.TakenAt);
-            run.Index.Add(stillPath, jpeg.Length, jpeg.Hash);
+            run.Index.Add(stillPath, jpeg.Length, jpeg.Hash, jpeg.Origin);
             written = jpeg.Length;
         }
         else
@@ -242,7 +276,8 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
             written += motion.Size;
         }
 
-        Remember(run, asset, stillPath, motion is null ? null : motionPath, duplicate: false, bytes: written, keptHeic: keptHeic);
+        var placedEdit = await PlaceEditAsync(run, info, stillPath, edit, null, ct).ConfigureAwait(false);
+        Remember(run, asset, stillPath, motion is null ? null : motionPath, duplicate: false, bytes: written, keptHeic: keptHeic, edit: (info, placedEdit, edit));
         return TransferItemState.Done;
     }
 
@@ -273,16 +308,250 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
         }
     }
 
-    private void Remember(RunState run, PhotoBackupAsset asset, string pcPath, string? motionPcPath, bool duplicate, long bytes = 0, bool keptHeic = false)
+    /// <param name="edit">The photo's edit (when it has one and the options save it): where it went, or null when the phone had none to read.</param>
+    private void Remember(RunState run, PhotoBackupAsset asset, string pcPath, string? motionPcPath, bool duplicate, long bytes = 0, bool keptHeic = false,
+        (ItemSource Info, string? Path, EditFile? File)? edit = null)
     {
+        var stamp = edit?.Info.EditStamp;
         var record = new PhotoBackupRecord(asset.Key, asset.SourcePath, asset.FileName, asset.Size, asset.TakenAt, pcPath, motionPcPath, duplicate,
-            run.Context.JobId, _time.GetLocalNow());
+            run.Context.JobId, _time.GetLocalNow(), stamp, edit?.Path);
+        var editBytes = edit?.Path is null ? 0 : edit.Value.File?.Length ?? 0;
         run.Write(batch =>
         {
             batch.Record(run.Context.Device.Summary.Id, record);
-            batch.AddToRun(run.Context.JobId, duplicate ? 0 : 1, duplicate ? 1 : 0, bytes, keptHeic ? 1 : 0);
+            batch.AddToRun(run.Context.JobId, duplicate ? 0 : 1, duplicate ? 1 : 0, bytes + editBytes, keptHeic ? 1 : 0,
+                edited: edit?.Path is null ? 0 : 1, editsMissing: stamp is not null && edit?.Path is null ? 1 : 0);
         });
         Save(run, all: false);
+    }
+
+    /// <summary>
+    /// An edit-only item: a photo copied before was edited (again) on the phone. Its edited version goes next to the copy,
+    /// replacing the one an earlier backup put there when nobody changed that file since; else under a free name.
+    /// </summary>
+    private async Task<TransferItemState> RunEditAsync(TransferWorkContext context, PhotoBackupRequest request, TransferItem item, ItemSource info, RunState run,
+        IProgress<long> progress, CancellationToken ct)
+    {
+        if (!run.Known.TryGetCopy(info.Key, out var copy) || copy.EditStamp == info.EditStamp)
+        {
+            return TransferItemState.Skipped; // forgotten since, or done before the app stopped
+        }
+
+        var deviceId = context.Device.Summary.Id;
+        if (info.EditId is null)
+        {
+            // The phone says it was edited, but has no edited version where Photos keeps one: said, not guessed.
+            run.Write(batch =>
+            {
+                batch.RecordEdit(deviceId, info.Key, info.EditStamp!, null);
+                batch.AddToRun(context.JobId, 0, 0, 0, 0, editsMissing: 1);
+            });
+            Save(run, all: false);
+            return TransferItemState.Skipped;
+        }
+
+        var temps = new List<string>();
+        try
+        {
+            var anchor = Directory.Exists(Path.GetDirectoryName(copy.PcPath)) ? copy.PcPath : Path.Combine(Path.GetDirectoryName(item.Destination)!, Path.GetFileName(copy.PcPath));
+            run.EnsureFolder(Path.GetDirectoryName(anchor)!);
+            var edit = await DownloadEditAsync(context.Device.Photos, info, item.Destination, progress, 0, temps, request.ConvertHeic, ct).ConfigureAwait(false);
+            if (edit is null)
+            {
+                run.Write(batch =>
+                {
+                    batch.RecordEdit(deviceId, info.Key, info.EditStamp!, null);
+                    batch.AddToRun(context.JobId, 0, 0, 0, 0, editsMissing: 1);
+                });
+                Save(run, all: false);
+                return TransferItemState.Skipped;
+            }
+
+            item.Size = edit.Length;
+            string placed;
+            await run.Placing.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                placed = (await PlaceEditAsync(run, info, anchor, edit, copy.EditPcPath, ct).ConfigureAwait(false))!;
+            }
+            finally
+            {
+                run.Placing.Release();
+            }
+
+            run.Write(batch =>
+            {
+                batch.RecordEdit(deviceId, info.Key, info.EditStamp!, placed);
+                batch.AddToRun(context.JobId, 0, 0, edit.Length, 0, edited: 1);
+            });
+            Save(run, all: false);
+            return TransferItemState.Done;
+        }
+        finally
+        {
+            foreach (var temp in temps)
+            {
+                TryDelete(temp);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Before anything is copied: when the folder has a file of the photo's size and name (or a JPEG this PC made from it),
+    /// a sample of the phone's file — its size, first and last 64 KB — is compared with it. A match is remembered as
+    /// there already, with a Live Photo's video checked the same way. So after "forget history", or under a new device id,
+    /// a library already on the PC isn't downloaded again. Anything less than a match goes the usual way (copy, then
+    /// SHA-256). A photo whose edited version is to be saved goes the usual way too.
+    /// </summary>
+    private async Task<bool> AlreadyThereAsync(TransferWorkContext context, RunState run, ItemSource info, PhotoBackupAsset asset, bool convert, CancellationToken ct)
+    {
+        if (info.Size <= 0 || info.EditStamp is not null || context.Device.Photos is not IPhotoRangeReader reader)
+        {
+            return false;
+        }
+
+        var stem = PhotoBackupSample.Stem(info.FileName);
+        if (!run.Index.HasNamesake(info.Size, stem) && !(convert && ledger.FindByOrigin(info.Size).Count > 0))
+        {
+            return false;
+        }
+
+        var sample = await SampleAsync(reader, info.AssetId, info.Size, ct).ConfigureAwait(false);
+        if (sample is null)
+        {
+            return false;
+        }
+
+        string? motionPath = null;
+        await run.Placing.WaitAsync(ct).ConfigureAwait(false);
+        string? still;
+        try
+        {
+            still = await run.Index.FindBySampleAsync(info.Size, sample, stem, ct).ConfigureAwait(false)
+                ?? (convert ? run.Index.FindConverted(info.Size, sample, stem) : null);
+        }
+        finally
+        {
+            run.Placing.Release();
+        }
+
+        if (still is null)
+        {
+            return false;
+        }
+
+        if (info.MotionId is { } motionId)
+        {
+            // The video must be there as well, next to the still under its name, with the same sample.
+            motionPath = PhotoBackupNaming.MotionPath(still, info.MotionName ?? ".MOV");
+            if (info.MotionSize <= 0 || !File.Exists(motionPath) || new FileInfo(motionPath).Length != info.MotionSize)
+            {
+                return false;
+            }
+
+            var phone = await SampleAsync(reader, motionId, info.MotionSize, ct).ConfigureAwait(false);
+            var pc = await PhotoBackupSample.OfFileAsync(motionPath, info.MotionSize, ct).ConfigureAwait(false);
+            if (phone is null || pc is null || !phone.AsSpan().SequenceEqual(pc))
+            {
+                return false;
+            }
+        }
+
+        Remember(run, asset, still, motionPath, duplicate: true);
+        return true;
+    }
+
+    /// <summary>The phone's sample of a file; null when the phone can't read part of one (then the photo is copied and compared whole).</summary>
+    private static async Task<byte[]?> SampleAsync(IPhotoRangeReader reader, string assetId, long size, CancellationToken ct)
+    {
+        try
+        {
+            return await PhotoBackupSample.OfPhoneAsync(reader, assetId, size, ct).ConfigureAwait(false);
+        }
+        catch (DeviceException ex) when (ex.Code is DeviceErrorCodes.NotSupported or DeviceErrorCodes.Protocol or DeviceErrorCodes.PathNotFound)
+        {
+            return null;
+        }
+    }
+
+    /// <summary>An edited version off the phone (converted to JPEG when asked and possible); null when the phone has it no more.</summary>
+    private sealed record EditFile(Downloaded File, Converted? Jpeg)
+    {
+        public long Length => Jpeg?.Length ?? File.Size;
+    }
+
+    private async Task<EditFile?> DownloadEditAsync(IPhotoLibrary photos, ItemSource info, string planned, IProgress<long> progress, long offset,
+        List<string> temps, bool convertHeic, CancellationToken ct)
+    {
+        var name = info.EditName ?? "FullSizeRender.jpg";
+        var convert = convertHeic && transcoder is not null && ImageFormats.IsHeic(name);
+        Downloaded file;
+        try
+        {
+            file = await DownloadAsync(photos, info.EditId!, name, convert && info.EditSize is > 0 and <= InMemoryHeic ? null : planned + ".edited" + PartialSuffix,
+                progress, offset, temps, ct).ConfigureAwait(false);
+        }
+        catch (DeviceException ex) when (ex.Code is DeviceErrorCodes.PathNotFound or DeviceErrorCodes.NotFound)
+        {
+            return null; // edited again (or reverted) since the plan
+        }
+
+        var jpeg = convert ? await ConvertAsync(file, ct).ConfigureAwait(false) : null;
+        return new EditFile(file, jpeg);
+    }
+
+    /// <summary>
+    /// Puts an edited version next to <paramref name="stillPath"/> as "IMG_1234 (edited).jpg". It replaces
+    /// <paramref name="previous"/> (an earlier edit this backup wrote) only when that file is still exactly as written —
+    /// its size and the photo's date as its write time, as the ledger saw it. Otherwise a free name. Caller holds Placing.
+    /// </summary>
+    private async Task<string?> PlaceEditAsync(RunState run, ItemSource info, string stillPath, EditFile? edit, string? previous, CancellationToken ct)
+    {
+        if (edit is null)
+        {
+            return null;
+        }
+
+        var wanted = PhotoBackupEdits.EditedPath(stillPath, edit.File.FileName, edit.Jpeg is not null);
+        var target = previous is not null && IsUnchangedCopy(previous, info.TakenAt)
+            ? previous
+            : FreeName(wanted);
+        if (edit.Jpeg is { } jpeg)
+        {
+            await WritePcFileAsync(target, jpeg.Length, async t => await t.WriteAsync(jpeg.Bytes, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
+            SetTimes(target, info.TakenAt);
+            run.Index.Add(target, jpeg.Length, jpeg.Hash);
+        }
+        else if (edit.File.Path is { } temp)
+        {
+            File.Move(temp, target, overwrite: target == previous);
+            SetTimes(target, info.TakenAt);
+            run.Index.Add(target, edit.File.Size, edit.File.Hash);
+        }
+        else
+        {
+            await PutAsync(edit.File, target, info.TakenAt, run.Index, ct).ConfigureAwait(false);
+        }
+
+        return target;
+
+        bool IsUnchangedCopy(string path, DateTimeOffset? takenAt)
+        {
+            var file = new FileInfo(path);
+            return file.Exists && takenAt is { } when && file.LastWriteTimeUtc == when.UtcDateTime
+                && ledger.GetHash(file.FullName, file.Length, file.LastWriteTimeUtc.Ticks) is not null;
+        }
+
+        static string FreeName(string path)
+        {
+            if (!File.Exists(path) && !Directory.Exists(path))
+            {
+                return path;
+            }
+
+            var (free, _) = PhotoBackupNaming.FreeStem(Path.GetDirectoryName(path)!, Path.GetFileName(path), null, p => !File.Exists(p) && !Directory.Exists(p));
+            return free;
+        }
     }
 
     /// <summary>Saves the run's ledger writes: when enough have gathered (or a second has passed), or all of them.</summary>
@@ -297,7 +566,8 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
     /// <summary>One photo file off the phone, hashed on the way: into a temp file, or into memory when <paramref name="temp"/> is null.</summary>
     private sealed record Downloaded(string? Path, byte[]? Bytes, string FileName, long Size, byte[] Hash);
 
-    private sealed record Converted(byte[] Bytes, byte[] Hash)
+    /// <param name="Origin">The HEIC it was made from: its size and sample.</param>
+    private sealed record Converted(byte[] Bytes, byte[] Hash, (long Size, byte[] Sample)? Origin = null)
     {
         public long Length => Bytes.Length;
     }
@@ -345,7 +615,7 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
         }
 
         var withExif = exif is null ? jpeg : PhotosHeicMetadata.WithExif(jpeg, exif);
-        return new Converted(withExif, SHA256.HashData(withExif));
+        return new Converted(withExif, SHA256.HashData(withExif), (bytes.Length, PhotoBackupSample.Of(bytes)));
     }
 
     /// <summary>Moves a downloaded file into place (or writes it there through a .ddpart when it is in memory) with the photo's dates.</summary>
@@ -437,9 +707,9 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
                 var batch = _batch;
                 _batch = new PhotoBackupLedgerBatch();
                 _lastSave = Stopwatch.GetTimestamp();
-                foreach (var (path, size, modified, sha256) in index.TakeUnsavedHashes())
+                foreach (var (path, size, modified, sha256, originSize, originSample) in index.TakeUnsavedHashes())
                 {
-                    batch.PutHash(path, size, modified, sha256);
+                    batch.PutHash(path, size, modified, sha256, originSize, originSample);
                 }
 
                 return batch;
@@ -459,12 +729,19 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
         string? SourcePath,
         string? MotionId,
         string? MotionName,
-        long MotionSize)
+        long MotionSize,
+        string? EditStamp = null,
+        string? EditId = null,
+        string? EditName = null,
+        long EditSize = 0,
+        bool EditOnly = false)
     {
         public static ItemSource From(PhotoBackupAsset a) =>
-            new(a.Key, a.AssetId, a.FileName, a.Kind, a.TakenAt, a.Size, a.Hidden, a.SourcePath, a.Motion?.AssetId, a.Motion?.FileName, a.Motion?.Size ?? 0);
+            new(a.Key, a.AssetId, a.FileName, a.Kind, a.TakenAt, a.Size, a.Hidden, a.SourcePath, a.Motion?.AssetId, a.Motion?.FileName, a.Motion?.Size ?? 0,
+                a.Edited?.Stamp, a.Edited?.AssetId, a.Edited?.FileName, a.Edited?.Size ?? 0);
 
         public PhotoBackupAsset ToAsset() => new(Key, AssetId, FileName, Kind, TakenAt, Size, InCloudOnly: false, Hidden, SourcePath,
-            MotionId is null ? null : new PhotoBackupMotion(MotionId, MotionName ?? Path.ChangeExtension(FileName, ".MOV"), MotionSize));
+            MotionId is null ? null : new PhotoBackupMotion(MotionId, MotionName ?? Path.ChangeExtension(FileName, ".MOV"), MotionSize),
+            EditStamp is null ? null : new PhotoBackupEdit(EditStamp, EditId, EditName, EditSize));
     }
 }

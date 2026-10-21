@@ -721,3 +721,36 @@ error. A run started from the panel ends as before (the page's toast). Texts fol
 The page follows a click: `photos.openBackup` selects the phone, opens Photos and its Back up panel; `photos.backupNow`
 opens the transfers. When a `photosBackup` job appears that the page didn't start, the phone's status is fetched again,
 and again when it finishes (the Photos screen's badge).
+
+### Edited iPhone photos
+
+`photos.backupConfigure` takes `saveEdited?: boolean` (iPhone; off by default; one of the phone's own options, so
+`useDefaults` turns it off). `PhotoBackupOptions` gains `saveEdited`, `PhotoBackupCount` gains `newEdits`, and
+`PhotoBackupRun` gains `edited` and `editsMissing`.
+
+- **Which.** Photos.sqlite's `ZASSET.ZHASADJUSTMENTS` (iOS 14+; `ZGENERICASSET` before) says a photo was edited, and
+  `ZADJUSTMENTTIMESTAMP` when; that time is the edit's stamp. A database without these columns reports no edits.
+- **Where.** The rendered version is looked for, read-only, in
+  `PhotoData/Mutations/<the photo's DCIM folder>/<its name without extension>/Adjustments/FullSizeRender.*` on the
+  Media root (an image for a photo, a movie for a video). When the phone has no such file the backup says so
+  (`editsMissing`) and doesn't guess; it looks again only after a new edit.
+- **On the PC.** Next to the copy of the original, as `IMG_1234 (edited).heic` (`.jpg` when HEIC becomes JPG; the
+  render's own extension otherwise), with the photo's date. The original's copy is never touched.
+- **A later edit** (a new stamp) makes an item of its own: the edited version replaces the one an earlier backup wrote,
+  when that file is still as written (size, and the photo's date as its write time); a file someone changed on the PC is
+  kept and the new edit gets a free name (`IMG_1234 (edited) (1).heic`).
+- `newEdits` counts new photos' edits and new edits of photos already copied; the panel's button says "Save 3 edited
+  versions" when nothing else is new. A Live Photo's edited video is not saved (only the still's render).
+- Asset ids of rendered versions (`PhotoData/Mutations/DCIM/…`) are readable through the photo library like DCIM ones;
+  nothing else under PhotoData is.
+
+### Already in the folder (after "forget history", or a new device id)
+
+Before a photo is copied, when the destination has a file of its size whose name (without a clash number like ` (2)`)
+is the photo's, a sample of the phone's file is compared with it: SHA-256 over the size and the first, middle and last
+64 KB (the whole file up to 192 KB), read with AFC FileSeek on an iPhone (`IPhotoRangeReader`, a new optional interface).
+A match is remembered as there already (`duplicates`), a Live Photo's video checked the same way next to it; anything
+else is copied and compared whole as before. A JPEG made from a HEIC keeps the HEIC's size and sample in the ledger's
+hash cache, so it is found again without converting. So a library already on the PC isn't downloaded again; only the
+samples are read. A photo whose edited version is to be saved is copied as before. Android has no part reads yet: it
+copies and compares whole, as before.

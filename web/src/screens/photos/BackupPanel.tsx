@@ -39,6 +39,8 @@ function runSummary(run: PhotoBackupRun, i18n: I18n): string {
   if (run.failed > 0) parts.push(t('photos.backup.run.failed', { count: run.failed }));
   if (run.keptHeic > 0) parts.push(t('photos.backup.run.keptHeic', { count: run.keptHeic }));
   if (run.state === 'cancelled') parts.push(t('photos.backup.run.cancelled'));
+  if (run.edited > 0) parts.push(t('photos.backup.run.edited', { count: run.edited }));
+  if (run.editsMissing > 0) parts.push(t('photos.backup.run.editsMissing', { count: run.editsMissing }));
   if (run.trigger === 'automatic') parts.push(t('photos.backup.run.automatic'));
   if (run.trigger === 'notification') parts.push(t('photos.backup.run.fromNotification'));
   return parts.join(' · ');
@@ -107,10 +109,14 @@ export function BackupPanel({ device, open, onOpenChange }: { device: DeviceSumm
                 variant="accent"
                 onClick={() => void start()}
                 loading={busy}
-                disabled={!count || count.newCount === 0 || !data.space.enough}
+                disabled={!count || count.newCount + count.newEdits === 0 || !data.space.enough}
                 data-testid="backup-start"
               >
-                {count && count.newCount > 0 ? t('photos.backup.start', { count: count.newCount }) : t('photos.backup.upToDate')}
+                {count && count.newCount > 0
+                  ? t('photos.backup.start', { count: count.newCount })
+                  : count && count.newEdits > 0
+                    ? t('photos.backup.startEdits', { count: count.newEdits })
+                    : t('photos.backup.upToDate')}
               </Button>
             )}
           </>
@@ -229,6 +235,7 @@ function Body({
               <span className={styles.heroTitle}>{t('photos.backup.new')}</span>
               <span className="t-caption t-secondary num">
                 {t('photos.backup.newDetail', { photos: count.newPhotos, videos: count.newVideos })}
+                {count.newEdits > 0 ? ` · ${t('photos.backup.newEdits', { count: count.newEdits })}` : ''}
                 {count.newBytes > 0 ? ` · ${t('photos.backup.about', { size: bytes(count.newBytes) })}` : ''}
               </span>
             </span>
@@ -345,6 +352,13 @@ function Body({
         <div className={styles.section}>
           <Switch checked={options.includeHidden} onChange={(includeHidden) => configure({ includeHidden })} label={t('photos.backup.includeHidden')} />
           <span className={styles.hint}>{t('photos.backup.includeHiddenHint')}</span>
+        </div>
+      ) : null}
+
+      {device.platform === 'ios' ? (
+        <div className={styles.section} data-testid="backup-save-edited">
+          <Switch checked={options.saveEdited} onChange={(saveEdited) => configure({ saveEdited })} label={t('photos.backup.saveEdited')} />
+          <span className={styles.hint}>{t('photos.backup.saveEditedHint')}</span>
         </div>
       ) : null}
 

@@ -41,6 +41,7 @@ describe('photo backup (mock)', () => {
       convertHeic: false,
       includeHidden: false,
       range: { kind: 'all', days: null, since: null },
+      saveEdited: false,
     });
     expect(status.count.outOfRange).toBe(0);
     expect(status.lastRun?.state).toBe('done');
@@ -154,6 +155,20 @@ describe('photo backup (mock)', () => {
     expect(after.lastRun).toMatchObject({ jobId: job!.id, state: 'done', trigger: 'automatic' });
     expect(after.count.newCount).toBe(0);
     expect((await client.call('photos.backupConfigure', { deviceId: ANDROID_ID, useDefaults: true })).onConnect).toBe('backUp');
+  });
+
+  it('saves the edited versions of an iPhone’s edited photos when asked, once per edit', async () => {
+    const { client, backend } = setup();
+    expect((await client.call('photos.newCount', { deviceId: IPHONE_ID })).newEdits).toBe(0);
+    const on = await client.call('photos.backupConfigure', { deviceId: IPHONE_ID, saveEdited: true });
+    expect(on.options.saveEdited).toBe(true);
+    expect(on.count.newEdits).toBeGreaterThan(0);
+
+    const { jobId } = await client.call('photos.backup', { deviceId: IPHONE_ID });
+    run(backend, 1_200_000);
+    const after = await client.call('photos.backupStatus', { deviceId: IPHONE_ID });
+    expect(after.lastRun).toMatchObject({ jobId, state: 'done', edited: on.count.newEdits, editsMissing: 0 });
+    expect(after.count.newEdits).toBe(0);
   });
 
   it('forgets the history without touching files', async () => {

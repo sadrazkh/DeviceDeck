@@ -416,6 +416,8 @@ export interface PhotoBackupCount {
   hiddenLeftOut: number;
   /** New, but taken before the options' date range: left out, in no other count. */
   outOfRange: number;
+  /** Edited versions to copy (iPhone, with saveEdited): new photos' edits and new edits of photos already copied. */
+  newEdits: number;
 }
 
 /** Which photos a backup looks at, by the date taken. Undated photos are always included. */
@@ -434,6 +436,8 @@ export interface PhotoBackupOptions {
   includeHidden: boolean;
   /** The phone's own only (Settings has none): everything by default. */
   range: PhotoBackupRange;
+  /** iPhone: also "IMG_1234 (edited).jpg" next to a photo edited in Photos, kept up to date. Off by default. */
+  saveEdited: boolean;
 }
 
 export type PhotoBackupRunState = 'running' | 'done' | 'failed' | 'cancelled';
@@ -453,6 +457,10 @@ export interface PhotoBackupRun {
   startedAt: string;
   finishedAt: string | null;
   trigger: PhotoBackupTrigger;
+  /** Edited versions written (new or updated). */
+  edited: number;
+  /** Photos the iPhone says were edited but has no edited version of where Photos keeps them. */
+  editsMissing: number;
 }
 
 export type HeicConversion = 'available' | 'missingCodec' | 'unknown';

@@ -151,6 +151,7 @@ export interface BridgeMethods {
       useDefaults?: boolean;
       range?: PhotoBackupRange;
       onConnect?: PhotoBackupOnConnect;
+      saveEdited?: boolean;
     };
     result: PhotoBackupStatus;
   };

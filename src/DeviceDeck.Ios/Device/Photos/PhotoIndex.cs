@@ -61,6 +61,14 @@ public sealed class PhotoIndex
 
     private IReadOnlySet<string> HiddenIds { get; init; } = new HashSet<string>();
 
+    private IReadOnlyDictionary<string, string> EditStamps { get; init; } = new Dictionary<string, string>();
+
+    /// <summary>
+    /// When Photos.sqlite says the asset was edited: a stamp that changes with every new edit (the adjustment time, or
+    /// "edited" where the database has none). Null when it wasn't edited, or without the database.
+    /// </summary>
+    public string? EditStampOf(string assetId) => EditStamps.GetValueOrDefault(assetId);
+
     /// <summary>The asset's ZUUID in Photos.sqlite (stable for the life of the photo), or null without the database.</summary>
     public string? UuidOf(string assetId) => Uuids.GetValueOrDefault(assetId);
 
@@ -110,6 +118,7 @@ public sealed class PhotoIndex
         var idByPk = new Dictionary<long, string>();
         var hidden = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var uuids = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var edits = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         if (rows is not null)
         {
@@ -131,6 +140,8 @@ public sealed class PhotoIndex
                     hidden.Add(id);
                 if (row.Uuid is { Length: > 0 } uuid)
                     uuids[id] = uuid;
+                if (row.HasAdjustments)
+                    edits[id] = row.AdjustedAt is { } at ? at.UtcTicks.ToString(System.Globalization.CultureInfo.InvariantCulture) : "edited";
                 var kind = row.Kind == 1 ? PhotoKind.Video
                     : row.KindSubtype == 2 ? PhotoKind.LivePhoto
                     : row.KindSubtype == 10 || row.DetectedScreenshot ? PhotoKind.Screenshot
@@ -229,6 +240,7 @@ public sealed class PhotoIndex
             HiddenCount = hidden.Count,
             Uuids = uuids,
             HiddenIds = hidden,
+            EditStamps = edits,
         };
     }
 

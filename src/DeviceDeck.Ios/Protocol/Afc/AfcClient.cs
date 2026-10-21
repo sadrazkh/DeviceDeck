@@ -90,6 +90,34 @@ public sealed class AfcClient(Stream stream) : IAsyncDisposable
     public Task CloseAsync(ulong handle, CancellationToken ct) =>
         RequestAsync(AfcOperation.FileClose, AfcPacket.U64(handle), default, null, ct);
 
+    /// <summary>Moves an open file's position: whence 0 from the start, 1 from here, 2 from the end.</summary>
+    public Task SeekAsync(ulong handle, long offset, int whence, CancellationToken ct) =>
+        RequestAsync(AfcOperation.FileSeek, [.. AfcPacket.U64(handle), .. AfcPacket.U64((ulong)whence), .. AfcPacket.U64((ulong)offset)], default, null, ct);
+
+    /// <summary>Up to <paramref name="count"/> bytes from <paramref name="offset"/> of a file; fewer only at its end.</summary>
+    public async Task<byte[]> ReadRangeAsync(string path, long offset, int count, CancellationToken ct)
+    {
+        var handle = await OpenAsync(path, AfcFileMode.ReadOnly, ct).ConfigureAwait(false);
+        try
+        {
+            if (offset > 0)
+                await SeekAsync(handle, offset, 0, ct).ConfigureAwait(false);
+            using var bytes = new MemoryStream(count);
+            while (bytes.Length < count)
+            {
+                var chunk = await ReadAsync(handle, (int)Math.Min(ReadChunk, count - bytes.Length), ct).ConfigureAwait(false);
+                if (chunk.Length == 0)
+                    break;
+                bytes.Write(chunk);
+            }
+            return bytes.ToArray();
+        }
+        finally
+        {
+            await CloseQuietlyAsync(handle).ConfigureAwait(false);
+        }
+    }
+
     /// <summary>
     /// Streams a file off the phone into one pooled buffer. Progress reports bytes copied so far. With
     /// <paramref name="readAhead"/> above 1 that many FileReads are kept in flight, so the phone is already sending the

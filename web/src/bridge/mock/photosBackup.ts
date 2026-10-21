@@ -116,6 +116,7 @@ interface DeviceBackup {
   lastRun: PhotoBackupRun | null;
   activeJobId: string | null;
   onConnect: PhotoBackupOnConnect;
+  editsCopied: Set<string>;
 }
 
 const LIVE_MOTION_BYTES = 2.6 * 1024 * 1024;
@@ -171,10 +172,13 @@ export class MockPhotoBackup {
                 startedAt: new Date(finished - 40 * 60 * 1000).toISOString(),
                 finishedAt: new Date(finished).toISOString(),
                 trigger: 'manual',
+                edited: 0,
+                editsMissing: 0,
               }
             : null,
         activeJobId: null,
         onConnect: 'notify',
+        editsCopied: new Set(),
       };
       this.devices.set(deviceId, state);
     }
@@ -190,7 +194,19 @@ export class MockPhotoBackup {
       convertHeic: own.convertHeic ?? s.photoBackupConvertHeic,
       includeHidden: own.includeHidden ?? false,
       range: own.range ?? EVERYTHING,
+      saveEdited: own.saveEdited ?? false,
     };
+  }
+
+  /** The mock iPhone's photos edited in Photos: every 97th; their edited version is copied once per edit. */
+  private editsWanted(deviceId: string, options: PhotoBackupOptions): MockAsset[] {
+    const device = this.host.library(deviceId);
+    if (!options.saveEdited || deviceId !== IPHONE_ID) return [];
+    const state = this.state(deviceId);
+    const cutoff = rangeCutoff(options.range, this.host.now());
+    return device.assets.filter(
+      (a, i) => i % 97 === 0 && !a.inCloudOnly && !state.editsCopied.has(a.id) && (cutoff === null || !a.takenAt || Date.parse(a.takenAt) >= cutoff),
+    );
   }
 
   private candidates(deviceId: string, options: PhotoBackupOptions): { copy: MockAsset[]; cloud: number; hidden: number; outOfRange: number } {
@@ -222,6 +238,7 @@ export class MockPhotoBackup {
       cloudOnly: cloud,
       hiddenLeftOut: hidden,
       outOfRange,
+      newEdits: this.editsWanted(device.id, this.options(device)).length,
     };
   }
 
@@ -255,18 +272,29 @@ export class MockPhotoBackup {
     const options = this.options(device);
     const space = spaceFor(options.destination, this.count(device).newBytes);
     if (space.driveMissing) throw this.host.fault('path_not_found', `The backup folder's drive ${space.root} isn't there. Connect it, or choose another folder.`);
-    if (!space.enough && this.count(device).newCount > 0) {
+    if (!space.enough && this.count(device).newCount + this.count(device).newEdits > 0) {
       throw this.host.fault('no_space', `Not enough space on ${space.root} for the new photos. Free some space, or choose another folder.`);
     }
     state.own.destination ??= options.destination;
     const { copy } = this.candidates(deviceId, options);
+    const edits = new Set(this.editsWanted(deviceId, options).map((a) => a.id));
     const assetOf = new Map<JobItem, MockAsset>();
+    const editOf = new Map<JobItem, MockAsset>();
     const items = copy.map<JobItem>((a) => {
       const name = options.convertHeic ? a.fileName.replace(/\.HEIC$/i, '.jpg') : a.fileName;
       const item = { name: folderFor(options.folderPattern, a.takenAt) + name, size: a.size + (a.livePairId ? LIVE_MOTION_BYTES : 0) };
       assetOf.set(item, a);
+      if (edits.delete(a.id)) editOf.set(item, a);
       return item;
     });
+    // Edits of photos copied before: the edited version alone.
+    for (const id of edits) {
+      const a = this.host.library(deviceId).byId.get(id);
+      if (!a) continue;
+      const item = { name: folderFor(options.folderPattern, a.takenAt) + a.fileName.replace(/(\.[^.]+)$/, ' (edited)$1'), size: Math.round(a.size * 0.8) };
+      editOf.set(item, a);
+      items.push(item);
+    }
     const startedAt = new Date(this.host.now()).toISOString();
     const run: PhotoBackupRun = {
       jobId: '',
@@ -281,6 +309,8 @@ export class MockPhotoBackup {
       startedAt,
       finishedAt: null,
       trigger,
+      edited: 0,
+      editsMissing: 0,
     };
     const job = engine.add({
       deviceId,
@@ -289,8 +319,15 @@ export class MockPhotoBackup {
       items,
       onItemDone: (item) => {
         const asset = assetOf.get(item);
-        if (asset) state.backedUp.add(asset.id);
-        run.copied++;
+        if (asset) {
+          state.backedUp.add(asset.id);
+          run.copied++;
+        }
+        const edited = editOf.get(item);
+        if (edited) {
+          state.editsCopied.add(edited.id);
+          run.edited++;
+        }
         run.bytes += item.size;
       },
       onDone: () => {
@@ -320,7 +357,7 @@ export class MockPhotoBackup {
   readonly handlers: Handlers = {
     'photos.newCount': ({ deviceId }) => this.count(this.host.requireReady(deviceId, 'photosRead')),
     'photos.backupStatus': ({ deviceId }) => this.status(this.host.requireReady(deviceId, 'photosRead')),
-    'photos.backupConfigure': ({ deviceId, destination, folderPattern, convertHeic, includeHidden, useDefaults, range, onConnect }) => {
+    'photos.backupConfigure': ({ deviceId, destination, folderPattern, convertHeic, includeHidden, useDefaults, range, onConnect, saveEdited }) => {
       const device = this.host.requireReady(deviceId, 'photosRead');
       if (destination !== undefined && !/^[a-z]:\\/i.test(destination)) throw this.host.badParams('destination must be a full folder path on this PC.');
       if (folderPattern !== undefined && !isValidPattern(folderPattern)) {
@@ -339,6 +376,7 @@ export class MockPhotoBackup {
       if (folderPattern !== undefined) state.own.folderPattern = folderPattern;
       if (convertHeic !== undefined) state.own.convertHeic = convertHeic;
       if (includeHidden !== undefined) state.own.includeHidden = includeHidden;
+      if (saveEdited !== undefined) state.own.saveEdited = saveEdited;
       return this.status(device);
     },
     'photos.backup': ({ deviceId }) => this.start(this.host.requireReady(deviceId, 'photosRead'), 'manual'),

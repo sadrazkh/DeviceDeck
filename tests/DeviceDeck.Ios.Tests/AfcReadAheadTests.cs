@@ -55,6 +55,22 @@ public sealed class AfcReadAheadTests
     }
 
     [Fact]
+    public async Task Part_of_a_file_reads_from_any_offset_and_stops_at_its_end()
+    {
+        const long length = Chunk * 3L + 123;
+        var server = new FakeAfcServer().AddGeneratedFile("/DCIM/IMG_0009.MOV", length, 11);
+        await using var afc = Connect(server);
+        var all = Expected(length, 11);
+
+        Assert.Equal(all[..65536], await afc.ReadRangeAsync("/DCIM/IMG_0009.MOV", 0, 65536, Ct));
+        Assert.Equal(all[(int)(length / 2)..(int)(length / 2 + 65536)], await afc.ReadRangeAsync("/DCIM/IMG_0009.MOV", length / 2, 65536, Ct));
+        Assert.Equal(all[(int)(length - 100)..], await afc.ReadRangeAsync("/DCIM/IMG_0009.MOV", length - 100, 65536, Ct));
+        Assert.Equal(all[Chunk..(Chunk * 2 + 5)], await afc.ReadRangeAsync("/DCIM/IMG_0009.MOV", Chunk, Chunk + 5, Ct)); // more than one FileRead
+        Assert.Contains(AfcOperation.FileSeek, server.Operations);
+        Assert.False(afc.IsBroken);
+    }
+
+    [Fact]
     public async Task A_connection_dropped_mid_file_is_broken_for_good()
     {
         var server = new FakeAfcServer().AddGeneratedFile("/DCIM/IMG_0002.MOV", Chunk * 3L, 9);
