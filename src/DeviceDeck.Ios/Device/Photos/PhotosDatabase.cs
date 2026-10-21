@@ -54,13 +54,15 @@ public sealed partial class PhotosDatabase : IDisposable
         var s = Schema;
         string A(string column) => s.AssetColumns.Contains(column) ? "a." + column : "NULL";
         string X(string column) => s.AttributesTable is not null && s.AttributeColumns.Contains(column) ? "x." + column : "NULL";
+        // Older schemas say "edited" in ZHASADJUSTMENTS; iOS 27 has no such column, only ZADJUSTMENTSSTATE (0 = not edited).
+        var edited = s.AssetColumns.Contains("ZHASADJUSTMENTS") ? "a.ZHASADJUSTMENTS" : A("ZADJUSTMENTSSTATE");
 
         var join = s.AttributesTable is null ? "" : $"LEFT JOIN {s.AttributesTable} x ON x.ZASSET = a.Z_PK";
         var sql = $"""
             SELECT a.Z_PK, {A("ZDIRECTORY")}, {A("ZFILENAME")}, {A("ZKIND")}, {A("ZKINDSUBTYPE")}, {A("ZDATECREATED")},
                    {A("ZFAVORITE")}, {A("ZHIDDEN")}, {A("ZTRASHEDSTATE")}, {A("ZWIDTH")}, {A("ZHEIGHT")}, {A("ZDURATION")},
                    {A("ZUUID")}, {A("ZISDETECTEDSCREENSHOT")}, {X("ZORIGINALFILESIZE")}, {X("ZORIGINALFILENAME")},
-                   {A("ZHASADJUSTMENTS")}, {A("ZADJUSTMENTTIMESTAMP")}
+                   {edited}, {A("ZADJUSTMENTTIMESTAMP")}
             FROM {s.AssetTable} a {join}
             """;
         var rows = new List<PhotoRow>();
@@ -228,7 +230,7 @@ public sealed record AlbumJoin(string Table, string AlbumColumn, string AssetCol
 
 /// <param name="Kind">ZKIND: 0 photo, 1 video.</param>
 /// <param name="KindSubtype">ZKINDSUBTYPE: 1 panorama, 2 Live Photo, 10 screenshot, 100 / 101 / 102 video variants.</param>
-/// <param name="HasAdjustments">ZHASADJUSTMENTS: edited in Photos (false where the schema has no such column).</param>
+/// <param name="HasAdjustments">ZHASADJUSTMENTS, or ZADJUSTMENTSSTATE &gt; 0 on iOS 27: edited in Photos (false where the schema has neither).</param>
 /// <param name="AdjustedAt">ZADJUSTMENTTIMESTAMP: when it was last edited; a new edit changes it.</param>
 public sealed record PhotoRow(
     long Pk,

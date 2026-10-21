@@ -31,8 +31,11 @@ public sealed class PhotosEditsTests : IAsyncLifetime
         });
     }
 
-    /// <summary>The iOS 17 fixture, with IMG_0001 (a photo) and IMG_0003 (a video) edited when <paramref name="withColumns"/>.</summary>
-    private async Task<FakePhone> PhoneAsync(bool withColumns)
+    /// <summary>
+    /// The iOS 17 fixture, with IMG_0001 (a photo) and IMG_0003 (a video) edited when <paramref name="withColumns"/>:
+    /// in ZHASADJUSTMENTS, or, as on iOS 27 (no ZHASADJUSTMENTS), in ZADJUSTMENTSSTATE (2 and 3 seen on a real iPhone).
+    /// </summary>
+    private async Task<FakePhone> PhoneAsync(bool withColumns, bool ios27 = false)
     {
         _mux.PairRecords[Udid] = TestPairing.StoredRecordXml();
         var phone = new FakePhone(Udid) { ExpectedHostId = TestPairing.HostId };
@@ -42,14 +45,23 @@ public sealed class PhotosEditsTests : IAsyncLifetime
             using var db = new SqliteConnection($"Data Source={path};Pooling=False");
             db.Open();
             using var cmd = db.CreateCommand();
-            cmd.CommandText = """
-                ALTER TABLE ZASSET ADD COLUMN ZHASADJUSTMENTS INTEGER;
-                ALTER TABLE ZASSET ADD COLUMN ZADJUSTMENTTIMESTAMP TIMESTAMP;
-                UPDATE ZASSET SET ZHASADJUSTMENTS = 0;
-                UPDATE ZASSET SET ZHASADJUSTMENTS = 1, ZADJUSTMENTTIMESTAMP = 780000000 WHERE Z_PK = 1;
-                UPDATE ZASSET SET ZHASADJUSTMENTS = 1 WHERE Z_PK = 3;
-                UPDATE ZASSET SET ZHASADJUSTMENTS = 1, ZADJUSTMENTTIMESTAMP = 780000500 WHERE Z_PK = 2;
-                """;
+            cmd.CommandText = ios27
+                ? """
+                  ALTER TABLE ZASSET ADD COLUMN ZADJUSTMENTSSTATE INTEGER;
+                  ALTER TABLE ZASSET ADD COLUMN ZADJUSTMENTTIMESTAMP TIMESTAMP;
+                  UPDATE ZASSET SET ZADJUSTMENTSSTATE = 0;
+                  UPDATE ZASSET SET ZADJUSTMENTSSTATE = 3, ZADJUSTMENTTIMESTAMP = 780000000 WHERE Z_PK = 1;
+                  UPDATE ZASSET SET ZADJUSTMENTSSTATE = 2 WHERE Z_PK = 3;
+                  UPDATE ZASSET SET ZADJUSTMENTSSTATE = 3, ZADJUSTMENTTIMESTAMP = 780000500 WHERE Z_PK = 2;
+                  """
+                : """
+                  ALTER TABLE ZASSET ADD COLUMN ZHASADJUSTMENTS INTEGER;
+                  ALTER TABLE ZASSET ADD COLUMN ZADJUSTMENTTIMESTAMP TIMESTAMP;
+                  UPDATE ZASSET SET ZHASADJUSTMENTS = 0;
+                  UPDATE ZASSET SET ZHASADJUSTMENTS = 1, ZADJUSTMENTTIMESTAMP = 780000000 WHERE Z_PK = 1;
+                  UPDATE ZASSET SET ZHASADJUSTMENTS = 1 WHERE Z_PK = 3;
+                  UPDATE ZASSET SET ZHASADJUSTMENTS = 1, ZADJUSTMENTTIMESTAMP = 780000500 WHERE Z_PK = 2;
+                  """;
             cmd.ExecuteNonQuery();
         }
 
@@ -78,6 +90,19 @@ public sealed class PhotosEditsTests : IAsyncLifetime
         }
 
         return (IosPhotoLibrary)_provider.Find(Udid)!.Photos;
+    }
+
+    [Fact]
+    public async Task On_ios_27_edits_come_from_ZADJUSTMENTSSTATE()
+    {
+        var photos = await AttachAsync(await PhoneAsync(withColumns: true, ios27: true));
+        var assets = await photos.GetBackupAssetsAsync(Ct);
+        PhotoBackupAsset Get(string name) => assets.Single(a => a.FileName == name);
+
+        var adjustedAt = new DateTimeOffset(2001, 1, 1, 0, 0, 0, TimeSpan.Zero).AddSeconds(780000000).UtcTicks.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        Assert.Equal(new PhotoBackupEdit(adjustedAt), Get("IMG_0001.JPG").Edited);
+        Assert.Equal(new PhotoBackupEdit("edited"), Get("IMG_0003.MOV").Edited);
+        Assert.Null(Get("IMG_0004.PNG").Edited); // state 0: not edited
     }
 
     [Fact]
