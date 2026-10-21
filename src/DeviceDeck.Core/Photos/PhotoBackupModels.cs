@@ -127,5 +127,8 @@ public sealed record PhotoBackupRequest(string Destination, string FolderPattern
 /// <summary>The transfer request of a photosToApp job: PC pictures and videos into an iPhone app's Documents.</summary>
 public sealed record PhotosToAppRequest(string AppId, IReadOnlyList<string> Files);
 
+/// <summary>Leftover temp files of the photo backup that were removed, and the space they took.</summary>
+public sealed record PhotoBackupCleanup(IReadOnlyList<string> Files, long Bytes);
+
 /// <summary>Raised once per finished photosBackup job (done, failed or cancelled).</summary>
 public sealed record PhotoBackupFinished(string DeviceId, PhotoBackupRun Run, TransferJob Job);

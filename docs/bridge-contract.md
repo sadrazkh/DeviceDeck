@@ -754,3 +754,11 @@ else is copied and compared whole as before. A JPEG made from a HEIC keeps the H
 hash cache, so it is found again without converting. So a library already on the PC isn't downloaded again; only the
 samples are read. A photo whose edited version is to be saved is copied as before. Android has no part reads yet: it
 copies and compares whole, as before.
+
+### Leftover temp files
+
+The backup's temp files have names nothing else uses: `<name>.original.ddpart`, `.motion.ddpart`, `.edited.ddpart`
+and `.backup.ddpart` (a download always starts over, so none is ever resumed from). When the app starts and after
+every run, those in the folders backups went to are removed, but only where no backup is queued, running, paused or
+waiting for that folder, and only when not written in the last minute. Nothing else is touched: not another copy's
+`.ddpart`, not a file outside the backup folders. The host logs what went and how much space it freed.

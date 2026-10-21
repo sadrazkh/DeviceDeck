@@ -50,6 +50,9 @@ public sealed class PhotoBackupService : IDisposable
     /// <summary>A backup job finished (done, failed or cancelled), with what it copied.</summary>
     public event EventHandler<PhotoBackupFinished>? RunFinished;
 
+    /// <summary>Leftover temp files of backups that will never resume were removed (for the log).</summary>
+    public event EventHandler<PhotoBackupCleanup>? CleanedUp;
+
     /// <summary>Starts following the queue's backup jobs, so each run's state and counts are kept.</summary>
     public void Attach(TransferQueue queue)
     {
@@ -70,6 +73,84 @@ public sealed class PhotoBackupService : IDisposable
         {
             OnJobUpdated(queue, job);
         }
+
+        // What a crash or a kill left behind in the backup folders: their downloads start over anyway.
+        CleanupTask = Task.Run(() => CleanUpPartials());
+    }
+
+    /// <summary>The clean-up started last (at attach, or after a run): tests wait for it.</summary>
+    internal Task CleanupTask { get; private set; } = Task.CompletedTask;
+
+    /// <summary>
+    /// Removes the photo backup's own unfinished downloads (<see cref="PhotosBackupHandler.TempSuffixes"/>; nothing else)
+    /// from the folders backups went to, where no backup is queued, running, paused or waiting: no job will resume them
+    /// (a download always starts over). <paramref name="only"/> limits it to one folder. Never touches anything else.
+    /// </summary>
+    public PhotoBackupCleanup CleanUpPartials(string? only = null)
+    {
+        var busy = (_queue?.List() ?? [])
+            .Where(j => j.Kind == TransferKind.PhotosBackup && j.State is not (TransferState.Done or TransferState.Failed or TransferState.Cancelled))
+            .Select(j => Ledger.GetRun(j.Id)?.Destination)
+            .OfType<string>()
+            .ToList();
+        var removed = new List<string>();
+        long bytes = 0;
+        foreach (var folder in Ledger.Destinations().Where(d => only is null || SameFolder(d, only)))
+        {
+            if (busy.Any(b => SameFolder(b, folder) || IsInside(b, folder) || IsInside(folder, b)) || !Directory.Exists(folder))
+            {
+                continue;
+            }
+
+            IEnumerable<string> partials;
+            try
+            {
+                partials = Directory.EnumerateFiles(folder, "*" + TransferPaths.PartialSuffix,
+                    new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true, AttributesToSkip = FileAttributes.System | FileAttributes.ReparsePoint })
+                    .Where(f => PhotosBackupHandler.TempSuffixes.Any(s => f.EndsWith(s, StringComparison.OrdinalIgnoreCase)))
+                    .ToList();
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                continue;
+            }
+
+            foreach (var file in partials)
+            {
+                try
+                {
+                    // One written in the last minute may belong to a backup that started just now.
+                    var info = new FileInfo(file);
+                    if (_time.GetUtcNow().UtcDateTime - info.LastWriteTimeUtc < TimeSpan.FromMinutes(1))
+                    {
+                        continue;
+                    }
+
+                    var length = info.Length;
+                    File.Delete(file);
+                    removed.Add(file);
+                    bytes += length;
+                }
+                catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+                {
+                    // In use or locked: next time.
+                }
+            }
+        }
+
+        var result = new PhotoBackupCleanup(removed, bytes);
+        if (removed.Count > 0)
+        {
+            CleanedUp?.Invoke(this, result);
+        }
+
+        return result;
+
+        static bool SameFolder(string a, string b) =>
+            string.Equals(Path.TrimEndingDirectorySeparator(a), Path.TrimEndingDirectorySeparator(b), StringComparison.OrdinalIgnoreCase);
+
+        static bool IsInside(string inner, string outer) =>
+            inner.StartsWith(Path.TrimEndingDirectorySeparator(outer) + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase);
     }
 
     /// <summary>
@@ -397,6 +478,8 @@ public sealed class PhotoBackupService : IDisposable
         if (finished is not null)
         {
             RunFinished?.Invoke(this, new PhotoBackupFinished(job.DeviceId, finished, job));
+            var folder = finished.Destination;
+            CleanupTask = Task.Run(() => CleanUpPartials(folder));
         }
     }
 

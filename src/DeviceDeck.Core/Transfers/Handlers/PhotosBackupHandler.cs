@@ -259,7 +259,7 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
         long written;
         if (jpeg is not null)
         {
-            await WritePcFileAsync(stillPath, jpeg.Length, async target => await target.WriteAsync(jpeg.Bytes, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
+            await WriteFileAsync(stillPath, jpeg.Bytes, overwrite: false, ct).ConfigureAwait(false);
             SetTimes(stillPath, info.TakenAt);
             run.Index.Add(stillPath, jpeg.Length, jpeg.Hash, jpeg.Origin);
             written = jpeg.Length;
@@ -518,7 +518,7 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
             : FreeName(wanted);
         if (edit.Jpeg is { } jpeg)
         {
-            await WritePcFileAsync(target, jpeg.Length, async t => await t.WriteAsync(jpeg.Bytes, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
+            await WriteFileAsync(target, jpeg.Bytes, overwrite: target == previous, ct).ConfigureAwait(false);
             SetTimes(target, info.TakenAt);
             run.Index.Add(target, jpeg.Length, jpeg.Hash);
         }
@@ -530,7 +530,7 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
         }
         else
         {
-            await PutAsync(edit.File, target, info.TakenAt, run.Index, ct).ConfigureAwait(false);
+            await PutAsync(edit.File, target, info.TakenAt, run.Index, ct, overwrite: target == previous).ConfigureAwait(false);
         }
 
         return target;
@@ -619,19 +619,44 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
     }
 
     /// <summary>Moves a downloaded file into place (or writes it there through a .ddpart when it is in memory) with the photo's dates.</summary>
-    private static async Task PutAsync(Downloaded file, string destination, DateTimeOffset? takenAt, PhotoDestinationIndex index, CancellationToken ct)
+    private static async Task PutAsync(Downloaded file, string destination, DateTimeOffset? takenAt, PhotoDestinationIndex index, CancellationToken ct,
+        bool overwrite = false)
     {
         if (file.Path is { } temp)
         {
-            File.Move(temp, destination);
+            File.Move(temp, destination, overwrite);
         }
         else
         {
-            await WritePcFileAsync(destination, file.Size, async target => await target.WriteAsync(file.Bytes, ct).ConfigureAwait(false), ct).ConfigureAwait(false);
+            await WriteFileAsync(destination, file.Bytes!, overwrite, ct).ConfigureAwait(false);
         }
 
         SetTimes(destination, takenAt);
         index.Add(destination, file.Size, file.Hash);
+    }
+
+    /// <summary>The photo backup's own temp files: "IMG_0001.HEIC.original.ddpart" and its kin. Nothing else is named so.</summary>
+    public static readonly IReadOnlyList<string> TempSuffixes =
+        [".original" + PartialSuffix, ".motion" + PartialSuffix, ".edited" + PartialSuffix, ".backup" + PartialSuffix];
+
+    /// <summary>Bytes in memory onto the PC through "&lt;name&gt;.backup.ddpart" and a rename, so a half-written file never has the real name.</summary>
+    private static async Task WriteFileAsync(string destination, byte[] bytes, bool overwrite, CancellationToken ct)
+    {
+        var partial = destination + ".backup" + PartialSuffix;
+        try
+        {
+            await using (var file = new FileStream(partial, FileMode.Create, FileAccess.Write, FileShare.None, 1 << 16, FileOptions.Asynchronous))
+            {
+                await file.WriteAsync(bytes, ct).ConfigureAwait(false);
+            }
+
+            File.Move(partial, destination, overwrite);
+        }
+        catch
+        {
+            TryDelete(partial);
+            throw;
+        }
     }
 
     /// <summary>Explorer sorts by these: the file's dates become the photo's.</summary>
