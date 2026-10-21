@@ -75,6 +75,9 @@ internal sealed class HostServices : IAsyncDisposable
     public CleanupService Cleanup { get; private init; } = null!;
     public BatteryRecorder Battery { get; private init; } = null!;
 
+    /// <summary>Photos into Photos with LocalSend (round 3).</summary>
+    public DeviceDeck.Core.LocalSend.LocalSendService LocalSend { get; private init; } = null!;
+
     public static string Version { get; } =
         typeof(HostServices).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "0.1.0";
 
@@ -95,9 +98,11 @@ internal sealed class HostServices : IAsyncDisposable
         var photoBackup = new PhotoBackupService(Path.Combine(paths.Root, "photo-backup.db"), hub, settings, transcoder, PhotosHeicProbe.Check());
         var keepAwake = new WindowsKeepAwake();
         var dragOuts = new DragOutRegistry();
-        var transfers = new TransferQueue(hub, store, [.. TransferHandlers.All(transcoder), photoBackup.Handler, new DragOutHandler(dragOuts)], keepAwake);
+        var localSend = new DeviceDeck.Core.LocalSend.LocalSendService(hub, store.LoadItems);
+        var transfers = new TransferQueue(hub, store, [.. TransferHandlers.All(transcoder), photoBackup.Handler, new DragOutHandler(dragOuts), localSend.Handler], keepAwake);
         transfers.Start();
         photoBackup.Attach(transfers);
+        localSend.Attach(transfers);
         var backups = new BackupService(hub, settings, new DeviceDeck.Ios.Backup.Format.IosBackupFormat(),
             new BackupServiceOptions { KeepAwake = keepAwake, Transcoder = transcoder });
         backups.Start();
@@ -110,6 +115,7 @@ internal sealed class HostServices : IAsyncDisposable
         {
             Cleanup = cleanup,
             Battery = battery,
+            LocalSend = localSend,
         };
 
         // A drag into File Explorer doesn't survive a restart: Explorer's end of it is gone.
@@ -141,6 +147,7 @@ internal sealed class HostServices : IAsyncDisposable
         Battery = Battery,
         Toolbox = DeviceDeck.Shell.Toolbox.ShellToolbox.Create(this),
         Backups = Backups,
+        LocalSend = LocalSend,
     };
 
     /// <summary>Starts the providers once the window is up, so the first paint isn't waiting on USB.</summary>
@@ -178,6 +185,7 @@ internal sealed class HostServices : IAsyncDisposable
         await StepAsync("clean-up", async () => await Cleanup.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);
         await StepAsync("battery history", async () => await Battery.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);
         await StepAsync("transfer queue", async () => await Transfers.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);
+        await StepAsync("LocalSend", async () => await LocalSend.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);
         await StepAsync("video cache", async () => await Videos.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);
         await StepAsync("backup service", async () => await Backups.DisposeAsync().ConfigureAwait(false)).ConfigureAwait(false);
         await StepAsync("transfer store", () =>

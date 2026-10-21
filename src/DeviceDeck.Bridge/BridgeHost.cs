@@ -33,7 +33,8 @@ public sealed class BridgeHost : IDisposable
         services.Transfers.JobUpdated += OnJobUpdated;
         if (services.Backups is { } backups)
             backups.JobUpdated += OnBackupUpdated;
-        _featureEvents = [CleanupMethods.PublishEvents(services, Publish), BatteryMethods.PublishEvents(services, Publish)];
+        _featureEvents = [CleanupMethods.PublishEvents(services, Publish), BatteryMethods.PublishEvents(services, Publish),
+            LocalSend.LocalSendMethods.PublishEvents(services, Publish)];
         _desktopEvents = new DesktopEvents(services, Publish);
         foreach (var summary in services.Hub.ListDevices())
         {
