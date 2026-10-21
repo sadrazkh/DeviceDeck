@@ -37,6 +37,9 @@ const report: { view: string; problems: string[] }[] = [];
 test.describe.configure({ mode: 'serial' });
 
 test.beforeAll(async () => {
+  // Round 4 (updates): "What's new" would open over the window on a first start; no update checks either.
+  process.env.DEVICEDECK_WHATSNEW = '0';
+  process.env.DEVICEDECK_UPDATE_FEED = 'off';
   host = await launch({ providers: PROVIDERS, data: path.join(ROOT, `whatsapp-host-data-${PROVIDERS}`) });
   await rpc(host.page, 'settings.set', OWNER ? { backupFolder: BACKUPS } : { backupFolder: BACKUPS, fileCopyFolder: EXPORTS });
 });

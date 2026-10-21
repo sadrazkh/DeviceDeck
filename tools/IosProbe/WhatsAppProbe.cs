@@ -23,7 +23,7 @@ internal static class WhatsAppProbe
     {
         if (cli.Positional.Count < 1)
             throw new CliException("usage: iosprobe whatsapp <backup folder> [--password-env NAME]");
-        var folder = Path.GetFullPath(cli.Positional[0]);
+        var folder = Path.TrimEndingDirectorySeparator(Path.GetFullPath(cli.Positional[0]));
         var password = cli.Option("password-env") is { } name ? Environment.GetEnvironmentVariable(name) : null;
         var format = new IosBackupFormat();
         var header = format.ReadHeader(folder) ?? throw new CliException($"{folder} isn't an iPhone backup (no Info.plist / Manifest.plist).");
@@ -95,7 +95,8 @@ internal static class WhatsAppProbe
 
                         if (m.Media is { } item)
                         {
-                            Count(media, item.Kind + (item.InBackup ? "" : "(not in backup)"));
+                            // Locations and contact cards have no file to be missing.
+                            Count(media, item.Kind + (item.InBackup || item.Kind is WhatsAppMediaKind.Location or WhatsAppMediaKind.Contact ? "" : "(not in backup)"));
                             inBackup += item.InBackup ? 1 : 0;
                             withThumb += item.HasThumbnail ? 1 : 0;
                             captions += m.Text is not null ? 1 : 0;

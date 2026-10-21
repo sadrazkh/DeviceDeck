@@ -79,7 +79,8 @@ public sealed partial class BackupService
             {
                 var bytes = await ReadWholeAsync(archive, entry, ct).ConfigureAwait(false);
                 var type = ImageFormats.Sniff(bytes);
-                if (type == "image/webp" || (type is "image/jpeg" or "image/png" or "image/gif" && (bytes.Length <= 512 * 1024 || _options.Transcoder is null)))
+                // Small pictures go as they are; bigger ones are made small, or (without a transcoder) sent up to a few MB.
+                if (type == "image/webp" || (type is "image/jpeg" or "image/png" or "image/gif" && bytes.Length <= (_options.Transcoder is null ? 4 * 1024 * 1024 : 512 * 1024)))
                 {
                     return bytes;
                 }
