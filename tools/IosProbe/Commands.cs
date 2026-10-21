@@ -19,6 +19,11 @@ internal static class Commands
                 return await ListAsync(cli, ct);
             case "watch":
                 return await WatchAsync(ct);
+            // Round 3: LocalSend (they start the app's own hub and queue).
+            case "localsend":
+                return await LocalSendCommands.FindAsync(cli, ct);
+            case "localsend-send":
+                return await LocalSendCommands.SendAsync(cli, ct);
         }
 
         if (!DeviceCommands.TryGetValue(cli.Command, out var spec))
