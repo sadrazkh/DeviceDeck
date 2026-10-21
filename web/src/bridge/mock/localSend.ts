@@ -18,8 +18,19 @@ import type { JobItem, TransferEngine } from './transfers';
  * ready: found over the cable, Accept tapped after a moment. quickSave: no Accept needed. closed: LocalSend isn't open.
  * opening: closed for the first two looks, then open. background: open but suspended. wifi: not over the cable, found
  * on Wi-Fi. pin: asks for the PIN 123456. reject: Decline is tapped. busy: busy with another transfer the first time.
+ * backgroundMidSend: the first time, LocalSend goes to the background (the iPhone locked) as the bytes start.
  */
-export type MockLocalSendScenario = 'ready' | 'quickSave' | 'closed' | 'opening' | 'background' | 'wifi' | 'pin' | 'reject' | 'busy';
+export type MockLocalSendScenario =
+  | 'ready'
+  | 'quickSave'
+  | 'closed'
+  | 'opening'
+  | 'background'
+  | 'wifi'
+  | 'pin'
+  | 'reject'
+  | 'busy'
+  | 'backgroundMidSend';
 
 export const MOCK_LOCALSEND_SCENARIOS: readonly MockLocalSendScenario[] = [
   'ready',
@@ -31,6 +42,7 @@ export const MOCK_LOCALSEND_SCENARIOS: readonly MockLocalSendScenario[] = [
   'pin',
   'reject',
   'busy',
+  'backgroundMidSend',
 ];
 
 export const MOCK_LOCALSEND_PIN = '123456';
@@ -74,6 +86,7 @@ export class MockLocalSend {
   private readonly sends = new Map<string, Send>();
   private readonly phones = new Map<string, PhoneState>();
   private busyOnce = false;
+  private backgroundOnce = false;
 
   constructor(private readonly host: LocalSendHost) {}
 
@@ -202,6 +215,14 @@ export class MockLocalSend {
           return;
         }
         this.setPhase(send, 'sending');
+        if (this.scenario === 'backgroundMidSend' && !this.backgroundOnce) {
+          this.backgroundOnce = true;
+          this.host.engine().fail(send.jobId, {
+            code: 'localsend_connection_lost',
+            message: 'LocalSend went to the background on the iPhone (it locked, or another app came to the front), so sending stopped. Open LocalSend again, keep it on screen, and try again.',
+          });
+          this.setPhase(send, 'failed');
+        }
       });
     });
     // Failing runs are held until they fail; the others start sending right after Accept.

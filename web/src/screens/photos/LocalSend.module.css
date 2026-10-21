@@ -53,6 +53,38 @@
   overflow-wrap: anywhere;
 }
 
+/* The look's line: text, then Wi-Fi's controls at its end (they wrap under it when narrow). */
+.statusRow {
+  flex-wrap: wrap;
+}
+
+.statusRow .statusText {
+  flex: 1 1 240px;
+}
+
+.statusActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+  margin-inline-start: auto;
+}
+
+.statusActions:empty {
+  display: none;
+}
+
+.select {
+  height: 32px;
+  max-width: 320px;
+  padding: 0 var(--space-2);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--color-stroke-control);
+  background: var(--color-surface-input);
+  color: var(--color-text-primary);
+  font: inherit;
+}
+
 .statusTitle {
   font-weight: var(--type-strong-weight);
 }
@@ -152,4 +184,306 @@
 
 [dir='rtl'] .path {
   text-align: end;
+}
+
+/* ---- The illustrated walkthrough (LocalSendGuide) ---- */
+
+.guideDialog {
+  width: min(960px, calc(100vw - 48px));
+}
+
+/* Files and the choice of way, side by side above the walkthrough. */
+.topRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.guideWrap {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-self: stretch;
+}
+
+.guide {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+@media (max-width: 860px) {
+  .topRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .guide {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+.stepCard {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--color-stroke-card);
+  background: var(--color-surface-card);
+  box-shadow: var(--shadow-card);
+  transition: border-color var(--motion-fast) var(--ease-standard), background-color var(--motion-fast) var(--ease-standard);
+}
+
+.stepCurrent {
+  border-color: var(--color-accent);
+  background: var(--color-accent-subtle);
+}
+
+.stepWarn {
+  border-color: var(--color-warning);
+  background: var(--color-warning-subtle);
+}
+
+.stepPicture {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-2);
+  height: 128px;
+  border-radius: var(--radius-input);
+  background: var(--color-surface-subtle);
+}
+
+.phone {
+  height: 112px;
+  width: auto;
+  flex: none;
+}
+
+.qrBox {
+  width: 96px;
+  height: 96px;
+  flex: none;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #ffffff;
+}
+
+.qrBox svg {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.stepHead {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-width: 0;
+}
+
+.stepNumber {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: var(--radius-full);
+  border: 1px solid var(--color-stroke-control);
+  background: var(--color-surface-control);
+  font-size: var(--type-caption-size);
+  font-weight: var(--type-strong-weight);
+  font-variant-numeric: var(--type-numeric);
+}
+
+.stepCurrent .stepNumber {
+  border-color: transparent;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+}
+
+.stepDone .stepNumber {
+  border-color: transparent;
+  background: var(--color-success);
+  color: var(--color-on-accent);
+  font-size: 14px;
+}
+
+.stepWarn .stepNumber {
+  border-color: transparent;
+  background: var(--color-warning);
+  color: var(--color-on-accent);
+  font-size: 14px;
+}
+
+.stepTitle {
+  min-width: 0;
+  font-weight: var(--type-strong-weight);
+  overflow-wrap: anywhere;
+}
+
+.stepText {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  overflow-wrap: anywhere;
+}
+
+.stepCurrent .stepText,
+.stepWarn .stepText {
+  color: var(--color-text-primary);
+}
+
+.stepTip {
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  font-weight: var(--type-strong-weight);
+  overflow-wrap: anywhere;
+}
+
+.storeLink {
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  font-weight: var(--type-strong-weight);
+  color: var(--color-accent-text);
+}
+
+.tip {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-card);
+  background: var(--color-surface-subtle);
+}
+
+.switchArt {
+  width: 36px;
+  height: auto;
+  flex: none;
+}
+
+.tipText {
+  min-width: 0;
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  overflow-wrap: anywhere;
+}
+
+.tipTitle {
+  font-weight: var(--type-strong-weight);
+}
+
+/* While sending: the one thing the person must do. */
+.keepOpen {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: stretch;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-input);
+  border: 1px solid var(--color-warning);
+  background: var(--color-warning-subtle);
+  color: var(--color-warning-text);
+  font-weight: var(--type-strong-weight);
+}
+
+/* ---- Drawing colours (LocalSendArt), from the theme ---- */
+
+.artBody {
+  fill: var(--color-text-primary);
+}
+
+.artScreen {
+  fill: var(--color-surface-content-solid);
+}
+
+.artStrong {
+  fill: var(--color-text-primary);
+  opacity: 0.72;
+}
+
+.artMuted {
+  fill: var(--color-text-tertiary);
+  opacity: 0.6;
+}
+
+.artLine {
+  fill: var(--color-text-tertiary);
+  opacity: 0.35;
+}
+
+.artSoft {
+  fill: var(--color-text-tertiary);
+  opacity: 0.2;
+}
+
+.artAccent {
+  fill: var(--color-accent);
+}
+
+.artAccentSoft {
+  fill: var(--color-accent);
+  opacity: 0.35;
+}
+
+.artGlyph {
+  fill: none;
+  stroke: var(--color-on-accent);
+  stroke-width: 1.6;
+  stroke-linejoin: round;
+}
+
+.artGlyphFill {
+  fill: var(--color-on-accent);
+}
+
+.artScrim {
+  fill: #000000;
+  opacity: 0.32;
+}
+
+.artSheet {
+  fill: var(--color-surface-overlay-solid);
+}
+
+.artRing {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 1.6;
+}
+
+.artSuccess {
+  fill: var(--color-success);
+}
+
+.artTone1 {
+  fill: var(--color-accent);
+  opacity: 0.5;
+}
+
+.artTone2 {
+  fill: var(--color-success);
+  opacity: 0.5;
+}
+
+.artTone3 {
+  fill: var(--color-warning);
+  opacity: 0.55;
+}
+
+.artTone4 {
+  fill: var(--color-info);
+  opacity: 0.5;
+}
+
+.artTone5 {
+  fill: var(--color-danger);
+  opacity: 0.4;
 }

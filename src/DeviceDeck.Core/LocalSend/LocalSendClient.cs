@@ -25,8 +25,8 @@ public sealed class LocalSendTimeouts
     /// <summary>How long the phone may sit on the Accept question.</summary>
     public TimeSpan Accept { get; init; } = TimeSpan.FromMinutes(5);
 
-    /// <summary>No byte taken for this long in the middle of a file: LocalSend went to the background.</summary>
-    public TimeSpan Stall { get; init; } = TimeSpan.FromSeconds(30);
+    /// <summary>No byte taken for this long in the middle of a file: LocalSend went to the background (iOS suspends it in seconds).</summary>
+    public TimeSpan Stall { get; init; } = TimeSpan.FromSeconds(15);
 
     /// <summary>After the last byte, the receiver writes the file (and saves it to Photos) before it answers.</summary>
     public TimeSpan Finish { get; init; } = TimeSpan.FromMinutes(2);
@@ -188,7 +188,7 @@ public sealed class LocalSendClient : IDisposable
         }
         catch (OperationCanceledException) when (stall.IsCancellationRequested && !ct.IsCancellationRequested)
         {
-            throw new DeviceException(LocalSendErrors.ConnectionLost, "LocalSend on the iPhone stopped taking the file. Keep LocalSend open in front until it's done.");
+            throw new DeviceException(LocalSendErrors.ConnectionLost, "LocalSend went to the background on the iPhone (it locked, or another app came to the front), so sending stopped. Open LocalSend again, keep it on screen, and try again.");
         }
         catch (Exception ex) when (Translate(ex, ct, Stage.Upload) is { } translated)
         {

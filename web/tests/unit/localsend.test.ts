@@ -93,6 +93,21 @@ describe('LocalSend (mock)', () => {
     expect((await client.call('localsend.discover', { deviceId: IPHONE_ID })).usb).toBe('notListening');
   });
 
+  it('LocalSend going to the background as the bytes start: connection lost, then a retry sends', async () => {
+    const { client, backend, phases } = setup('backgroundMidSend');
+    const files = backend.registerFiles([new File([new Uint8Array(1024)], 'a.jpg')]);
+    const { jobId } = await client.call('localsend.send', { deviceId: IPHONE_ID, target: await usbTarget(client), files });
+    run(backend, 2500);
+    const status = await client.call('localsend.job', { jobId });
+    expect(status.phase).toBe('failed');
+    expect(status.error?.code).toBe('localsend_connection_lost');
+    expect(phases).toContain('sending');
+
+    await client.call('localsend.retry', { jobId });
+    run(backend, 4000);
+    expect((await client.call('localsend.job', { jobId })).phase).toBe('done');
+  });
+
   it('LocalSend opened after a moment is found on a later look', async () => {
     const { client } = setup('opening');
     expect((await client.call('localsend.discover', { deviceId: IPHONE_ID })).usb).toBe('notListening');

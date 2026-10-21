@@ -17,16 +17,18 @@ export interface DialogProps {
   wide?: boolean;
   /** Set for dialogs that must be answered (a name conflict). */
   dismissible?: boolean;
+  /** Extra class for the dialog box (a size of its own, say). */
+  className?: string;
 }
 
-export function Dialog({ open, onOpenChange, title, description, children, footer, footerStart, wide, dismissible = true }: DialogProps) {
+export function Dialog({ open, onOpenChange, title, description, children, footer, footerStart, wide, dismissible = true, className }: DialogProps) {
   const { t } = useI18n();
   return (
     <RadixDialog.Root open={open} onOpenChange={(v) => (dismissible || v ? onOpenChange(v) : undefined)}>
       <RadixDialog.Portal>
         <RadixDialog.Overlay className={styles.overlay} />
         <RadixDialog.Content
-          className={cx(styles.content, wide && styles.wide)}
+          className={cx(styles.content, wide && styles.wide, className)}
           onEscapeKeyDown={(e) => (dismissible ? undefined : e.preventDefault())}
           onPointerDownOutside={(e) => (dismissible ? undefined : e.preventDefault())}
         >
