@@ -67,10 +67,20 @@ internal sealed class FakePhone
     /// <summary>More services by name, served by the test (mobilebackup2 and notification_proxy in the backup tests).</summary>
     public Dictionary<string, Func<Stream, CancellationToken, Task>> ExtraServices { get; } = new(StringComparer.Ordinal);
 
-    public bool HasPort(int port) => port == LockdownPort || _servicePorts.ContainsKey(port);
+    public bool HasPort(int port)
+    {
+        lock (_servicePorts)
+            return port == LockdownPort || _servicePorts.ContainsKey(port);
+    }
 
     public Task ServePortAsync(int port, Stream s, CancellationToken ct) =>
-        port == LockdownPort ? ServeLockdownAsync(s, ct) : ServeServiceAsync(_servicePorts[port], s, ct);
+        port == LockdownPort ? ServeLockdownAsync(s, ct) : ServeServiceAsync(ServiceAt(port), s, ct);
+
+    private string ServiceAt(int port)
+    {
+        lock (_servicePorts)
+            return _servicePorts[port];
+    }
 
     private async Task ServeLockdownAsync(Stream s, CancellationToken ct)
     {
@@ -167,8 +177,13 @@ internal sealed class FakePhone
                         reply["Error"] = StartServiceError;
                     else
                     {
-                        var port = _nextPort++;
-                        _servicePorts[port] = msg.GetString("Service") ?? "";
+                        int port;
+                        // Lockdown connections run side by side (the backup opens several AFC connections at once).
+                        lock (_servicePorts)
+                        {
+                            port = _nextPort++;
+                            _servicePorts[port] = msg.GetString("Service") ?? "";
+                        }
                         reply["Port"] = (long)port;
                         reply["Service"] = msg.GetString("Service") ?? "";
                     }
