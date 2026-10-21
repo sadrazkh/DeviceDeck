@@ -15,5 +15,6 @@
   <Folder Name="/tools/">
     <Project Path="tools/AndroidProbe/AndroidProbe.csproj" />
     <Project Path="tools/IosProbe/IosProbe.csproj" />
+    <Project Path="tools/PhotoBench/PhotoBench.csproj" />
   </Folder>
 </Solution>

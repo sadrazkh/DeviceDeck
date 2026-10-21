@@ -44,6 +44,9 @@ internal sealed class FakePhone
 
     public string? ExpectedHostId { get; set; }
 
+    /// <summary>PhotoBench: how long StartSession takes (the TLS handshake on a real phone).</summary>
+    public TimeSpan SessionDelay { get; set; }
+
     public FakeAfcServer Media { get; } = new();
 
     public Dictionary<string, FakeAfcServer> AppContainers { get; } = new(StringComparer.Ordinal);
@@ -108,6 +111,8 @@ internal sealed class FakePhone
                     break;
                 }
                 case "StartSession":
+                    if (SessionDelay > TimeSpan.Zero)
+                        await Task.Delay(SessionDelay, ct);
                     if (StartSessionError is not null)
                         reply["Error"] = StartSessionError;
                     else if (ExpectedHostId is not null && msg.GetString("HostID") != ExpectedHostId)
