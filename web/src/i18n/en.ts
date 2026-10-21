@@ -4,6 +4,7 @@
 import { batteryEn } from '../screens/battery/strings';
 import { cleanupEn } from '../screens/cleanup/strings';
 import { backupEn } from './backup';
+import { localSendEn } from './localSend';
 
 export const en = {
   'app.name': 'DeviceDeck',
@@ -597,7 +598,7 @@ export const en = {
   'photos.backup.forgotten': '{count, plural, one {Forgot # photo} other {Forgot # photos}}',
   'photos.job.details': 'Details',
   'photos.toApp.button': 'Add to iPhone',
-  'photos.toApp.drop': 'Drop to choose an app on the iPhone for these',
+  'photos.toApp.drop': 'Drop to add these to the iPhone',
   'photos.toApp.title': 'Add photos to {device}',
   'photos.toApp.whyTitle': 'They go into an app, not into Photos',
   'photos.toApp.why': 'An iPhone doesn’t let a PC add to its Photos library over USB. DeviceDeck puts the files in the Documents folder of an app that shares files; from there you save them to Photos on the iPhone.',
@@ -634,6 +635,8 @@ export const en = {
   'files.dropBlocked': 'Android keeps “{name}” for its app alone, so nothing can be copied into it.',
   'files.dropDenied': 'The phone keeps this folder private, so nothing can be copied into it.',
   'appDocs.emptyDrop': 'Empty · drop files here',
+  // Add to iPhone: LocalSend and the save-them-all steps (round 3)
+  ...localSendEn,
 } as const;
 
 export type MessageKey = keyof typeof en;

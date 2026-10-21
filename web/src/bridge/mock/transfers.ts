@@ -21,6 +21,8 @@ export interface NewJob {
   /** Called once per finished item (to add a copied file to the mock file system, say). */
   onItemDone?: (item: JobItem, renamedTo?: string) => void;
   onDone?: () => void;
+  /** Seconds the job waits, queued, before it may start (LocalSend: until the Accept tap). */
+  holdSeconds?: number;
 }
 
 interface Internal {
@@ -52,6 +54,7 @@ const SPEED: Record<TransferKind, number> = {
   dragOut: 36 * MB,
   photosBackup: 36 * MB,
   photosToApp: 32 * MB,
+  localSend: 28 * MB,
 };
 
 export class TransferEngine {
@@ -123,7 +126,7 @@ export class TransferEngine {
       index: 0,
       itemDoneBytes: 0,
       baseSpeed: SPEED[spec.kind],
-      holdSeconds: 0,
+      holdSeconds: spec.holdSeconds ?? 0,
       rule: null,
       failWith: spec.failWith,
       onItemDone: spec.onItemDone,
@@ -329,8 +332,8 @@ export class TransferEngine {
 
   // ---------- Desktop (round 2): transfers.retry and transfers.clear ----------
 
-  /** A failed or cancelled job (or one done with failures) runs again from the item it stopped at. */
-  retry(jobId: string): 'ok' | 'missing' | 'nothing' {
+  /** A failed or cancelled job (or one done with failures) runs again from the item it stopped at, after `holdSeconds`. */
+  retry(jobId: string, holdSeconds = 0): 'ok' | 'missing' | 'nothing' {
     const j = this.jobs.get(jobId);
     if (!j) return 'missing';
     const s = j.job.state;
@@ -338,6 +341,7 @@ export class TransferEngine {
     j.index = j.job.doneItems;
     j.itemDoneBytes = 0;
     j.failWith = undefined;
+    j.holdSeconds = holdSeconds;
     this.update(j, {
       state: this.offline.has(j.job.deviceId) ? 'waitingForDevice' : 'queued',
       failedItems: 0,
@@ -346,6 +350,30 @@ export class TransferEngine {
     });
     this.schedule();
     return 'ok';
+  }
+
+  /** Changes how long a queued job still waits before it may start. */
+  setHold(jobId: string, seconds: number): void {
+    const j = this.jobs.get(jobId);
+    if (j) j.holdSeconds = seconds;
+    this.schedule();
+  }
+
+  /** Ends a job at once: every item not done yet fails with this error (LocalSend: a PIN, a decline, a busy phone). */
+  fail(jobId: string, error: { code: string; message: string }): boolean {
+    const j = this.jobs.get(jobId);
+    if (!j || isFinished(j.job.state)) return false;
+    j.holdSeconds = 0;
+    this.update(j, {
+      state: 'failed',
+      failedItems: j.items.length - j.job.doneItems,
+      error,
+      bytesPerSecond: null,
+      etaSeconds: null,
+      finishedAt: this.iso(),
+    });
+    this.schedule();
+    return true;
   }
 
   /** Removes finished jobs (all, or those in jobIds); returns how many went. */

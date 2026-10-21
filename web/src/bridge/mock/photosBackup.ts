@@ -260,19 +260,44 @@ export class MockPhotoBackup {
       const root = `app:${appId}`;
       const items = files.map<JobItem>((path) => ({ name: path.split(/[\\/]/).pop() ?? path, size: this.host.sizeOfLocal(path) }));
       const what = items.length === 1 ? items[0]!.name : `${items.length} items`;
+      // Round 3, as the host: a new dated folder per send, in parts of 200.
+      const pad = (n: number) => String(n).padStart(2, '0');
+      const today = new Date(this.host.now());
+      const base = `DeviceDeck ${today.getFullYear()}-${pad(today.getMonth() + 1)}-${pad(today.getDate())}`;
+      let folder = base;
+      for (let n = 2; fs.hasRoot(root) && fs.stat(root, `/${folder}`); n++) folder = `${base} (${n})`;
+      const parts = toAppParts(folder, items.length);
+      let done = 0;
       const job = this.host.engine().add({
         deviceId,
         kind: 'photosToApp',
-        title: `Adding ${what} to ${app.name} on ${device.name}`,
+        title: `Adding ${what} to ${app.name} › ${folder} on ${device.name}`,
         items,
         onItemDone: (item) => {
           if (!fs.hasRoot(root)) return;
+          const dir = `/${parts[Math.floor(done++ / 200)]!.path}`;
+          let path = '';
+          for (const segment of dir.split('/').filter(Boolean)) {
+            path += `/${segment}`;
+            if (!fs.stat(root, path)) fs.mkdir(root, path);
+          }
           let name = item.name;
-          for (let n = 1; fs.stat(root, `/${name}`); n++) name = numbered(item.name, n);
-          fs.writeFile(root, `/${name}`, item.size);
+          for (let n = 1; fs.stat(root, `${dir}/${name}`); n++) name = numbered(item.name, n);
+          fs.writeFile(root, `${dir}/${name}`, item.size);
         },
       });
-      return { jobId: job.id };
+      return { jobId: job.id, folder, parts };
     },
   };
+}
+
+/** The folders a send to an app fills: the dated one, or its parts of 200 ("1-200", "201-400", …). */
+export function toAppParts(folder: string, count: number): { path: string; count: number }[] {
+  if (count <= 200) return [{ path: folder, count }];
+  const parts: { path: string; count: number }[] = [];
+  for (let start = 0; start < count; start += 200) {
+    const size = Math.min(200, count - start);
+    parts.push({ path: `${folder}/${start + 1}-${start + size}`, count: size });
+  }
+  return parts;
 }

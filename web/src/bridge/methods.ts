@@ -57,6 +57,7 @@ import type {
   WifiQrEvent,
   WirelessResult,
 } from './toolbox';
+import type { LocalSendDiscovery, LocalSendJobStatus, LocalSendTarget, PhotosToAppStarted } from './localSend';
 
 type DeviceParams = { deviceId: string };
 
@@ -151,7 +152,8 @@ export interface BridgeMethods {
   };
   'photos.backup': { params: DeviceParams; result: JobStarted };
   'photos.backupForget': { params: DeviceParams; result: { forgotten: number } };
-  'photos.importToApp': { params: DeviceParams & { appId: string; files: string[] }; result: JobStarted };
+  // Round 3: the answer also says which dated folder (and parts of 200) the files go into.
+  'photos.importToApp': { params: DeviceParams & { appId: string; files: string[] }; result: PhotosToAppStarted };
   // Clean-up and battery history (round 2)
   'cleanup.status': { params: DeviceParams; result: CleanupStatus };
   'cleanup.analyze': { params: DeviceParams; result: CleanupStatus };
@@ -252,6 +254,11 @@ export interface BridgeMethods {
     params: { backupId: string; conversationIds: string[]; format: MessagesFormat; destination: string };
     result: BackupJob;
   };
+  // Photos into Photos with LocalSend (round 3)
+  'localsend.discover': { params: DeviceParams & { wifi?: boolean; rescan?: boolean }; result: LocalSendDiscovery };
+  'localsend.send': { params: DeviceParams & { target: LocalSendTarget; files: string[] }; result: JobStarted };
+  'localsend.retry': { params: { jobId: string; pin?: string }; result: Empty };
+  'localsend.job': { params: { jobId: string }; result: LocalSendJobStatus };
 }
 
 export type MethodName = keyof BridgeMethods;
@@ -384,6 +391,11 @@ const methodTable = {
   'messages.conversations': true,
   'messages.list': true,
   'messages.export': true,
+  // Photos into Photos with LocalSend (round 3)
+  'localsend.discover': true,
+  'localsend.send': true,
+  'localsend.retry': true,
+  'localsend.job': true,
 } as const satisfies Record<MethodName, true>;
 
 export const METHOD_NAMES = Object.keys(methodTable) as MethodName[];
@@ -411,6 +423,8 @@ export interface BridgeEvents {
   // Desktop (round 2)
   'notification.activated': NotificationActivation;
   'app.updateChanged': UpdateStatus;
+  // Photos into Photos with LocalSend (round 3)
+  'localsend.updated': LocalSendJobStatus;
 }
 
 export type EventName = keyof BridgeEvents;
@@ -437,6 +451,8 @@ const eventTable = {
   // Desktop (round 2)
   'notification.activated': true,
   'app.updateChanged': true,
+  // Photos into Photos with LocalSend (round 3)
+  'localsend.updated': true,
 } as const satisfies Record<EventName, true>;
 
 export const EVENT_NAMES = Object.keys(eventTable) as EventName[];

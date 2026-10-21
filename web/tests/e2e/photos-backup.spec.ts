@@ -72,9 +72,11 @@ for (const variant of ['light', 'rtl'] as const) {
     await page.goto(query(variant, { screen: 'photos', queue: '0' }));
     await page.getByTestId('to-app-open').click();
     const dialog = page.getByRole('dialog');
+    // Round 3: LocalSend comes first; "into an app" is the second way.
+    await dialog.getByTestId('to-app-routes').getByRole('radio').nth(1).click();
     await expect(dialog.getByTestId('to-app-apps')).toBeVisible();
     // Documents by Readdle is suggested and comes first.
-    await expect(dialog.getByRole('radio').first()).toContainText('Documents');
+    await expect(dialog.getByTestId('to-app-apps').getByRole('radio').first()).toContainText('Documents');
     await dialog.getByTestId('to-app-input').setInputFiles([
       { name: 'Trip 1.jpg', mimeType: 'image/jpeg', buffer: Buffer.alloc(4096) },
       { name: 'Trip 2.mov', mimeType: 'video/quicktime', buffer: Buffer.alloc(8192) },
@@ -83,11 +85,9 @@ for (const variant of ['light', 'rtl'] as const) {
     await settle(page);
     await shot(page, `photos-to-app-dialog-${variant}`);
     await dialog.getByTestId('to-app-start').click();
-    await expect(page.getByTestId('transfer-drawer')).toBeVisible();
-    if (variant === 'light') {
-      await expect(page.getByTestId('transfer-drawer')).toContainText('Adding 2 items to Documents');
-      await expect(page.getByText('They’ll be inside Documents', { exact: false }).first()).toBeVisible();
-    }
+    // The dialog says where they went (a dated folder) and how to save them all at once.
+    await expect(dialog.getByTestId('to-app-sent')).toBeVisible();
+    await expect(dialog.getByTestId('to-app-path').first()).toContainText('Files › On My iPhone › Documents › DeviceDeck ');
     consoleWatch.assertClean();
   });
 }
@@ -103,7 +103,7 @@ test('iPhone: dropping photos on the grid opens the app chooser with them', asyn
     return dt;
   });
   await grid.dispatchEvent('dragenter', { dataTransfer });
-  await expect(page.getByText('Drop to choose an app on the iPhone for these')).toBeVisible();
+  await expect(page.getByText('Drop to add these to the iPhone')).toBeVisible();
   await grid.dispatchEvent('drop', { dataTransfer });
   await expect(page.getByRole('dialog').getByTestId('to-app-files')).toContainText('From PC.heic');
   consoleWatch.assertClean();

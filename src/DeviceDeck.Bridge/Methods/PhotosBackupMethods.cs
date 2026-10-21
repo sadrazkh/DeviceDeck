@@ -39,12 +39,9 @@ public static class PhotosBackupMethods
             s.Hub.GetUsableDevice(p.DeviceId);
             return Task.FromResult(new ForgottenResult(Backup(s).Forget(p.DeviceId)));
         });
-        rpc.Register<PhotosImportToAppParams, JobIdResult>("photos.importToApp", async (p, ct) =>
-        {
-            var job = await s.Transfers.EnqueueAsync(p.DeviceId, TransferKind.PhotosToApp, new PhotosToAppRequest(p.AppId, p.Files),
-                ConflictRule.KeepBoth, ct).ConfigureAwait(false);
-            return new JobIdResult(job.Id);
-        });
+        // Round 3 (localsend): a dated folder per send, split into parts of 200; the result says where they are.
+        rpc.Register<PhotosImportToAppParams, Core.Transfers.Handlers.PhotosToAppStarted>("photos.importToApp", (p, ct) =>
+            Core.Transfers.Handlers.PhotosToAppHandler.EnqueueAsync(s.Hub, s.Transfers, p.DeviceId, p.AppId, p.Files, ct));
     }
 
     private static PhotoBackupService Backup(BridgeServices s) =>

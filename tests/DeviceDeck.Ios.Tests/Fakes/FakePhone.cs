@@ -64,10 +64,15 @@ internal sealed class FakePhone
     /// <summary>More services by name, served by the test (mobilebackup2 and notification_proxy in the backup tests).</summary>
     public Dictionary<string, Func<Stream, CancellationToken, Task>> ExtraServices { get; } = new(StringComparer.Ordinal);
 
-    public bool HasPort(int port) => port == LockdownPort || _servicePorts.ContainsKey(port);
+    public bool HasPort(int port) => port == LockdownPort || _servicePorts.ContainsKey(port) || RawPorts.ContainsKey(port);
 
     public Task ServePortAsync(int port, Stream s, CancellationToken ct) =>
-        port == LockdownPort ? ServeLockdownAsync(s, ct) : ServeServiceAsync(_servicePorts[port], s, ct);
+        port == LockdownPort ? ServeLockdownAsync(s, ct)
+        : RawPorts.TryGetValue(port, out var raw) ? raw(s, ct)
+        : ServeServiceAsync(_servicePorts[port], s, ct);
+
+    /// <summary>Apps listening on the phone's own TCP ports (LocalSend on 53317), reached with usbmux Connect.</summary>
+    public Dictionary<int, Func<Stream, CancellationToken, Task>> RawPorts { get; } = [];
 
     private async Task ServeLockdownAsync(Stream s, CancellationToken ct)
     {

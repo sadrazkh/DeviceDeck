@@ -1,0 +1,155 @@
+/* The "Add to iPhone" dialog's LocalSend route and the "into an app" save-them-all steps (round 3). */
+
+.steps {
+  margin: 0;
+  padding-inline-start: var(--space-5);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.steps li {
+  padding-inline-start: var(--space-1);
+  overflow-wrap: anywhere;
+}
+
+.status {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  align-self: stretch;
+  min-height: 40px;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-input);
+  background: var(--color-surface-subtle);
+}
+
+.found {
+  background: var(--color-success-subtle);
+  color: var(--color-success-text);
+}
+
+.warn {
+  background: var(--color-warning-subtle);
+  color: var(--color-warning-text);
+}
+
+.bad {
+  background: var(--color-danger-subtle);
+  color: var(--color-danger-text);
+}
+
+.statusIcon {
+  display: inline-flex;
+  flex-shrink: 0;
+  font-size: 20px;
+}
+
+.statusText {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-half);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.statusTitle {
+  font-weight: var(--type-strong-weight);
+}
+
+/* A list of choices as wide as the dialog. */
+.stretch {
+  align-self: stretch;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.wifi {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  align-self: stretch;
+}
+
+.pin {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--space-2);
+  align-self: stretch;
+}
+
+.pin > :first-child {
+  flex: 1 1 200px;
+  min-width: 0;
+}
+
+.progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  align-self: stretch;
+}
+
+.results {
+  align-self: stretch;
+  margin: 0;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-input);
+  background: var(--color-surface-subtle);
+  list-style: none;
+  max-height: 180px;
+  overflow: auto;
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+.results li {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.resultName {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.resultState {
+  flex-shrink: 0;
+  color: var(--color-text-secondary);
+}
+
+.resultDone {
+  color: var(--color-success-text);
+}
+
+.resultFailed {
+  color: var(--color-danger-text);
+}
+
+/* An iPhone path ("Files › On My iPhone › Documents › DeviceDeck 2026-10-21"): left to right in either language. */
+.path {
+  align-self: stretch;
+  padding: var(--space-2) var(--space-3);
+  border-radius: var(--radius-input);
+  background: var(--color-surface-subtle);
+  font-family: var(--font-mono);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  overflow-wrap: anywhere;
+  direction: ltr;
+  text-align: start;
+  unicode-bidi: isolate;
+}
+
+[dir='rtl'] .path {
+  text-align: end;
+}

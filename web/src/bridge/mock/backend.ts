@@ -42,6 +42,7 @@ import { MockPhotoBackup } from './photosBackup';
 import { hashString } from './random';
 import { TransferEngine, type JobItem } from './transfers';
 import { MockToolbox } from './toolbox';
+import { MockLocalSend, type MockLocalSendScenario } from './localSend';
 
 export type MockScenario = 'ready' | 'empty' | 'trust' | 'limited' | 'driverMissing' | 'iphoneOnly';
 
@@ -55,6 +56,8 @@ export interface MockOptions {
   now?: () => number;
   /** Long, Persian and mixed-direction app and file names for layout checks (round 3, ui). Default false. */
   longNames?: boolean;
+  /** LocalSend on the phone (round 3): ?localsend=closed and so on. Default "ready". */
+  localSend?: MockLocalSendScenario;
 }
 
 /** A JSON-RPC error raised by a mock handler. */
@@ -123,6 +126,7 @@ export class MockBackend {
     this.now = options.now ?? (() => Date.now());
     this.indexing = options.indexing ?? true;
     this.settings = { ...defaultSettings, ...options.settings };
+    this.localSend.scenario = options.localSend ?? 'ready';
     const scenario = options.scenario ?? 'ready';
     this.driverList = scenario === 'limited' || scenario === 'driverMissing' ? driversIosMissing : drivers;
 
@@ -319,6 +323,17 @@ export class MockBackend {
       this.unplug(id);
       this.after(2500, () => this.plugBack(id));
     },
+  });
+
+  /** LocalSend on the phone (round 3): ./localSend.ts; its handlers end the table below. */
+  readonly localSend = new MockLocalSend({
+    requireReady: (deviceId, capability) => this.requireReady(deviceId, capability),
+    engine: () => this.engine,
+    sizeOfLocal: (path) => this.sizeOfLocal(path),
+    emit: (event, params) => this.emit(event, params),
+    after: (ms, run) => this.after(ms, run),
+    fault: (code, message) => fault(code, message),
+    badParams: (message) => badParams(message),
   });
 
   readonly handlers: { [M in MethodName]: Handler<M> } = {
@@ -613,6 +628,7 @@ export class MockBackend {
       badParams,
     }),
     ...this.toolbox.handlers,
+    ...this.localSend.handlers,
   };
 
   private pcCall<T>(run: () => T): T {

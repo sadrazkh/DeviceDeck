@@ -11,6 +11,9 @@ public enum TransferKind
 
     /// <summary>Photos or files dragged into File Explorer: the queue copies them while Explorer reads them (virtual files).</summary>
     DragOut,
+
+    /// <summary>Round 3: PC photos and videos to the LocalSend app on the phone, which saves them into Photos (LocalSendHandler).</summary>
+    LocalSend,
 }
 
 public enum TransferState { Queued, Running, Paused, WaitingForDevice, NeedsDecision, Done, Failed, Cancelled }

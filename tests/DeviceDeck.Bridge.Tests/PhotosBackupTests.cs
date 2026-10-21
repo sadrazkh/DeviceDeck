@@ -448,20 +448,29 @@ public sealed class PhotosBackupTests
         await File.WriteAllBytesAsync(Path.Combine(pc, "Trip", "Day 2", "clip.mov"), [6]);
         await File.WriteAllBytesAsync(Path.Combine(pc, "Trip", "notes.txt"), [9]);
         phone.Documents["/beach.jpg"] = [42];
+        // Round 3: each send gets a dated folder of its own; one of today's name is taken already.
+        var today = "DeviceDeck " + DateTime.Now.ToString("yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture);
+        phone.Documents["/" + today] = [];
 
         var bridge = new BridgeCalls(host.Transport);
         var response = await bridge.CallAsync("photos.importToApp",
             new { deviceId = phone.Summary.Id, appId = PhotosTestPhone.AppId, files = Array.Empty<string>() },
             [Path.Combine(pc, "beach.jpg"), Path.Combine(pc, "Trip")]);
         var jobId = (string)response["result"]!["jobId"]!;
+        var folder = (string)response["result"]!["folder"]!;
+        Assert.StartsWith("DeviceDeck 20", folder);
+        Assert.EndsWith(" (2)", folder);
+        Assert.Equal(folder, (string?)response["result"]!["parts"]![0]!["path"]);
+        Assert.Equal(3, (int)response["result"]!["parts"]![0]!["count"]!);
         await Wait.ForStateAsync(host.Queue, jobId, TransferState.Done);
 
         var job = host.Queue.Get(jobId)!;
         Assert.Equal(TransferKind.PhotosToApp, job.Kind);
-        Assert.Equal("Adding 2 items to Documents on Test iPhone", job.Title);
-        Assert.Equal(["/a.heic", "/beach (1).jpg", "/beach.jpg", "/clip.mov"], phone.Documents.Keys.Order(StringComparer.Ordinal));
+        Assert.Equal($"Adding 2 items to Documents › {folder} on Test iPhone", job.Title);
+        Assert.Equal(["/" + today, $"/{folder}/a.heic", $"/{folder}/beach.jpg", $"/{folder}/clip.mov", "/beach.jpg"],
+            phone.Documents.Keys.Order(StringComparer.Ordinal));
         Assert.Equal([42], phone.Documents["/beach.jpg"]);
-        Assert.Equal([1, 2, 3], phone.Documents["/beach (1).jpg"]);
+        Assert.Equal([1, 2, 3], phone.Documents[$"/{folder}/beach.jpg"]);
 
         var wrongApp = await bridge.CallAsync("photos.importToApp", new { deviceId = phone.Summary.Id, appId = "com.example.none", files = new[] { Path.Combine(pc, "beach.jpg") } });
         Assert.Equal("path_not_found", (string?)wrongApp["error"]!["data"]!["code"]);

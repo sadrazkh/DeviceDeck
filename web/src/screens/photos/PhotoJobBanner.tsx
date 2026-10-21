@@ -10,7 +10,7 @@ import { isFinished, jobFraction } from '../../state/transfers';
 import { useUi } from '../../state/ui';
 import styles from './Backup.module.css';
 
-const PHOTO_KINDS: TransferKind[] = ['photosBackup', 'photosImport', 'photosToApp'];
+const PHOTO_KINDS: TransferKind[] = ['photosBackup', 'photosImport', 'photosToApp', 'localSend'];
 
 /** The phone's newest unfinished backup or photo import, for progress right on the Photos screen. */
 export function useActivePhotoJob(deviceId: string): TransferJob | undefined {

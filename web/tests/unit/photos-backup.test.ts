@@ -82,12 +82,15 @@ describe('photo backup (mock)', () => {
   it('copies photos into an iPhone app that shares files, never over a file there', async () => {
     const { client, backend } = setup();
     const files = backend.registerFiles([new File([new Uint8Array(2048)], 'beach.jpg'), new File([new Uint8Array(1024)], 'beach.jpg')]);
-    const { jobId } = await client.call('photos.importToApp', { deviceId: IPHONE_ID, appId: 'org.videolan.vlc-ios', files });
+    // Round 3: into a new dated folder ("DeviceDeck 2026-10-21"), which the answer names.
+    const { jobId, folder, parts } = await client.call('photos.importToApp', { deviceId: IPHONE_ID, appId: 'org.videolan.vlc-ios', files });
+    expect(folder).toMatch(/^DeviceDeck \d{4}-\d{2}-\d{2}$/);
+    expect(parts).toEqual([{ path: folder, count: 2 }]);
     const job = (await client.call('transfers.list')).find((j) => j.id === jobId)!;
     expect(job.kind).toBe('photosToApp');
-    expect(job.title).toBe('Adding 2 items to VLC on Nima’s iPhone');
+    expect(job.title).toBe(`Adding 2 items to VLC › ${folder} on Nima’s iPhone`);
     run(backend, 10_000);
-    const names = (await client.call('files.list', { deviceId: IPHONE_ID, root: 'app:org.videolan.vlc-ios', path: '/' })).map((e) => e.name);
+    const names = (await client.call('files.list', { deviceId: IPHONE_ID, root: 'app:org.videolan.vlc-ios', path: `/${folder}` })).map((e) => e.name);
     expect(names).toContain('beach.jpg');
     expect(names).toContain('beach (1).jpg');
 

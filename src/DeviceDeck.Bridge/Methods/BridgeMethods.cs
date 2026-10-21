@@ -46,6 +46,9 @@ public sealed class BridgeServices
 
     /// <summary>Backups, contacts and messages (round 2); null answers those methods with not_supported.</summary>
     public BackupService? Backups { get; init; }
+
+    /// <summary>Photos into Photos with LocalSend (round 3); null answers localsend.* with not_supported.</summary>
+    public Core.LocalSend.LocalSendService? LocalSend { get; init; }
 }
 
 /// <summary>Registers every method of docs/bridge-contract.md on a dispatcher.</summary>
@@ -251,6 +254,9 @@ public static class BridgeMethods
 
         // Round 2 features, one line each.
         AppFilesMethods.Register(rpc, s);
+
+        // Photos into Photos with LocalSend (round 3).
+        LocalSend.LocalSendMethods.Register(rpc, s);
 
         return rpc;
     }

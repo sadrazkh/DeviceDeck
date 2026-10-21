@@ -203,7 +203,9 @@ export type TransferKind =
   | 'dragOut'
   // Photos (round 2): backup to the PC, photos into an iPhone app's Documents.
   | 'photosBackup'
-  | 'photosToApp';
+  | 'photosToApp'
+  /** Round 3: PC photos to the LocalSend app on the phone, which saves them into Photos. */
+  | 'localSend';
 
 export type TransferState =
   | 'queued'

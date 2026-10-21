@@ -89,17 +89,12 @@ export function useBackupActions(device: DeviceSummary) {
           return false;
         }
       },
-      async importToApp(appId: string, appName: string, files: FileSource) {
+      /** Round 3: the answer says which dated folder (and parts of 200) the files go into; the dialog shows the steps. */
+      async importToApp(appId: string, files: FileSource) {
         try {
-          const { jobId } = await client.callWithFiles('photos.importToApp', { deviceId: device.id, appId }, files);
-          useUi.getState().rememberJobRoot(jobId, `app:${appId}`);
-          toast({
-            tone: 'info',
-            title: t('photos.toApp.started', { app: appName, device: device.name }),
-            body: t('photos.toApp.where', { app: appName }),
-            duration: 9000,
-          });
-          return jobId;
+          const started = await client.callWithFiles('photos.importToApp', { deviceId: device.id, appId }, files);
+          useUi.getState().rememberJobRoot(started.jobId, `app:${appId}`);
+          return started;
         } catch (error) {
           actions.fail(error);
           return null;

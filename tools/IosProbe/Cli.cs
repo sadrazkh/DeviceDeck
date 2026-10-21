@@ -60,6 +60,12 @@ internal sealed class Cli
           crashes [--limit 10]                crash reports (moves new ones into place first, like Finder)
           wifisync [on|off --yes]             the "show this iPhone when on Wi-Fi" switch
 
+        LocalSend (photos straight into Photos; LocalSend must be open in front on the iPhone)
+          localsend [--wifi]                  is LocalSend answering over USB (and on Wi-Fi)? alias, model, fingerprint
+          localsend-send <file>... --yes [--wifi] [--ip <address>] [--pin <PIN>]
+                                              send files the way "Add to iPhone" does: over USB, or Wi-Fi with
+                                              --wifi / --ip; prints each phase and each file's result
+
         Power
           reboot --yes                        restart the phone
           shutdown --yes                      shut the phone down
@@ -79,7 +85,7 @@ internal sealed class Cli
     public IReadOnlyList<string> Positional { get; }
     public IReadOnlyDictionary<string, string?> Options { get; }
 
-    private static readonly HashSet<string> Flags = ["reveal", "system", "yes", "recursive", "browse", "names"];
+    private static readonly HashSet<string> Flags = ["reveal", "system", "yes", "recursive", "browse", "names", "wifi"];
 
     public static Cli Parse(string[] args)
     {
