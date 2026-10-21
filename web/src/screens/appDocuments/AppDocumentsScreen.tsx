@@ -5,7 +5,7 @@ import type { DeviceSummary } from '../../bridge/types';
 import { useApps } from '../../app/queries';
 import { Button } from '../../components/Button';
 import { ErrorBanner } from '../../components/ErrorState';
-import { Banner, EmptyState, Segmented, Skeleton, Switch, Tooltip } from '../../components/ui';
+import { Banner, EmptyState, Skeleton, Switch, Tooltip } from '../../components/ui';
 import { useI18n } from '../../i18n';
 import { useDevicePlace, useUi } from '../../state/ui';
 import { FileBrowser } from '../files/FileBrowser';
@@ -60,15 +60,10 @@ export function AppDocumentsScreen({ device }: { device: DeviceSummary }) {
             rootIcon={<PlaceIcon device={device} place={place} glyphClassName={styles.crumbGlyph} />}
             onNavigate={(p) => setPlace({ root: folder.rootKey, path: p })}
             exit={{ label: t('appDocs.title'), onExit: () => setPlace({ root: null, path: '/' }) }}
-            folderSwitch={
-              place.folders.length > 1 ? (
-                <Segmented
-                  label={t('appFiles.folders')}
-                  value={folder.rootKey}
-                  onChange={(key) => setPlace({ root: key, path: '/' })}
-                  options={place.folders.map((f) => ({ value: f.rootKey, label: folderLabel(f.label, t) }))}
-                />
-              ) : null
+            folders={
+              place.folders.length > 1
+                ? { value: folder.rootKey, onChange: (key) => setPlace({ root: key, path: '/' }), options: place.folders.map((f) => ({ value: f.rootKey, label: folderLabel(f.label, t) })) }
+                : undefined
             }
           />
         </div>

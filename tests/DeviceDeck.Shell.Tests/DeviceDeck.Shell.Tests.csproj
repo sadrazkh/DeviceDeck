@@ -32,6 +32,9 @@
     <Compile Include="..\..\src\DeviceDeck.Shell\Desktop\DragOut\*.cs" LinkBase="Shell\DragOut" />
     <Compile Include="..\..\src\DeviceDeck.Shell\Desktop\DeviceNotifier.cs" Link="Shell\DeviceNotifier.cs" />
     <Compile Include="..\..\src\DeviceDeck.Shell\Desktop\ShellText.cs" Link="Shell\ShellText.cs" />
+    <!-- Files dropped from File Explorer (round 3): the OLE drop target and the forwarder to the page. -->
+    <Compile Include="..\..\src\DeviceDeck.Shell\Desktop\DropIn\DropInForwarder.cs" Link="Shell\DropIn\DropInForwarder.cs" />
+    <Compile Include="..\..\src\DeviceDeck.Shell\Desktop\DropIn\OleDropTarget.cs" Link="Shell\DropIn\OleDropTarget.cs" />
   </ItemGroup>
 
 </Project>

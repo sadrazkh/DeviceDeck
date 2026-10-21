@@ -622,3 +622,35 @@ The window uses Windows App SDK app notifications, or a balloon from its tray ic
 | Path | Serves |
 | --- | --- |
 | `video/{deviceId}/{assetId}?size={PhotoAsset.size}` | the original of a video with HTTP Range (200, 206 or 416; `Accept-Ranges: bytes`), so `<video>` can seek. The file is copied off the phone once into a cache and each range is answered as soon as its bytes are there; the last three videos stay cached. Without `size` the answer waits for the whole copy. |
+
+## Drops from File Explorer (round 3, ui)
+
+WinUI hosts WebView2 through composition: its WebView2 control takes no drops and passes none to the browser, so the
+page never receives a drop from File Explorer by itself. The host takes the drag and plays it in the page.
+
+- **Where the host takes it.** An OLE drop target (`RegisterDragDrop`) on WinUI's content window
+  (`Microsoft.UI.Content.DesktopChildSiteBridge`, the window File Explorer's drag loop finds under the pointer), and
+  XAML's drag events on the root grid (`AllowDrop`), in case Windows routes the drag through WinUI's own drag and drop.
+  Both read the dragged paths (CF_HDROP / StorageItems) and go through `Desktop/DropIn/DropInForwarder.cs`.
+  Data without files (DeviceDeck's own drag out passing over its window) is refused and never reaches the page.
+- **Host → page** (`PostWebMessageAsJson`, host-internal like the drag regions, not JSON-RPC):
+
+  ```ts
+  { $dd: "nativeDrag", phase: "enter" | "over" | "leave" | "drop", x?: number, y?: number,  // page (CSS) px
+    files?: { name: string; path: string; directory: boolean; handle: number }[] }          // on enter and drop
+  ```
+
+  On `drop` each file's read-only `FileSystemFileHandle` (`CreateWebFileSystemFileHandle`) goes along as additional
+  object number `handle` (folders: -1), so the page gets real `File` objects (a tool can read their bytes).
+- **The page** (`web/src/components/nativeDrop.ts`) plays the messages as HTML drag events at (x, y): `dragenter` /
+  `dragleave` as the element under the point changes, then `dragover`, and `drop` (or `dragleave` when the drop is
+  not taken), so every existing drop zone handles it as in a browser. Files it passes back to the bridge
+  (`files.copyToDevice`, `photos.import`, `apps.install`, …) go as their **paths** in `params.files`.
+- **Page → host** after each `enter` / `over`: `{ $dd: "nativeDragFeedback", accept: boolean }` — whether the element
+  under the pointer takes files (its `dragover` was cancelled and did not set `dropEffect` to `none`). That is the
+  effect File Explorer shows (copy or no-drop), and what OLE `Drop` returns.
+- **Dev only** (`DEVICEDECK_DEV=1`): `{ $dd: "dropSelfTest", x, y, paths, cancel? }` from the page makes the host call
+  its registered OLE drop target (DragEnter, DragOver ×3, Drop or DragLeave) with File Explorer's own data object for
+  `paths`; it answers `{ $dd: "dropSelfTest", report }` (the window tree, which window took it, each call's result).
+  `DEVICEDECK_DEV_URL` points the dev host at another dev server than `http://localhost:5173/`.
+  `npm run test:host` (web/) runs these checks against `DeviceDeck.exe` over DevTools.

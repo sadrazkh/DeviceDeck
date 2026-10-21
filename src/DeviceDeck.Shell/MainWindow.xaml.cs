@@ -5,6 +5,7 @@ using DeviceDeck.Core.Notifications;
 using DeviceDeck.Core.Settings;
 using DeviceDeck.Shell.Desktop;
 using DeviceDeck.Shell.Desktop.DragOut;
+using DeviceDeck.Shell.Desktop.DropIn;
 using DeviceDeck.Shell.Desktop.Interop;
 using DeviceDeck.Shell.Hosting;
 using Microsoft.UI;
@@ -42,6 +43,10 @@ public sealed partial class MainWindow : Window
     private readonly DesktopShell _desktop;
     private TrayIcon? _tray;
     private bool _quitting;
+
+    // Files dropped from File Explorer (round 3): the host takes the drag and plays it in the page.
+    private DropInHost? _dropIn;
+    private CoreWebView2Environment? _webEnvironment;
 
     // Windows' app theme, for settings.theme "system" (and its changes while DeviceDeck runs).
     private readonly UISettings _windowsColors = new();
@@ -403,6 +408,7 @@ public sealed partial class MainWindow : Window
         _tray?.Dispose();
         _tray = null;
         _notifications.Dispose();
+        _dropIn?.Dispose();
         _bridge?.Dispose();
         try
         {
@@ -450,6 +456,9 @@ public sealed partial class MainWindow : Window
             core.ProcessFailed += (_, e) => ShellLog.Error($"WebView2 process failed: {e.ProcessFailedKind} ({e.Reason}, exit {e.ExitCode}).");
 
             _transport = new WebViewTransport(core, DispatcherQueue, _content.IsTrustedSource);
+            _webEnvironment = environment;
+            _dropIn = new DropInHost(_hwnd, Root, () => Scale, () => WebView.CoreWebView2, () => _webEnvironment, json => _transport?.Post(json));
+            _dropIn.RegisterOleTarget();
             _transport.InternalMessage += (_, message) =>
             {
                 if (message.Name == DragRegions.MessageName)
@@ -459,6 +468,14 @@ public sealed partial class MainWindow : Window
                     {
                         ShellLog.Info($"Drag regions: caption [{string.Join(" ", _dragRegions.Caption.Select(r => $"{r.X},{r.Y},{r.Width}x{r.Height}"))}] passthrough [{string.Join(" ", _dragRegions.Passthrough.Select(r => $"{r.X},{r.Y},{r.Width}x{r.Height}"))}]");
                     }
+                }
+                else if (message.Name == DropInForwarder.FeedbackName)
+                {
+                    _dropIn?.Forwarder.OnFeedback(message.Body);
+                }
+                else if (message.Name == DropSelfTest.MessageName && _host.DevMode)
+                {
+                    _ = RunDropSelfTestAsync(message.Body);
                 }
             };
             _bridge = new BridgeHost(_transport, _host.BridgeServices(new ShellServices(DispatcherQueue, AppWindow.Id), _notifications, _desktop));
@@ -557,6 +574,25 @@ public sealed partial class MainWindow : Window
         {
             deferral.Complete();
         }
+    }
+
+    /// <summary>DEVICEDECK_DEV only: an Explorer drop played on this window (see <see cref="DropSelfTest"/>); the report goes back to the page.</summary>
+    private async Task RunDropSelfTestAsync(System.Text.Json.JsonElement body)
+    {
+        System.Text.Json.Nodes.JsonObject report;
+        try
+        {
+            var paths = body.GetProperty("paths").EnumerateArray().Select(p => p.GetString()!).ToArray();
+            var cancel = body.TryGetProperty("cancel", out var c) && c.ValueKind == System.Text.Json.JsonValueKind.True;
+            report = await DropSelfTest.RunAsync(_hwnd, Scale, body.GetProperty("x").GetDouble(), body.GetProperty("y").GetDouble(), paths, cancel);
+        }
+        catch (Exception ex)
+        {
+            report = new System.Text.Json.Nodes.JsonObject { ["error"] = ex.Message };
+        }
+
+        ShellLog.Info($"Drop self-test: {report.ToJsonString()}");
+        _transport?.Post(new System.Text.Json.Nodes.JsonObject { ["$dd"] = DropSelfTest.MessageName, ["report"] = report }.ToJsonString());
     }
 
     [LibraryImport("user32.dll")]

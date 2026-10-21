@@ -3,18 +3,13 @@
 // Used by Files and by App documents.
 
 import {
-  AddRegular,
   AppGenericRegular,
-  ArrowClockwiseRegular,
   ArrowDownloadRegular,
   ArrowExportRegular,
   ArrowSortDownRegular,
   ArrowSortUpRegular,
-  ArrowUpRegular,
-  ChevronRightRegular,
   ClosedCaptionRegular,
   DeleteRegular,
-  DismissRegular,
   DocumentAddRegular,
   DocumentRegular,
   FolderAddRegular,
@@ -42,14 +37,17 @@ import { Button } from '../../components/Button';
 import { Dialog } from '../../components/Dialog';
 import { DropOverlay, useFileDrop, type DropVerdict } from '../../components/DropZone';
 import { describeError, ErrorBanner } from '../../components/ErrorState';
-import { ContextMenu, Menu, type MenuEntry } from '../../components/Menu';
+import { ContextMenu, type MenuEntry } from '../../components/Menu';
 import { Banner, EmptyState, Skeleton, TextField, Tooltip } from '../../components/ui';
 import { useI18n, type MessageKey } from '../../i18n';
 import { usePrefs } from '../../state/prefs';
 import { clickSelect, emptySelection, selectAll, type ClickModifiers, type Selection } from '../../state/selection';
 import { toast } from '../../state/toasts';
+import type { Crumb } from './Breadcrumbs';
+import { BrowserToolbar, type FolderSwitch } from './BrowserToolbar';
 import { DeleteDialog } from './DeleteDialog';
 import { canDragOut, dragOutFiles } from './dragOut';
+import { useWidth } from './fit';
 import { KIND_LABEL, extensionOf, isAndroidBlocked, joinPath, kindOf, matchesName, parentPath, sortEntries, type FileKind, type SortKey } from './fileKinds';
 import styles from './Files.module.css';
 
@@ -65,7 +63,17 @@ const KIND_ICON: Record<FileKind, typeof FolderRegular> = {
   file: DocumentRegular,
 };
 
+/** At or below this width (px) the table drops the time from dates (Files.module.css narrows the columns there too). */
+const COMPACT_TABLE = 560;
+
 const hasFiles = (types: readonly string[] | DOMStringList | undefined) => Array.from(types ?? []).includes('Files');
+
+/** A folder row under files dragged from Explorer: they go into it, or it can't take them and says why. */
+export interface RowDrop {
+  path: string;
+  name: string;
+  refuse?: 'readOnly' | 'blocked';
+}
 
 // ---------------------------------------------------------------- the phone's file list
 
@@ -113,9 +121,9 @@ function FileTable({
   onNewFolder(): void;
   readOnly: boolean;
   privateData: AppDataAccess | undefined;
-  /** The folder row files dragged from Explorer would land in, or null for the open folder. */
-  dropTarget: string | null;
-  onDropTarget(path: string | null): void;
+  /** The folder row under files dragged from Explorer, or null for the open folder. */
+  dropTarget: RowDrop | null;
+  onDropTarget(row: RowDrop | null): void;
   /** Rows can be dragged out to File Explorer (the WebView2 host only). */
   canDrag: boolean;
   onDragOut(paths: string[]): void;
@@ -126,6 +134,10 @@ function FileTable({
   const [sort, setSort] = useState<{ key: SortKey; desc: boolean }>({ key: 'name', desc: false });
   const [active, setActive] = useState(0);
   const scroller = useRef<HTMLDivElement>(null);
+  const grid = useRef<HTMLDivElement>(null);
+  // A narrow table (Files beside the PC pane) shows dates without the time; the tooltip has both.
+  const width = useWidth(grid);
+  const compactDates = width > 0 && width <= COMPACT_TABLE;
   const collator = useMemo(() => new Intl.Collator(lang === 'fa' ? 'fa-IR' : 'en-GB', { numeric: true, sensitivity: 'base' }), [lang]);
   const sorted = useMemo(() => sortEntries(entries, sort.key, sort.desc, collator), [entries, sort, collator]);
   const order = useMemo(() => sorted.map((e) => e.path), [sorted]);
@@ -219,6 +231,7 @@ function FileTable({
 
   return (
     <div
+      ref={grid}
       className={styles.table}
       role="grid"
       aria-label={path}
@@ -235,14 +248,28 @@ function FileTable({
         {header('kind', 'files.column.kind', styles.kindColumn)}
         {header('modified', 'files.column.modified')}
       </div>
-      <div className={styles.scroll} ref={scroller} onDragLeave={(e) => (e.currentTarget.contains(e.relatedTarget as Node | null) ? undefined : onDropTarget(null))}>
+      <div
+        className={styles.scroll}
+        ref={scroller}
+        onDragOver={(e) => {
+          // Below the last row: the open folder again.
+          if (!(e.target as Element).closest('[role=row]')) onDropTarget(null);
+        }}
+        onDragLeave={(e) => (e.currentTarget.contains(e.relatedTarget as Node | null) ? undefined : onDropTarget(null))}
+      >
         <div className={styles.inner} style={{ height: virtualizer.getTotalSize() }}>
           {virtualizer.getVirtualItems().map((item) => {
             const entry = sorted[item.index]!;
             const kind = kindOf(entry);
             const Icon = KIND_ICON[kind];
+            const sizeText = entry.isDirectory ? '—' : bytes(entry.size);
+            const kindText = kind === 'file' ? t('files.kind.file', { ext: extensionOf(entry.name).toUpperCase() || '—' }) : t(KIND_LABEL[kind]);
+            const dateText = entry.modified ? date(entry.modified, compactDates ? 'short' : 'medium') : '—';
+            const dateTitle = entry.modified ? date(entry.modified) : '—';
             const isBlocked = blocked(entry);
-            const takesDrop = entry.isDirectory && !isBlocked && !entry.readOnly && !readOnly;
+            const rowDrop: RowDrop | null = !entry.isDirectory
+              ? null
+              : { path: entry.path, name: entry.name, ...(isBlocked ? { refuse: 'blocked' as const } : entry.readOnly || readOnly ? { refuse: 'readOnly' as const } : {}) };
             const row = (
               <div
                 id={`file-${item.index}`}
@@ -252,7 +279,8 @@ function FileTable({
                 style={{ transform: `translateY(${item.start}px)`, height: item.size }}
                 data-active={item.index === active || undefined}
                 data-blocked={isBlocked || undefined}
-                data-drop={dropTarget === entry.path || undefined}
+                data-drop={(dropTarget?.path === entry.path && !dropTarget.refuse) || undefined}
+                data-refuse={(dropTarget?.path === entry.path && !!dropTarget.refuse) || undefined}
                 draggable={canDrag && !isBlocked}
                 onDragStart={(e) => {
                   // The host runs the drag (a native one Explorer understands); the browser's own is cancelled.
@@ -268,28 +296,27 @@ function FileTable({
                 }}
                 onDragOver={(e) => {
                   if (!hasFiles(e.dataTransfer?.types)) return;
-                  const target = takesDrop ? entry.path : null;
-                  if (target !== dropTarget) onDropTarget(target);
+                  if (rowDrop?.path !== dropTarget?.path || rowDrop?.refuse !== dropTarget?.refuse) onDropTarget(rowDrop);
                 }}
               >
                 <span className={styles.nameCell} role="gridcell">
                   <span className={styles.fileIcon} data-kind={kind} aria-hidden>
                     <Icon />
                   </span>
-                  <span className={styles.name} title={entry.name}>
+                  <span className={styles.name} title={entry.name} dir="auto">
                     {entry.name}
                   </span>
                   {entry.readOnly ? <LockClosedRegular className={styles.lockedIcon} aria-label={t('files.readOnly')} /> : null}
                   {isBlocked ? <span className={styles.blockedTag}>{t('files.blocked')}</span> : null}
                 </span>
-                <span className={`${styles.cell} ${styles.alignEnd}`} role="gridcell">
-                  {entry.isDirectory ? '—' : bytes(entry.size)}
+                <span className={`${styles.cell} ${styles.alignEnd}`} role="gridcell" title={sizeText}>
+                  {sizeText}
                 </span>
-                <span className={`${styles.cell} ${styles.kindColumn}`} role="gridcell">
-                  {kind === 'file' ? t('files.kind.file', { ext: extensionOf(entry.name).toUpperCase() || '—' }) : t(KIND_LABEL[kind])}
+                <span className={`${styles.cell} ${styles.kindColumn}`} role="gridcell" title={kindText}>
+                  {kindText}
                 </span>
-                <span className={styles.cell} role="gridcell">
-                  {entry.modified ? date(entry.modified) : '—'}
+                <span className={styles.cell} role="gridcell" title={dateTitle}>
+                  {dateText}
                 </span>
               </div>
             );
@@ -325,7 +352,7 @@ export function FileBrowser({
   rootIcon,
   onNavigate,
   exit,
-  folderSwitch,
+  folders,
   privateData,
 }: {
   device: DeviceSummary;
@@ -335,8 +362,8 @@ export function FileBrowser({
   rootIcon?: ReactNode;
   onNavigate(path: string): void;
   exit?: BrowserExit;
-  /** Switches between an app's folders (Android: Media / Data), shown in the toolbar. */
-  folderSwitch?: ReactNode;
+  /** Switches between an app's folders (Android: Media / Data), in the toolbar. */
+  folders?: FolderSwitch;
   /** Whether this Android phone lets adb into Android/data (from appFiles.list); greys those folders otherwise. */
   privateData?: AppDataAccess;
 }) {
@@ -351,7 +378,8 @@ export function FileBrowser({
   const [deleting, setDeleting] = useState<FileEntry[] | null>(null);
   const [deleteBusy, setDeleteBusy] = useState(false);
   const [search, setSearch] = useState('');
-  const [dropTarget, setDropTarget] = useState<string | null>(null);
+  const [searchOpen, setSearchOpen] = useState(false);
+  const [dropTarget, setDropTarget] = useState<RowDrop | null>(null);
   const searchBox = useRef<HTMLInputElement>(null);
   const filePicker = useRef<HTMLInputElement>(null);
   const ios = device.platform === 'ios';
@@ -359,6 +387,7 @@ export function FileBrowser({
   useEffect(() => {
     setSelection(emptySelection);
     setSearch('');
+    setSearchOpen(false);
   }, [root, path, device.id]);
 
   const parentListing = path !== '/' ? queryClient.getQueryData<FileEntry[]>(keys.files(device.id, root, parentPath(path))) : undefined;
@@ -369,7 +398,12 @@ export function FileBrowser({
   const selected = entries.filter((e) => selection.ids.has(e.path));
   const selectedBytes = selected.reduce((sum, e) => sum + (e.isDirectory ? 0 : e.size), 0);
   const totalSize = entries.reduce((sum, e) => sum + (e.isDirectory ? 0 : e.size), 0);
-  const crumbs = path.split('/').filter(Boolean);
+  const parts = path.split('/').filter(Boolean);
+  const crumbs: Crumb[] = [
+    ...(exit ? [{ key: 'exit', label: exit.label, onSelect: exit.onExit, testId: 'crumb-exit' }] : []),
+    { key: 'root', label: rootLabel, icon: rootIcon, onSelect: () => onNavigate('/'), testId: 'crumb-root' },
+    ...parts.map((part, i) => ({ key: `${i}:${part}`, label: part, onSelect: () => onNavigate('/' + parts.slice(0, i + 1).join('/')) })),
+  ];
   const placeName = (folder: string) => (folder === '/' ? rootLabel : `${rootLabel}${folder}`);
   const writable = !folderReadOnly && !denied;
 
@@ -383,20 +417,31 @@ export function FileBrowser({
     void queryClient.invalidateQueries({ queryKey: ['appFiles.measure', device.id] });
   };
 
+  // The row under the pointer, as of the event being handled: the row's dragover runs just before the browser's,
+  // which answers with the verdict, so it can't wait for the state to render.
+  const dropRow = useRef<RowDrop | null>(null);
+  const pointRow = (row: RowDrop | null) => {
+    dropRow.current = row;
+    setDropTarget(row);
+  };
   const verdict = (): DropVerdict => {
+    const row = dropRow.current;
+    if (row?.refuse === 'blocked') return { ok: false, message: t('files.dropBlocked', { name: row.name }) };
+    if (row?.refuse === 'readOnly') return { ok: false, message: t('files.dropRowReadOnly', { name: row.name }) };
+    if (denied) return { ok: false, message: t('files.dropDenied') };
     if (!writable) return { ok: false, message: t('files.dropReadOnly') };
-    return { ok: true, message: t('files.drop', { place: placeName(dropTarget ?? path) }) };
+    return { ok: true, message: t('files.drop', { place: placeName(row?.path ?? path) }) };
   };
   const drop = useFileDrop({
     verdict,
     onDrop: (files) => {
-      const into = dropTarget ?? path;
-      setDropTarget(null);
+      const into = dropRow.current?.path ?? path;
+      pointRow(null);
       void actions.copyToDevice(device, root, into, files);
     },
   });
   useEffect(() => {
-    if (!drop.over) setDropTarget(null);
+    if (!drop.over) pointRow(null);
   }, [drop.over]);
 
   const copyToPc = (paths: string[]) => {
@@ -474,6 +519,7 @@ export function FileBrowser({
     if (ctrl && e.key.toLowerCase() === 'f') {
       e.preventDefault();
       e.stopPropagation();
+      setSearchOpen(true);
       searchBox.current?.focus();
       searchBox.current?.select();
     } else if (ctrl && e.key.toLowerCase() === 'e') {
@@ -484,102 +530,39 @@ export function FileBrowser({
   };
 
   return (
-    <div className={styles.browser} {...drop.bind} onKeyDown={onKeyDown} data-testid="file-browser">
-      <div className={styles.toolbar}>
-        <Tooltip content={t('common.back')} shortcut="Alt ↑">
-          <Button variant="subtle" size="small" icon={<ArrowUpRegular />} aria-label={t('common.back')} onClick={up} disabled={!exit && path === '/'} />
-        </Tooltip>
-        <ol className={styles.crumbs} aria-label={t('files.breadcrumb')}>
-          {exit ? (
-            <li className={styles.crumb}>
-              <button type="button" className={styles.crumbButton} onClick={exit.onExit} data-testid="crumb-exit">
-                {exit.label}
-              </button>
-            </li>
-          ) : null}
-          <li className={styles.crumb}>
-            {exit ? <ChevronRightRegular className="flip-rtl" aria-hidden /> : null}
-            {rootIcon ? (
-              <span className={styles.crumbIcon} aria-hidden>
-                {rootIcon}
-              </span>
-            ) : null}
-            <button type="button" className={styles.crumbButton} onClick={() => onNavigate('/')}>
-              {rootLabel}
-            </button>
-          </li>
-          {crumbs.map((part, i) => (
-            <li key={i} className={styles.crumb}>
-              <ChevronRightRegular className="flip-rtl" aria-hidden />
-              <button type="button" className={styles.crumbButton} onClick={() => onNavigate('/' + crumbs.slice(0, i + 1).join('/'))}>
-                {part}
-              </button>
-            </li>
-          ))}
-        </ol>
-        {folderSwitch ? <div className={styles.folderSwitch}>{folderSwitch}</div> : null}
-        <label className={styles.search} data-filled={search ? true : undefined}>
-          <SearchRegular aria-hidden />
-          <input
-            ref={searchBox}
-            type="search"
-            value={search}
-            placeholder={t('appFiles.searchFolder')}
-            aria-label={t('appFiles.searchFolder')}
-            onChange={(e) => setSearch(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === 'Escape' && search) {
-                e.stopPropagation();
-                setSearch('');
-              }
-            }}
-            data-testid="file-search"
-          />
-          {search ? (
-            <button type="button" className={styles.searchClear} aria-label={t('appFiles.clearSearch')} onClick={() => setSearch('')}>
-              <DismissRegular />
-            </button>
-          ) : null}
-        </label>
-        <span className={styles.toolbarGap} aria-hidden />
-        <Tooltip content={t('files.newFolder')}>
-          <Button variant="subtle" size="small" icon={<FolderAddRegular />} aria-label={t('files.newFolder')} disabled={!writable} onClick={newFolder} data-testid="new-folder" />
-        </Tooltip>
-        <Menu
-          align="end"
-          trigger={
-            <Button variant="subtle" size="small" icon={<AddRegular />} aria-label={t('appFiles.add')} disabled={!writable} data-testid="add-menu">
-              {t('appFiles.add')}
-            </Button>
-          }
-          items={[
-            { key: 'files', label: t('appFiles.addFiles'), icon: <DocumentAddRegular />, onSelect: () => filePicker.current?.click() },
-            { key: 'folder', label: t('appFiles.addFolder'), icon: <FolderArrowUpRegular />, onSelect: () => void addFolder() },
-          ]}
-        />
-        <Tooltip content={exportLabel} shortcut="Ctrl+E">
-          <Button variant="subtle" size="small" icon={<ArrowExportRegular className="flip-rtl" />} aria-label={exportLabel} disabled={denied || !!list.error} onClick={() => void exportTo(exportPaths())} data-testid="export-button">
-            {t('common.export')}
-          </Button>
-        </Tooltip>
-        <Tooltip content={t('common.delete')} shortcut="Del">
-          <Button variant="subtle" size="small" icon={<DeleteRegular />} aria-label={t('common.delete')} disabled={selection.ids.size === 0 || folderReadOnly} onClick={() => askDelete([...selection.ids])} data-testid="delete-button" />
-        </Tooltip>
-        <Tooltip content={t('appFiles.refresh')}>
-          <Button variant="subtle" size="small" icon={<ArrowClockwiseRegular />} aria-label={t('appFiles.refresh')} onClick={() => void refreshAfterChange()} />
-        </Tooltip>
-        <input
-          ref={filePicker}
-          type="file"
-          multiple
-          hidden
-          onChange={(e) => {
-            const files = Array.from(e.target.files ?? []);
-            e.target.value = '';
-            if (files.length > 0) void actions.copyToDevice(device, root, path, files);
-          }}
-        />
-      </div>
+    <div className={styles.browser} {...drop.bind} onKeyDown={onKeyDown} data-testid="file-browser" data-path={path}>
+      <BrowserToolbar
+        crumbs={crumbs}
+        canGoUp={!!exit || path !== '/'}
+        onUp={up}
+        folders={folders}
+        search={search}
+        onSearch={setSearch}
+        searchBox={searchBox}
+        searchOpen={searchOpen}
+        onSearchOpen={setSearchOpen}
+        writable={writable}
+        onNewFolder={newFolder}
+        onAddFiles={() => filePicker.current?.click()}
+        onAddFolder={() => void addFolder()}
+        exportLabel={exportLabel}
+        canExport={!denied && !list.error}
+        onExport={() => void exportTo(exportPaths())}
+        canDelete={selection.ids.size > 0 && !folderReadOnly}
+        onDelete={() => askDelete([...selection.ids])}
+        onRefresh={() => void refreshAfterChange()}
+      />
+      <input
+        ref={filePicker}
+        type="file"
+        multiple
+        hidden
+        onChange={(e) => {
+          const files = Array.from(e.target.files ?? []);
+          e.target.value = '';
+          if (files.length > 0) void actions.copyToDevice(device, root, path, files);
+        }}
+      />
       {folderReadOnly ? (
         <div className={styles.banner}>
           <Banner tone="info" icon={<LockClosedRegular />}>
@@ -600,7 +583,25 @@ export function FileBrowser({
           ))}
         </div>
       ) : entries.length === 0 ? (
-        <EmptyState icon={<FolderRegular />} title={t('files.empty.title')} body={folderReadOnly ? t('files.readOnly') : t('files.empty.body')} />
+        <div className={styles.empty} data-testid="empty-folder">
+          <EmptyState
+            icon={<FolderRegular />}
+            title={exit && path === '/' ? t('files.emptyApp.title', { app: rootLabel }) : t('files.empty.title')}
+            body={folderReadOnly ? t('files.readOnly') : t('files.empty.drop')}
+            action={
+              writable ? (
+                <span className={styles.emptyActions}>
+                  <Button icon={<DocumentAddRegular />} onClick={() => filePicker.current?.click()} data-testid="empty-add-files">
+                    {t('files.addFilesButton')}
+                  </Button>
+                  <Button variant="subtle" icon={<FolderArrowUpRegular />} onClick={() => void addFolder()}>
+                    {t('files.addFolderButton')}
+                  </Button>
+                </span>
+              ) : null
+            }
+          />
+        </div>
       ) : shown.length === 0 ? (
         <EmptyState
           icon={<SearchRegular />}
@@ -626,7 +627,7 @@ export function FileBrowser({
           readOnly={folderReadOnly}
           privateData={privateData}
           dropTarget={drop.over ? dropTarget : null}
-          onDropTarget={setDropTarget}
+          onDropTarget={pointRow}
           canDrag={canDragOut(client)}
           onDragOut={(paths) => void dragOut(paths)}
         />

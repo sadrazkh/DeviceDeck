@@ -11,6 +11,7 @@ import {
 import type { BridgeEvents, EventName, MethodName, MethodParams, MethodResult } from '../methods';
 import type { AppInfo, DeviceCapability, DeviceSummary, DriverStatus, FolderPattern, NotificationShowParams, Settings, UpdateStatus } from '../types';
 import { mockAppFiles, mockMeasure } from './appFiles';
+import { addLongNameApps, addLongNameFiles } from './longNames';
 import { batteryHandlers } from './battery';
 import { cleanupHandlers } from './cleanup';
 import { MockFileSystem, joinPath, normalise } from './files';
@@ -52,6 +53,8 @@ export interface MockOptions {
   /** Seed the sample transfer queue. Default true. */
   seedQueue?: boolean;
   now?: () => number;
+  /** Long, Persian and mixed-direction app and file names for layout checks (round 3, ui). Default false. */
+  longNames?: boolean;
 }
 
 /** A JSON-RPC error raised by a mock handler. */
@@ -106,6 +109,7 @@ export class MockBackend {
   private readonly fileSizes = new Map<string, number>();
   private readonly indexing: boolean;
   private readonly now: () => number;
+  private readonly longNames: boolean;
   // Desktop (round 2)
   private readonly pc = new MockPc();
   /** What notifications.show was asked to show, for tests. */
@@ -123,6 +127,8 @@ export class MockBackend {
     this.driverList = scenario === 'limited' || scenario === 'driverMissing' ? driversIosMissing : drivers;
 
     for (const [id, list] of Object.entries(sampleApps)) this.appLists.set(id, list.map((a) => ({ ...a })));
+    this.longNames = options.longNames ?? false;
+    if (this.longNames) addLongNameApps(this.appLists);
 
     switch (scenario) {
       case 'ready':
@@ -680,6 +686,7 @@ export class MockBackend {
     let fs = this.fileSystems.get(deviceId);
     if (!fs) {
       fs = new MockFileSystem(deviceId);
+      if (this.longNames) addLongNameFiles(deviceId, fs);
       this.fileSystems.set(deviceId, fs);
       // App folders are roots of their own, as the host opens them.
       const platform = this.devices.get(deviceId)?.platform;

@@ -109,7 +109,9 @@ function SubfolderChips({ device, root, onDrop }: { device: DeviceSummary; root:
           }}
         >
           <FolderRegular aria-hidden />
-          {folder.name}
+          <span className={styles.chipName} title={folder.name} dir="auto">
+            {folder.name}
+          </span>
         </span>
       ))}
     </span>
@@ -143,7 +145,7 @@ function AppCard({ device, place, copies, onOpen }: { device: DeviceSummary; pla
       ? ' '
       : t('appFiles.counting')
     : files === 0 && folders === 0
-      ? t('appDocs.empty')
+      ? t('appDocs.emptyDrop')
       : `${t('appFiles.files', { count: files })} · ${bytes(size)}`;
   const copy = copies[0];
   const drop = (path: string, dropped: File[]) => {
@@ -202,13 +204,15 @@ function AppCard({ device, place, copies, onOpen }: { device: DeviceSummary; pla
         <span className={styles.head}>
           <PlaceIcon device={device} place={place} className={styles.icon} glyphClassName={styles.iconGlyph} />
           <span className={styles.text}>
-            <span className={styles.name} title={place.kind === 'app' && place.label !== place.id ? `${place.label} (${place.id})` : label}>
+            <span className={styles.name} title={place.kind === 'app' && place.label !== place.id ? `${place.label} (${place.id})` : label} dir="auto">
               {label}
             </span>
             {over ? (
-              <span className={styles.dropNote}>{t('appDocs.dropOn', { app: label })}</span>
+              <span className={styles.dropNote} title={t('appDocs.dropOn', { app: label })}>
+                {t('appDocs.dropOn', { app: label })}
+              </span>
             ) : (
-              <span className={styles.meta} data-testid="app-card-meta">
+              <span className={styles.meta} data-testid="app-card-meta" title={meta}>
                 {meta}
               </span>
             )}
@@ -259,7 +263,9 @@ function OtherAppCard({ device, app }: { device: DeviceSummary; app: AppInfo }) 
       <span className={styles.head}>
         <img className={styles.icon} src={client.images.icon(device.id, app.id)} alt="" loading="lazy" />
         <span className={styles.text}>
-          <span className={styles.name}>{app.name}</span>
+          <span className={styles.name} title={app.name} dir="auto">
+            {app.name}
+          </span>
           <span className={styles.reason}>{t('appDocs.notSharing')}</span>
         </span>
       </span>
