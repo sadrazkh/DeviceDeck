@@ -8,6 +8,7 @@ import { useI18n } from '../i18n';
 import { useUi } from '../state/ui';
 import styles from './Shell.module.css';
 import { TransferPill } from './TransferPill';
+import { UpdateButton } from './UpdateButton';
 
 export function TitleBar() {
   const { t } = useI18n();
@@ -58,6 +59,7 @@ export function TitleBar() {
       </button>
       <div className={styles.titleSpacer} />
 
+      <UpdateButton />
       <TransferPill />
 
       {client.kind === 'mock' ? (

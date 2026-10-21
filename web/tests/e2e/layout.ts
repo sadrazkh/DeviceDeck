@@ -19,6 +19,7 @@ export async function layoutProblems(page: Page, scope = '[data-testid=content]'
 
     const root = document.querySelector(scope);
     if (!root) return [`no ${scope}`];
+    const inDialog = root.closest('[role=dialog]') !== null;
     const problems: string[] = [];
     const describe = (el: Element) => {
       const text = (el.textContent ?? '').trim().replace(/\s+/g, ' ').slice(0, 40);
@@ -55,7 +56,9 @@ export async function layoutProblems(page: Page, scope = '[data-testid=content]'
     for (let node = walker.nextNode(); node; node = walker.nextNode()) {
       const el = node.parentElement;
       if (!node.textContent?.trim() || !el || !shown(el)) continue;
-      if (el.closest('[aria-hidden=true], [role=tooltip], [role=dialog], svg')) continue;
+      // A dialog floats over the page: it is checked on its own (scope inside it), not with what lies under it; text for screen
+      // readers only (.visually-hidden) isn't laid out to be seen (round 4).
+      if (el.closest(inDialog ? '[aria-hidden=true], [role=tooltip], svg, .visually-hidden' : '[aria-hidden=true], [role=tooltip], [role=dialog], svg, .visually-hidden')) continue;
       owners.add(el);
       const range = document.createRange();
       range.selectNodeContents(node);

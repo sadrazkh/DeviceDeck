@@ -1,0 +1,225 @@
+/* Updates you can see (round 4): the title-bar button, What's new, the release notes, the banner, Settings › Updates. */
+
+/* ---------- Title bar ---------- */
+.titleButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  height: var(--control-height);
+  padding-inline: var(--space-2) var(--space-3);
+  border-radius: var(--radius-full);
+  border: 1px solid transparent;
+  background: var(--color-accent);
+  color: var(--color-on-accent);
+  font-weight: var(--type-strong-weight);
+  white-space: nowrap;
+}
+.titleButton:hover {
+  background: var(--color-accent-hover);
+}
+.titleButton:active {
+  background: var(--color-accent-pressed);
+}
+/* The zip's "v0.4.0 on GitHub": there is nothing to restart, so a quieter accent. */
+.titleButton[data-kind='available'] {
+  border-color: var(--color-accent-stroke);
+  background: var(--color-accent-subtle);
+  color: var(--color-accent-text);
+}
+.titleButton[data-kind='available']:hover {
+  background: var(--color-accent-subtle-hover);
+}
+.titleButtonIcon {
+  display: inline-flex;
+  font-size: var(--icon-size-small);
+}
+
+.downloading {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex: none;
+  padding-inline: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  white-space: nowrap;
+}
+
+/* ---------- What's new ---------- */
+.dialog {
+  width: min(680px, calc(100vw - 48px));
+}
+
+.dialogBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-width: 0;
+}
+
+.hint {
+  color: var(--color-text-secondary);
+  overflow-wrap: anywhere;
+}
+
+.notesFrame {
+  min-width: 0;
+}
+
+.notesLoading {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.notesNote {
+  margin-bottom: var(--space-2);
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+.notesMissing {
+  color: var(--color-text-secondary);
+}
+
+.linkIcon {
+  margin-inline-start: var(--space-1);
+  vertical-align: -2px;
+}
+
+/* ---------- Release notes ---------- */
+.notes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.notes p {
+  margin: 0;
+}
+.notes strong {
+  font-weight: var(--type-strong-weight);
+}
+
+.notesTitle {
+  margin: 0 0 var(--space-1);
+  font-family: var(--font-display);
+  font-size: var(--type-subtitle-size);
+  line-height: var(--type-subtitle-line);
+  font-weight: var(--type-subtitle-weight);
+}
+
+.notesHeading {
+  margin: var(--space-3) 0 0;
+  font-size: var(--type-body-size);
+  line-height: var(--type-body-line);
+  font-weight: var(--type-strong-weight);
+}
+
+.notesList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  margin: 0;
+  padding-inline-start: var(--space-5);
+}
+.notesList .notesList {
+  margin-top: var(--space-2);
+}
+
+.notesQuote {
+  margin: 0;
+  padding-inline-start: var(--space-3);
+  border-inline-start: 3px solid var(--color-stroke-divider);
+  color: var(--color-text-secondary);
+}
+
+.notesCode {
+  padding: 0 var(--space-1);
+  border-radius: var(--radius-input);
+  background: var(--color-surface-subtle);
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: 0.92em;
+}
+
+.notesPre {
+  margin: 0;
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-subtle);
+  overflow: auto;
+  font-family: var(--font-mono, ui-monospace, monospace);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  white-space: pre;
+}
+
+.notesRule {
+  width: 100%;
+  margin: var(--space-2) 0;
+  border: 0;
+  border-top: 1px solid var(--color-stroke-divider);
+}
+
+.notesLink {
+  color: var(--color-accent-text);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ---------- Banner (in the toast stack) ---------- */
+.banner {
+  border-color: var(--color-accent-stroke);
+}
+.bannerIcon {
+  display: inline-flex;
+  padding-top: 1px;
+  font-size: var(--icon-size);
+  color: var(--color-accent-text);
+}
+
+/* ---------- Settings › Updates ---------- */
+.facts {
+  display: grid;
+  grid-template-columns: fit-content(40%) minmax(0, 1fr);
+  gap: var(--space-2) var(--space-4);
+  margin: 0 0 var(--space-3);
+}
+.facts dt {
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+.facts dd {
+  margin: 0;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.status {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  margin-bottom: var(--space-3);
+}
+.status[data-tone='error'] {
+  color: var(--color-danger-text);
+}
+
+.buttons {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  margin-bottom: var(--space-2);
+}
+
+.autoHint {
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
