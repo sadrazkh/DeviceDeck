@@ -2,29 +2,28 @@
 
 Windows 11 app that manages an iPhone and an Android phone (photos, files, app documents, apps, backups, tools).
 Plan and design brief: https://claude.ai/code/artifact/e6bbc0f8-d924-42c0-86a0-f7f6ae279bfd (tabs "Design brief" and "Build plan").
-v0.1.0 is released (tag `v0.1.0`); round 2 builds v0.2.0.
+v0.2.0 is released (tag `v0.2.0`); round 3 builds v0.3.0.
 
-## Round 2: six parallel feature sessions
+## Round 3: three parallel sessions
 
 Every session works in its own worktree on its own branch, cut from `main`. Each owns a feature end to end
 (provider code, core, bridge, UI), so files overlap at the edges. The rules that keep merges small:
 
-| Session | Feature | Its own files (new) |
+| Session | Feature | Its own files |
 | --- | --- | --- |
-| desktop | sharp text, tray + notifications, drag out to Explorer, PC folders in Files, installer + auto-update, ARM64, small contract items | `src/DeviceDeck.Shell/**`, `web/src/shell/**`, `.github/workflows/**`, `tools/package.ps1` |
-| photos | incremental photo backup to the PC, HEIC → JPG, adding photos to the phone | `*/Photos*`, `web/src/screens/photos/**` |
-| appfiles | import / export of files for apps that share files, both platforms | `*/AppFiles*`, `web/src/screens/appdocs/**`, `web/src/screens/files/**` |
-| cleanup | storage analysis, confirmed clean-up, battery history | `*/Cleanup*`, `*/Battery*`, `web/src/screens/cleanup/**`, `web/src/screens/battery/**` |
-| backup | iPhone backup / restore / browse, contacts and messages export | `*/Backup*`, `*/Contacts*`, `web/src/screens/backup/**`, `web/src/screens/contacts/**` |
-| toolbox | live log, crash reports, device report, HEIC converter for PC files, Android mirroring, Wi-Fi connection, ringtones | `*/Toolbox*`, `*/Mirror*`, `*/Wifi*`, `web/src/screens/toolbox/**` |
+| ui | file browser toolbar and breadcrumbs that never overlap (Files and App documents, every width, Persian); drop from Explorer proven end to end, with visible drop hints; App documents and Files in the layout test | `web/src/screens/files/**`, `web/src/screens/appDocuments/**`, `web/src/components/DropZone.tsx`, `web/tests/e2e/layout*.ts`, drop handling in `src/DeviceDeck.Shell/**` |
+| backup | photo backup that starts by itself when a phone connects (when the user turns that on), a "from date" range, faster downloads, a free-space check, edited iPhone photos | `*/Photo*Backup*`, the iOS photo library and AFC code, `src/DeviceDeck.Core/Transfers/TransferQueue.cs` (speed only), `web/src/screens/photos/BackupPanel.tsx`, `PhotosBackupSettings.tsx`, `tools/PhotoBench/**` |
+| localsend | photos straight into the iPhone's Photos app through the LocalSend app (over the USB cable via usbmux, or Wi-Fi); a better "save them all" path without LocalSend | new `*/LocalSend/**`, `web/src/screens/photos/ImportToAppDialog.tsx` and new dialog files, `PhotosToAppHandler.cs` |
 
 - **New capabilities = new files.** Add a new optional interface in its own file under `src/DeviceDeck.Core/Abstractions/`
-  (for example `IPhotoBackupSource.cs`) that a device may also implement, instead of adding members to `IDevice`.
-  Existing members of the round-1 interfaces don't change unless your brief says so.
+  that a device may also implement, instead of adding members to `IDevice`.
 - **Shared files, small edits only:** bridge method registration, `docs/bridge-contract.md` (add your section at the end),
-  `web/src/bridge/methods.ts` and the mock backend (add your block at the end), the nav list, Settings.
-  One self-contained block per feature, so the coordinator can merge them; never reformat or reorder someone else's part.
+  `web/src/bridge/methods.ts`, `web/src/bridge/client.ts` (NO_TIMEOUT), the mock backend, `web/src/i18n/*`, Settings,
+  `TransferModels.cs` (new job kinds at the end), `HostServices.cs`, `BridgeServices.cs`, `tests/**/TestHost.cs`.
+  One self-contained block per feature at the end, so the coordinator can merge them; never reformat or reorder someone else's part.
+- `web/src/screens/photos/backupQueries.ts` is shared by backup and localsend: each edits only its own functions.
 - `DeviceDeck.slnx`: only add a project if you really need a new one, and say so in your report.
+- Ports this round: Playwright `PW_PORT` ui 5201, backup 5202, localsend 5203; DevTools ports 9361, 9362, 9363.
 
 ## Conventions
 
@@ -39,11 +38,18 @@ Every session works in its own worktree on its own branch, cut from `main`. Each
 
 ## Testing
 
-- The owner's iPhone 16 (iOS 27) may be plugged in: read-only checks are fine; writes only as test files you delete again;
-  never install, uninstall, reboot, restore or run a full backup on it, and never delete his photos or files.
-- No Android phone is available this round: fixtures and the fake adb server.
+- **No phone until the final phase.** The owner connects his iPhone only at the end of the round, after the merge.
+  Build and test everything with the fake providers, fixtures and test servers. Whatever needs the real phone, write into
+  your report as an exact checklist (commands, expected results); the coordinator runs it at the end.
+- In that final phase, on the owner's iPhone 16 (iOS 27): read-only checks are fine; the photo backup test copies
+  **only the last month of photos** into a folder under `E:\DeviceDeck-test\`, never the whole library; LocalSend may send
+  **3 generated, clearly labelled test images** into Photos (the owner deletes them himself). Never install, uninstall,
+  reboot, restore or run a full iPhone backup on it, and never delete his photos or files.
+- The PC's C: drive has little free space (about 12 GB): never put photo copies, backups or other large test output there.
+- No Android phone: fixtures and the fake adb server.
 - Never move the mouse, type into his desktop, or capture the screen. Check the running app through the WebView2 DevTools port
   (`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port>`), reading the DOM; close it with `CloseMainWindow()`.
+  Only one DeviceDeck window can run at a time (single-instance key): if a copy is already running, never quit it — say so.
 - Timing tests assert order or overlap, not tight wall-clock windows; before you finish, run the suite with
   `DOTNET_PROCESSOR_COUNT=1` a few times (GitHub's runner is slower than this PC).
 
