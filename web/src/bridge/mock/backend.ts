@@ -189,6 +189,7 @@ export class MockBackend {
       if (!current || current.state !== 'connecting') return;
       this.setDevice({ ...current, state: 'ready' });
       this.engine.deviceOnline(deviceId);
+      this.photoBackup.connected(deviceId); // photo backup (round 3): "When this phone connects"
     });
   }
 
@@ -217,6 +218,7 @@ export class MockBackend {
       if (!current || current.state !== 'connecting') return;
       this.setDevice({ ...current, state: 'ready' });
       this.engine.deviceOnline(deviceId);
+      this.photoBackup.connected(deviceId); // photo backup (round 3): "When this phone connects"
     });
   }
 

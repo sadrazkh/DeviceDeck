@@ -19,6 +19,7 @@ public sealed class AfcClient(Stream stream) : IAsyncDisposable
     private const ulong MaxPacket = 8 * 1024 * 1024;
 
     private readonly SemaphoreSlim _lock = new(1, 1);
+    private readonly byte[] _replyHeader = new byte[AfcPacket.HeaderSize];
     private ulong _packetNumber;
     private bool _broken;
 
@@ -89,27 +90,137 @@ public sealed class AfcClient(Stream stream) : IAsyncDisposable
     public Task CloseAsync(ulong handle, CancellationToken ct) =>
         RequestAsync(AfcOperation.FileClose, AfcPacket.U64(handle), default, null, ct);
 
-    /// <summary>Streams a file off the phone. Progress reports bytes copied so far.</summary>
-    public async Task ReadFileAsync(string path, Stream destination, IProgress<long>? progress, CancellationToken ct)
+    /// <summary>Moves an open file's position: whence 0 from the start, 1 from here, 2 from the end.</summary>
+    public Task SeekAsync(ulong handle, long offset, int whence, CancellationToken ct) =>
+        RequestAsync(AfcOperation.FileSeek, [.. AfcPacket.U64(handle), .. AfcPacket.U64((ulong)whence), .. AfcPacket.U64((ulong)offset)], default, null, ct);
+
+    /// <summary>Up to <paramref name="count"/> bytes from <paramref name="offset"/> of a file; fewer only at its end.</summary>
+    public async Task<byte[]> ReadRangeAsync(string path, long offset, int count, CancellationToken ct)
     {
         var handle = await OpenAsync(path, AfcFileMode.ReadOnly, ct).ConfigureAwait(false);
         try
         {
-            long done = 0;
-            while (true)
+            if (offset > 0)
+                await SeekAsync(handle, offset, 0, ct).ConfigureAwait(false);
+            using var bytes = new MemoryStream(count);
+            while (bytes.Length < count)
             {
-                var chunk = await ReadAsync(handle, ReadChunk, ct).ConfigureAwait(false);
+                var chunk = await ReadAsync(handle, (int)Math.Min(ReadChunk, count - bytes.Length), ct).ConfigureAwait(false);
                 if (chunk.Length == 0)
                     break;
-                await destination.WriteAsync(chunk, ct).ConfigureAwait(false);
-                done += chunk.Length;
-                progress?.Report(done);
+                bytes.Write(chunk);
             }
+            return bytes.ToArray();
         }
         finally
         {
             await CloseQuietlyAsync(handle).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Streams a file off the phone into one pooled buffer. Progress reports bytes copied so far. With
+    /// <paramref name="readAhead"/> above 1 that many FileReads are kept in flight, so the phone is already sending the
+    /// next chunk while this one is written to disk; the replies must come back in order (checked by packet number).
+    /// </summary>
+    public async Task ReadFileAsync(string path, Stream destination, IProgress<long>? progress, CancellationToken ct, int readAhead = 1)
+    {
+        var handle = await OpenAsync(path, AfcFileMode.ReadOnly, ct).ConfigureAwait(false);
+        var buffer = ArrayPool<byte>.Shared.Rent(ReadChunk);
+        try
+        {
+            await _lock.WaitAsync(ct).ConfigureAwait(false);
+            try
+            {
+                if (_broken)
+                    throw new DeviceException(DeviceErrorCodes.Disconnected, "The file service connection was interrupted; open it again.");
+                await StreamLockedAsync(handle, destination, buffer, progress, Math.Clamp(readAhead, 1, 8), ct).ConfigureAwait(false);
+            }
+            finally
+            {
+                _lock.Release();
+            }
+        }
+        finally
+        {
+            ArrayPool<byte>.Shared.Return(buffer);
+            await CloseQuietlyAsync(handle).ConfigureAwait(false);
+        }
+    }
+
+    private async Task StreamLockedAsync(ulong handle, Stream destination, byte[] buffer, IProgress<long>? progress, int readAhead, CancellationToken ct)
+    {
+        var pending = new Queue<ulong>(readAhead);
+        DeviceException? failure = null;
+        try
+        {
+            for (var i = 0; i < readAhead; i++)
+                await SendReadAsync(handle, pending, ct).ConfigureAwait(false);
+            await stream.FlushAsync(ct).ConfigureAwait(false);
+
+            long done = 0;
+            var ended = false;
+            while (pending.TryDequeue(out var expected))
+            {
+                var (op, number, length) = await ReceiveIntoAsync(buffer, ct).ConfigureAwait(false);
+                if (number != expected)
+                    throw new FormatException($"AFC answered packet {number} where {expected} was due.");
+                if (op == AfcOperation.Status)
+                {
+                    // Success here is "nothing more"; an error after the end is only the read-ahead running past it.
+                    var status = length >= 8 ? (AfcStatus)BitConverter.ToUInt64(buffer, 0) : AfcStatus.Success;
+                    if (status != AfcStatus.Success && !ended)
+                        failure ??= AfcPacket.ErrorFor(status, AfcOperation.FileRead, null);
+                    ended = true;
+                    continue;
+                }
+                if (op != AfcOperation.Data)
+                    throw new FormatException($"AFC FileRead answered with {op}.");
+                if (ended || length == 0)
+                {
+                    ended = true;
+                    continue;
+                }
+
+                if (failure is null)
+                {
+                    // Keep the pipe full while this chunk goes to disk.
+                    await SendReadAsync(handle, pending, ct).ConfigureAwait(false);
+                    await stream.FlushAsync(ct).ConfigureAwait(false);
+                }
+                await destination.WriteAsync(buffer.AsMemory(0, length), ct).ConfigureAwait(false);
+                done += length;
+                progress?.Report(done);
+            }
+        }
+        catch
+        {
+            // Replies still on their way would be read as answers to the next request.
+            _broken = true;
+            throw;
+        }
+        if (failure is not null)
+            throw failure;
+    }
+
+    private async Task SendReadAsync(ulong handle, Queue<ulong> pending, CancellationToken ct)
+    {
+        var number = _packetNumber++;
+        await stream.WriteAsync(AfcPacket.EncodeHeader(AfcOperation.FileRead, number, [.. AfcPacket.U64(handle), .. AfcPacket.U64(ReadChunk)], 0), ct)
+            .ConfigureAwait(false);
+        pending.Enqueue(number);
+    }
+
+    /// <summary>Reads one reply's content (header data, then payload) into <paramref name="buffer"/>.</summary>
+    private async Task<(AfcOperation Operation, ulong PacketNumber, int Length)> ReceiveIntoAsync(byte[] buffer, CancellationToken ct)
+    {
+        await stream.ReadExactlyAsync(_replyHeader, ct).ConfigureAwait(false);
+        var (entire, thisLength, number, op) = AfcPacket.DecodeHeader(_replyHeader);
+        var length = entire - AfcPacket.HeaderSize;
+        if (entire > MaxPacket || length > (ulong)buffer.Length)
+            throw new FormatException($"AFC reply of {entire} bytes is too large.");
+        await stream.ReadExactlyAsync(buffer.AsMemory(0, (int)length), ct).ConfigureAwait(false);
+        return (op, number, (int)length);
     }
 
     /// <summary>Streams <paramref name="length"/> bytes onto the phone, replacing the file.</summary>

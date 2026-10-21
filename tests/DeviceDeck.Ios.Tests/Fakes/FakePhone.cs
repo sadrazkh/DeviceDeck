@@ -44,6 +44,9 @@ internal sealed class FakePhone
 
     public string? ExpectedHostId { get; set; }
 
+    /// <summary>PhotoBench: how long StartSession takes (the TLS handshake on a real phone).</summary>
+    public TimeSpan SessionDelay { get; set; }
+
     public FakeAfcServer Media { get; } = new();
 
     public Dictionary<string, FakeAfcServer> AppContainers { get; } = new(StringComparer.Ordinal);
@@ -64,12 +67,22 @@ internal sealed class FakePhone
     /// <summary>More services by name, served by the test (mobilebackup2 and notification_proxy in the backup tests).</summary>
     public Dictionary<string, Func<Stream, CancellationToken, Task>> ExtraServices { get; } = new(StringComparer.Ordinal);
 
-    public bool HasPort(int port) => port == LockdownPort || _servicePorts.ContainsKey(port) || RawPorts.ContainsKey(port);
+    public bool HasPort(int port)
+    {
+        lock (_servicePorts)
+            return port == LockdownPort || _servicePorts.ContainsKey(port) || RawPorts.ContainsKey(port);
+    }
 
     public Task ServePortAsync(int port, Stream s, CancellationToken ct) =>
         port == LockdownPort ? ServeLockdownAsync(s, ct)
         : RawPorts.TryGetValue(port, out var raw) ? raw(s, ct)
-        : ServeServiceAsync(_servicePorts[port], s, ct);
+        : ServeServiceAsync(ServiceAt(port), s, ct);
+
+    private string ServiceAt(int port)
+    {
+        lock (_servicePorts)
+            return _servicePorts[port];
+    }
 
     /// <summary>Apps listening on the phone's own TCP ports (LocalSend on 53317), reached with usbmux Connect.</summary>
     public Dictionary<int, Func<Stream, CancellationToken, Task>> RawPorts { get; } = [];
@@ -113,6 +126,8 @@ internal sealed class FakePhone
                     break;
                 }
                 case "StartSession":
+                    if (SessionDelay > TimeSpan.Zero)
+                        await Task.Delay(SessionDelay, ct);
                     if (StartSessionError is not null)
                         reply["Error"] = StartSessionError;
                     else if (ExpectedHostId is not null && msg.GetString("HostID") != ExpectedHostId)
@@ -167,8 +182,13 @@ internal sealed class FakePhone
                         reply["Error"] = StartServiceError;
                     else
                     {
-                        var port = _nextPort++;
-                        _servicePorts[port] = msg.GetString("Service") ?? "";
+                        int port;
+                        // Lockdown connections run side by side (the backup opens several AFC connections at once).
+                        lock (_servicePorts)
+                        {
+                            port = _nextPort++;
+                            _servicePorts[port] = msg.GetString("Service") ?? "";
+                        }
                         reply["Port"] = (long)port;
                         reply["Service"] = msg.GetString("Service") ?? "";
                     }

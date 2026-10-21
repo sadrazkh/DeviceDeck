@@ -22,6 +22,24 @@ public sealed partial class IosPhotoLibrary(IosDevice device, string cacheDirect
     private PhotoIndex? _index;
     private DateTime _indexBuiltUtc;
 
+    /// <summary>AFC connections kept open for originals and bulk stats (a backup reads thousands of files).</summary>
+    private readonly AfcConnectionPool _originals = new(ct => device.Connector().StartAfcAsync(ct), MaxOriginalConnections);
+    private const int MaxOriginalConnections = 4;
+
+    /// <summary>Whether this phone takes FileReads ahead of their answers; one read at a time once it showed it doesn't.</summary>
+    private volatile ReadAheadState _readAhead = ReadAheadState.Untried;
+    private const int ReadAhead = 2;
+
+    private enum ReadAheadState { Untried, Works, Off }
+
+    /// <summary>Connections opened for originals and bulk stats so far (PhotoBench and the probe print it).</summary>
+    public int OriginalConnectionsOpened => _originals.Opened;
+
+    /// <summary>"untried", "works" or "off" (the phone dropped a read ahead, so one chunk at a time): for PhotoBench.</summary>
+    public string ReadsAhead => _readAhead.ToString().ToLowerInvariant();
+
+    internal ValueTask CloseConnectionsAsync() => _originals.DisposeAsync();
+
     public string CacheDirectory { get; } = cacheDirectory;
 
     private (long Bytes, DateTime AtUtc)? _videoBytes;
@@ -37,26 +55,32 @@ public sealed partial class IosPhotoLibrary(IosDevice device, string cacheDirect
             return cached.Bytes;
         var files = await device.UseMediaAfcAsync(afc => ListDcimAsync(afc, ct), ct).ConfigureAwait(false);
         var videos = StandAloneVideos(files).ToList();
-        var total = await device.UseAsync(async c =>
-        {
-            // AFC answers one request at a time per connection, and while the link is busy (the Photos.sqlite copy)
-            // each answer waits behind bulk data; a few connections side by side keep the stats flowing.
-            var lanes = Math.Clamp(videos.Count / 16, 1, StatLanes);
-            var sums = await Task.WhenAll(Enumerable.Range(0, lanes).Select(async lane =>
-            {
-                await using var afc = await c.StartAfcAsync(ct).ConfigureAwait(false);
-                long sum = 0;
-                for (var i = lane; i < videos.Count; i += lanes)
-                    sum += (await afc.GetFileInfoAsync("/" + videos[i], ct).ConfigureAwait(false))?.Size ?? 0;
-                return sum;
-            })).ConfigureAwait(false);
-            return sums.Sum();
-        }).ConfigureAwait(false);
+        // AFC answers one request at a time per connection, and while the link is busy (the Photos.sqlite copy)
+        // each answer waits behind bulk data; a few connections side by side keep the stats flowing.
+        var sizes = await StatAsync(videos, ct).ConfigureAwait(false);
+        var total = sizes.Values.Sum(info => info?.Size ?? 0);
         _videoBytes = (total, DateTime.UtcNow);
         return total;
     }
 
     private const int StatLanes = 4;
+
+    /// <summary>One stat per path, on up to <see cref="StatLanes"/> pooled connections side by side.</summary>
+    internal async Task<Dictionary<string, AfcFileInfo?>> StatAsync(IReadOnlyList<string> paths, CancellationToken ct)
+    {
+        var lanes = Math.Clamp(paths.Count / 16, 1, StatLanes);
+        var found = await Task.WhenAll(Enumerable.Range(0, lanes).Select(lane => device.UseAsync(_ => _originals.UseAsync(async afc =>
+        {
+            var mine = new List<(string Path, AfcFileInfo? Info)>();
+            for (var i = lane; i < paths.Count; i += lanes)
+                mine.Add((paths[i], await afc.GetFileInfoAsync("/" + paths[i], ct).ConfigureAwait(false)));
+            return mine;
+        }, null, ct)))).ConfigureAwait(false);
+        var stats = new Dictionary<string, AfcFileInfo?>(StringComparer.Ordinal);
+        foreach (var (path, info) in found.SelectMany(f => f))
+            stats[path] = info;
+        return stats;
+    }
 
     /// <summary>Video files that are not the motion half of a Live Photo (no photo with the same name beside them).</summary>
     internal static IEnumerable<string> StandAloneVideos(IReadOnlyCollection<string> dcimFiles)
@@ -141,16 +165,89 @@ public sealed partial class IosPhotoLibrary(IosDevice device, string cacheDirect
         }, ct);
     }
 
-    public Task ReadOriginalAsync(string assetId, Stream destination, IProgress<long>? progress, CancellationToken ct)
+    /// <summary>
+    /// Reads an original on one of the pooled connections, two FileReads in flight. Retried once on a fresh connection
+    /// only when the pooled one turns out dead before anything reached <paramref name="destination"/>.
+    /// </summary>
+    public async Task ReadOriginalAsync(string assetId, Stream destination, IProgress<long>? progress, CancellationToken ct)
     {
         if (TryValidateId(assetId, out var id) is { } invalid)
-            return Task.FromException(invalid);
-        // Not retried on a dead connection: part of the file may already be in destination.
-        return device.UseAsync(async c =>
+            throw invalid;
+        var guarded = new PcWriteGuard(destination);
+        try
         {
-            await using var afc = await c.StartAfcAsync(ct).ConfigureAwait(false);
-            await afc.ReadFileAsync("/" + id, destination, progress, ct).ConfigureAwait(false);
-        });
+            await device.UseAsync(_ => _originals.UseAsync(async afc =>
+            {
+                var readAhead = _readAhead == ReadAheadState.Off ? 1 : ReadAhead;
+                try
+                {
+                    await afc.ReadFileAsync("/" + id, guarded, progress, ct, readAhead).ConfigureAwait(false);
+                }
+                catch (Exception ex) when (readAhead > 1 && _readAhead == ReadAheadState.Untried && afc.IsBroken && !ct.IsCancellationRequested
+                    && ex is not PcWriteException)
+                {
+                    // The first read with a second request in flight broke the connection: this phone may not take reads
+                    // ahead. One at a time from now on; the photo is tried again (the queue sees a dropped connection).
+                    _readAhead = ReadAheadState.Off;
+                    throw IosErrors.Disconnected("The iPhone's file service dropped a read; reading one chunk at a time from now on.", ex);
+                }
+                if (readAhead > 1)
+                    _readAhead = ReadAheadState.Works;
+                return true;
+            }, () => guarded.Written > 0, ct)).ConfigureAwait(false);
+        }
+        catch (PcWriteException ex)
+        {
+            // The PC's disk failed (full, gone): not the phone's connection, so not something to wait out.
+            System.Runtime.ExceptionServices.ExceptionDispatchInfo.Throw(ex.InnerException!);
+        }
+    }
+
+    /// <summary>Tells a failed write to the PC apart from a dropped connection to the phone (both are IOExceptions).</summary>
+    private sealed class PcWriteException(Exception inner) : Exception(inner.Message, inner);
+
+    private sealed class PcWriteGuard(Stream inner) : Stream
+    {
+        public long Written { get; private set; }
+
+        public override bool CanRead => false;
+        public override bool CanSeek => false;
+        public override bool CanWrite => true;
+        public override long Length => Written;
+
+        public override long Position
+        {
+            get => Written;
+            set => throw new NotSupportedException();
+        }
+
+        public override void Write(byte[] buffer, int offset, int count) => WriteAsync(buffer.AsMemory(offset, count)).AsTask().GetAwaiter().GetResult();
+
+        public override async ValueTask WriteAsync(ReadOnlyMemory<byte> buffer, CancellationToken cancellationToken = default)
+        {
+            try
+            {
+                await inner.WriteAsync(buffer, cancellationToken).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or ObjectDisposedException)
+            {
+                throw new PcWriteException(ex);
+            }
+            Written += buffer.Length;
+        }
+
+        public override Task WriteAsync(byte[] buffer, int offset, int count, CancellationToken cancellationToken) =>
+            WriteAsync(buffer.AsMemory(offset, count), cancellationToken).AsTask();
+
+        public override void Flush() => inner.Flush();
+
+        public override Task FlushAsync(CancellationToken cancellationToken) => inner.FlushAsync(cancellationToken);
+
+        public override int Read(byte[] buffer, int offset, int count) => throw new NotSupportedException();
+
+        public override long Seek(long offset, SeekOrigin origin) => throw new NotSupportedException();
+
+        public override void SetLength(long value) => throw new NotSupportedException();
     }
 
     public Task DeleteAsync(IReadOnlyList<string> assetIds, CancellationToken ct) =>
@@ -338,11 +435,12 @@ public sealed partial class IosPhotoLibrary(IosDevice device, string cacheDirect
 
     private static bool NeedsStat(PhotoAsset a) => !a.InCloudOnly && (a.Size == 0 || a.TakenAt is null);
 
-    /// <summary>Asset ids are DCIM paths; anything else (or anything climbing out) is refused.</summary>
+    /// <summary>Asset ids are DCIM paths (and, for a backup of edits, the rendered files under PhotoData/Mutations/DCIM); anything else, or anything climbing out, is refused.</summary>
     private static DeviceException? TryValidateId(string assetId, out string id)
     {
         id = (assetId ?? "").Replace('\\', '/').TrimStart('/');
-        if (!id.StartsWith("DCIM/", StringComparison.OrdinalIgnoreCase) || id.Split('/').Any(p => p is ".." or "." or ""))
+        var photo = id.StartsWith("DCIM/", StringComparison.OrdinalIgnoreCase) || id.StartsWith(MutationsRoot + "DCIM/", StringComparison.OrdinalIgnoreCase);
+        if (!photo || id.Split('/').Any(p => p is ".." or "." or ""))
             return new DeviceException(DeviceErrorCodes.NotFound, $"'{assetId}' is not a photo on this iPhone.");
         return null;
     }

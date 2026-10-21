@@ -1,11 +1,12 @@
 // Queries and actions of the photo backup (photos.backup*) and of adding photos to an iPhone app.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
+import { create } from 'zustand';
 import type { FileSource } from '../../bridge';
 import type { MethodParams } from '../../bridge/methods';
-import type { DeviceSummary, PhotoBackupStatus } from '../../bridge/types';
-import { useClient } from '../../app/bridgeContext';
+import type { DeviceSummary, PhotoBackupRange, PhotoBackupStatus } from '../../bridge/types';
+import { useBridge, useClient } from '../../app/bridgeContext';
 import { useActions } from '../../app/actions';
 import { useI18n } from '../../i18n';
 import { toast } from '../../state/toasts';
@@ -15,6 +16,36 @@ export const backupKeys = {
   status: (deviceId: string) => ['photos.backupStatus', deviceId] as const,
 };
 
+/** A request to open a phone's Back up panel (from a notification); the Photos screen takes it. */
+export const useBackupPanelRequest = create<{ deviceId: string | null; open(deviceId: string): void; clear(): void }>((set) => ({
+  deviceId: null,
+  open: (deviceId) => set({ deviceId }),
+  clear: () => set({ deviceId: null }),
+}));
+
+/**
+ * Clicks on the photo backup's Windows notifications (round 3). The host starts the backup for "Back up now" and
+ * opens Explorer for "Open folder"; here the page follows: the phone, its Photos screen, the panel or the transfers.
+ */
+export function usePhotoBackupEvents() {
+  const { client } = useBridge();
+  useEffect(
+    () =>
+      client.on('notification.activated', ({ command, deviceId }) => {
+        if (!deviceId || !command.startsWith('photos.')) return;
+        const ui = useUi.getState();
+        if (command === 'photos.openBackup') {
+          ui.selectDevice(deviceId);
+          ui.navigate('photos');
+          useBackupPanelRequest.getState().open(deviceId);
+        } else if (command === 'photos.backupNow') {
+          ui.setDrawerOpen(true);
+        }
+      }),
+    [client],
+  );
+}
+
 export function canBackUp(device: DeviceSummary | null | undefined): device is DeviceSummary {
   return device?.state === 'ready' && device.capabilities.includes('photosRead');
 }
@@ -22,6 +53,17 @@ export function canBackUp(device: DeviceSummary | null | undefined): device is D
 /** An iPhone takes photos only into an app that shares files (no supported way into Photos over USB). */
 export function addsPhotosThroughApps(device: DeviceSummary): boolean {
   return device.platform === 'ios' && device.capabilities.includes('appDocuments') && !device.capabilities.includes('photosImport');
+}
+
+/** Room on the drive of a backup folder (Settings' default folder; a phone's own comes with its status). */
+export function useBackupSpace(folder: string | undefined) {
+  const client = useClient();
+  return useQuery({
+    queryKey: ['photos.backupSpace', folder ?? ''],
+    queryFn: () => client.call('photos.backupSpace', { folder: folder! }),
+    enabled: !!folder,
+    staleTime: 60_000,
+  });
 }
 
 export function useBackupStatus(device: DeviceSummary | null) {
@@ -34,7 +76,7 @@ export function useBackupStatus(device: DeviceSummary | null) {
   });
 }
 
-type ConfigurePatch = Omit<MethodParams<'photos.backupConfigure'>, 'deviceId'>;
+export type ConfigurePatch = Omit<MethodParams<'photos.backupConfigure'>, 'deviceId'>;
 
 export function useConfigureBackup(device: DeviceSummary) {
   const client = useClient();
@@ -46,8 +88,13 @@ export function useConfigureBackup(device: DeviceSummary) {
       const key = backupKeys.status(device.id);
       const previous = queryClient.getQueryData<PhotoBackupStatus>(key);
       if (previous && !patch.useDefaults) {
-        const { useDefaults: _ignored, ...options } = patch;
-        queryClient.setQueryData<PhotoBackupStatus>(key, { ...previous, options: { ...previous.options, ...options }, customized: true });
+        const { useDefaults: _ignored, onConnect, ...options } = patch;
+        queryClient.setQueryData<PhotoBackupStatus>(key, {
+          ...previous,
+          options: { ...previous.options, ...options },
+          customized: Object.keys(options).length > 0 || previous.customized,
+          onConnect: onConnect ?? previous.onConnect,
+        });
       }
       return { previous };
     },
@@ -75,6 +122,8 @@ export function useBackupActions(device: DeviceSummary) {
           return jobId;
         } catch (error) {
           actions.fail(error);
+          // Refused for room or a missing drive: the panel shows why, with "Choose another folder".
+          await queryClient.invalidateQueries({ queryKey: backupKeys.status(device.id) });
           return null;
         }
       },
@@ -118,6 +167,21 @@ export function exampleFolder(pattern: string, when: Date): string {
 }
 
 export const PATTERN_PRESETS = ['yyyy/MM', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy', ''] as const;
+
+/** A local calendar day as "yyyy-MM-dd" (what range.since and <input type="date"> use). */
+export function isoDay(when: Date): string {
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${when.getFullYear()}-${pad(when.getMonth() + 1)}-${pad(when.getDate())}`;
+}
+
+/** The range choices of the panel; "since" starts 30 days back until the user picks a day. */
+export const RANGE_DAYS = 30;
+
+export function rangeFor(choice: 'all' | 'lastDays' | 'since', now: Date, since?: string | null): PhotoBackupRange {
+  if (choice === 'lastDays') return { kind: 'lastDays', days: RANGE_DAYS, since: null };
+  if (choice === 'since') return { kind: 'since', days: null, since: since ?? isoDay(new Date(now.getTime() - RANGE_DAYS * 24 * 3600 * 1000)) };
+  return { kind: 'all', days: null, since: null };
+}
 
 /** The app the user last chose on this phone for photos (per-viewer convenience only). */
 export const lastApp = {

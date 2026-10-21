@@ -2,6 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useEffect, useRef } from 'react';
 import type { TransferJob } from '../bridge/types';
 import { useI18n } from '../i18n';
+import { usePhotoBackupEvents } from '../screens/photos/backupQueries';
 import { toast } from '../state/toasts';
 import { useUi } from '../state/ui';
 import { useActions } from './actions';
@@ -25,7 +26,9 @@ function invalidateAfter(queryClient: ReturnType<typeof useQueryClient>, job: Tr
       void queryClient.invalidateQueries({ queryKey: ['photos.backupStatus', id] });
       break;
     case 'photosBackup':
+      // The badge on Photos › Back up comes from the status: nothing new any more (round 3: also after an automatic run).
       void queryClient.invalidateQueries({ queryKey: ['photos.backupStatus', id] });
+      void queryClient.invalidateQueries({ queryKey: ['photos.backupSpace'] });
       break;
     case 'photosToApp':
       void queryClient.invalidateQueries({ queryKey: ['files.list', id] });
@@ -48,11 +51,14 @@ export function useLiveUpdates() {
   const latest = useRef({ i18n, actions });
   latest.current = { i18n, actions };
   const wasDisconnected = useRef(new Set<string>());
+  usePhotoBackupEvents();
 
   useEffect(
     () =>
       connectBridgeEvents(client, queryClient, {
         onTransfer: ({ job, previous }) => {
+          // A backup the host started by itself (the phone connected, a notification): the panel shows it at once.
+          if (!previous && job.kind === 'photosBackup') void queryClient.invalidateQueries({ queryKey: ['photos.backupStatus', job.deviceId] });
           if (!previous || previous.state === job.state) return;
           const { t } = latest.current.i18n;
           if (job.state === 'done') {

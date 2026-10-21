@@ -5,6 +5,7 @@ import { batteryEn } from '../screens/battery/strings';
 import { cleanupEn } from '../screens/cleanup/strings';
 import { backupEn } from './backup';
 import { localSendEn } from './localSend';
+import { photoBackupEn } from '../screens/photos/backupStrings';
 
 export const en = {
   'app.name': 'DeviceDeck',
@@ -637,6 +638,8 @@ export const en = {
   'appDocs.emptyDrop': 'Empty · drop files here',
   // Add to iPhone: LocalSend and the save-them-all steps (round 3)
   ...localSendEn,
+  // Photo backup (round 3)
+  ...photoBackupEn,
 } as const;
 
 export type MessageKey = keyof typeof en;

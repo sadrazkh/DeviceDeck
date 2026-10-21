@@ -40,6 +40,12 @@ internal sealed class PhotosBackupHost : IAsyncDisposable
 
     public string DatabasePath => Path.Combine(Root, "app", "photo-backup.db");
 
+    /// <summary>The destination drive as the backup sees it: plenty of room unless a test says otherwise.</summary>
+    public Func<string, PcDiskSpace?> DiskSpace { get; set; } = _ => new PcDiskSpace(500_000_000_000, 1_000_000_000_000);
+
+    /// <summary>Whether a folder's drive is there (a test unplugs it).</summary>
+    public Func<string, bool> RootExists { get; set; } = _ => true;
+
     public static async Task<PhotosBackupHost> StartAsync(PhotosTestPhone phone, IImageTranscoder? transcoder = null,
         HeicConversion heic = HeicConversion.Available, params IDeviceProvider[] more)
     {
@@ -53,7 +59,8 @@ internal sealed class PhotosBackupHost : IAsyncDisposable
 
     private void StartServices()
     {
-        Backup = new PhotoBackupService(DatabasePath, Hub, Settings, Transcoder, Heic);
+        Backup = new PhotoBackupService(DatabasePath, Hub, Settings, Transcoder, Heic,
+            diskSpace: folder => DiskSpace(folder), rootExists: folder => RootExists(folder));
         Queue = new TransferQueue(Hub, Store, [.. TransferHandlers.All(Transcoder), Backup.Handler], new CountingKeepAwake(), TestHost.FastQueue());
         Queue.Start();
         Backup.Attach(Queue);

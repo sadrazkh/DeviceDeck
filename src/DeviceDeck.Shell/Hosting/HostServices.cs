@@ -96,6 +96,8 @@ internal sealed class HostServices : IAsyncDisposable
         var transcoder = new WicImageTranscoder();
         var settings = new SettingsStore(paths.SettingsFile);
         var photoBackup = new PhotoBackupService(Path.Combine(paths.Root, "photo-backup.db"), hub, settings, transcoder, PhotosHeicProbe.Check());
+        // Photo backup (round 3): leftovers of backups that won't resume are removed (the backup's own temp files only).
+        photoBackup.CleanedUp += (_, c) => ShellLog.Info($"Photo backup: removed {c.Files.Count} unfinished downloads ({c.Bytes / 1e6:0.0} MB) no backup will resume.");
         var keepAwake = new WindowsKeepAwake();
         var dragOuts = new DragOutRegistry();
         var localSend = new DeviceDeck.Core.LocalSend.LocalSendService(hub, store.LoadItems);

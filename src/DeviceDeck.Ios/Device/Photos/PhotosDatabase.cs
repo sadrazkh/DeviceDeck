@@ -59,7 +59,8 @@ public sealed partial class PhotosDatabase : IDisposable
         var sql = $"""
             SELECT a.Z_PK, {A("ZDIRECTORY")}, {A("ZFILENAME")}, {A("ZKIND")}, {A("ZKINDSUBTYPE")}, {A("ZDATECREATED")},
                    {A("ZFAVORITE")}, {A("ZHIDDEN")}, {A("ZTRASHEDSTATE")}, {A("ZWIDTH")}, {A("ZHEIGHT")}, {A("ZDURATION")},
-                   {A("ZUUID")}, {A("ZISDETECTEDSCREENSHOT")}, {X("ZORIGINALFILESIZE")}, {X("ZORIGINALFILENAME")}
+                   {A("ZUUID")}, {A("ZISDETECTEDSCREENSHOT")}, {X("ZORIGINALFILESIZE")}, {X("ZORIGINALFILENAME")},
+                   {A("ZHASADJUSTMENTS")}, {A("ZADJUSTMENTTIMESTAMP")}
             FROM {s.AssetTable} a {join}
             """;
         var rows = new List<PhotoRow>();
@@ -88,7 +89,9 @@ public sealed partial class PhotosDatabase : IDisposable
                 Uuid: r.IsDBNull(12) ? null : r.GetString(12),
                 DetectedScreenshot: Int(r, 13) == 1,
                 OriginalFileSize: r.IsDBNull(14) ? null : r.GetInt64(14),
-                OriginalFileName: r.IsDBNull(15) ? null : r.GetString(15)));
+                OriginalFileName: r.IsDBNull(15) ? null : r.GetString(15),
+                HasAdjustments: Int(r, 16) is > 0,
+                AdjustedAt: r.IsDBNull(17) ? null : CoreDataEpoch.AddSeconds(r.GetDouble(17))));
         }
         return rows;
     }
@@ -225,6 +228,8 @@ public sealed record AlbumJoin(string Table, string AlbumColumn, string AssetCol
 
 /// <param name="Kind">ZKIND: 0 photo, 1 video.</param>
 /// <param name="KindSubtype">ZKINDSUBTYPE: 1 panorama, 2 Live Photo, 10 screenshot, 100 / 101 / 102 video variants.</param>
+/// <param name="HasAdjustments">ZHASADJUSTMENTS: edited in Photos (false where the schema has no such column).</param>
+/// <param name="AdjustedAt">ZADJUSTMENTTIMESTAMP: when it was last edited; a new edit changes it.</param>
 public sealed record PhotoRow(
     long Pk,
     string Directory,
@@ -241,7 +246,9 @@ public sealed record PhotoRow(
     string? Uuid,
     bool DetectedScreenshot,
     long? OriginalFileSize,
-    string? OriginalFileName)
+    string? OriginalFileName,
+    bool HasAdjustments = false,
+    DateTimeOffset? AdjustedAt = null)
 {
     /// <summary>"DCIM/100APPLE/IMG_0001.HEIC" — also the asset id.</summary>
     public string Path => Directory.TrimEnd('/') + "/" + FileName;

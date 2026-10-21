@@ -38,6 +38,38 @@ internal sealed class FakeAfcServer
         return this;
     }
 
+    /// <summary>A file of <paramref name="length"/> bytes made up on the fly from <paramref name="seed"/> (PhotoBench's big libraries cost no memory).</summary>
+    public FakeAfcServer AddGeneratedFile(string path, long length, ulong seed, DateTimeOffset? modified = null)
+    {
+        lock (_gate)
+        {
+            EnsureParents(path);
+            _entries[path] = Entry.Generated(length, seed, modified ?? new DateTimeOffset(2026, 1, 2, 3, 4, 5, TimeSpan.Zero));
+        }
+        return this;
+    }
+
+    /// <summary>The bytes of a generated file at <paramref name="offset"/>: the same seed and offset always give the same bytes.</summary>
+    public static void Generate(ulong seed, long offset, Span<byte> into)
+    {
+        Span<byte> block = stackalloc byte[8];
+        var position = offset;
+        var done = 0;
+        while (done < into.Length)
+        {
+            var index = (ulong)(position >> 3);
+            var z = seed + (index + 1) * 0x9E3779B97F4A7C15UL;
+            z = (z ^ (z >> 30)) * 0xBF58476D1CE4E5B9UL;
+            z = (z ^ (z >> 27)) * 0x94D049BB133111EBUL;
+            BinaryPrimitives.WriteUInt64LittleEndian(block, z ^ (z >> 31));
+            var from = (int)(position & 7);
+            var n = Math.Min(8 - from, into.Length - done);
+            block.Slice(from, n).CopyTo(into.Slice(done, n));
+            done += n;
+            position += n;
+        }
+    }
+
     public FakeAfcServer AddDir(string path)
     {
         lock (_gate)
@@ -51,7 +83,7 @@ internal sealed class FakeAfcServer
     public byte[]? FileContent(string path)
     {
         lock (_gate)
-            return _entries.TryGetValue(path, out var e) && !e.IsDir ? e.Content.ToArray() : null;
+            return _entries.TryGetValue(path, out var e) && !e.IsDir ? e.Read(0, (int)e.Length) : null;
     }
 
     public bool Exists(string path)
@@ -127,7 +159,7 @@ internal sealed class FakeAfcServer
                 var ns = (e.Modified - DateTimeOffset.UnixEpoch).Ticks * 100;
                 var pairs = new[]
                 {
-                    "st_size", (e.IsDir ? 64 : e.Content.Count).ToString(),
+                    "st_size", (e.IsDir ? 64 : e.Length).ToString(),
                     "st_blocks", "8",
                     "st_nlink", "1",
                     "st_ifmt", e.IsDir ? "S_IFDIR" : "S_IFREG",
@@ -201,9 +233,9 @@ internal sealed class FakeAfcServer
                 var count = (int)BinaryPrimitives.ReadUInt64LittleEndian(h.AsSpan(8));
                 MaxReadSeen = Math.Max(MaxReadSeen, count);
                 if (!_open.TryGetValue(handle, out var f)) return Status(AfcStatus.InvalidArgument);
-                var content = _entries[f.Path].Content;
-                var n = Math.Min(count, content.Count - f.Position);
-                var chunk = content.Skip(f.Position).Take(n).ToArray();
+                var entry = _entries[f.Path];
+                var n = (int)Math.Max(0, Math.Min(count, entry.Length - f.Position));
+                var chunk = entry.Read(f.Position, n);
                 f.Position += n;
                 return Data(chunk);
             }
@@ -217,6 +249,17 @@ internal sealed class FakeAfcServer
             case AfcOperation.FileClose:
                 _open.Remove(BinaryPrimitives.ReadUInt64LittleEndian(h));
                 return Status(AfcStatus.Success);
+            case AfcOperation.FileSeek:
+            {
+                var handle = BinaryPrimitives.ReadUInt64LittleEndian(h);
+                var whence = BinaryPrimitives.ReadUInt64LittleEndian(h.AsSpan(8));
+                var offset = BinaryPrimitives.ReadInt64LittleEndian(h.AsSpan(16));
+                if (!_open.TryGetValue(handle, out var f)) return Status(AfcStatus.InvalidArgument);
+                var position = whence switch { 0 => offset, 1 => f.Position + offset, _ => _entries[f.Path].Length + offset };
+                if (position < 0) return Status(AfcStatus.InvalidArgument);
+                f.Position = position;
+                return Status(AfcStatus.Success);
+            }
             case (AfcOperation)0x1B when LockReply is { } lockReply:
                 return Status(lockReply);
             default:
@@ -259,15 +302,31 @@ internal sealed class FakeAfcServer
         public bool IsDir { get; private init; }
         public List<byte> Content { get; private init; } = [];
         public DateTimeOffset Modified { get; private init; }
+        private long? GeneratedLength { get; init; }
+        private ulong Seed { get; init; }
+
+        public long Length => GeneratedLength ?? Content.Count;
+
+        public byte[] Read(long offset, int count)
+        {
+            var bytes = new byte[count];
+            if (GeneratedLength is not null)
+                Generate(Seed, offset, bytes);
+            else
+                Content.CopyTo((int)offset, bytes, 0, count);
+            return bytes;
+        }
 
         public static Entry Dir() => new() { IsDir = true, Modified = new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero) };
 
         public static Entry File(byte[] content, DateTimeOffset modified) => new() { Content = [.. content], Modified = modified };
+
+        public static Entry Generated(long length, ulong seed, DateTimeOffset modified) => new() { GeneratedLength = length, Seed = seed, Modified = modified };
     }
 
     private sealed class OpenFile(string path)
     {
         public string Path { get; } = path;
-        public int Position { get; set; }
+        public long Position { get; set; }
     }
 }

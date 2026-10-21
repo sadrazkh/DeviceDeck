@@ -26,6 +26,9 @@ internal sealed partial class AndroidPhotoLibrary(IAdbChannel channel, Func<int>
     private IReadOnlyList<MediaItem>? _index;
     private DateTime _indexTime;
 
+    /// <summary>The index by MediaStore id, made once per index: a backup looks up every photo it copies.</summary>
+    private (IReadOnlyList<MediaItem> Index, Dictionary<long, MediaItem> ById)? _byId;
+
     public static readonly TimeSpan IndexMaxAge = TimeSpan.FromSeconds(10);
 
     public async IAsyncEnumerable<PhotoAlbum> GetAlbumsAsync([EnumeratorCancellation] CancellationToken ct)
@@ -181,8 +184,18 @@ internal sealed partial class AndroidPhotoLibrary(IAdbChannel channel, Func<int>
     {
         long id = ParseId(assetId);
         var items = await GetIndexAsync(refresh: false, ct).ConfigureAwait(false);
-        var item = items.FirstOrDefault(i => i.Id == id);
-        if (item != null)
+        var lookup = _byId;
+        if (lookup is not { } current || !ReferenceEquals(current.Index, items))
+        {
+            var byId = new Dictionary<long, MediaItem>(items.Count);
+            foreach (var each in items)
+            {
+                byId.TryAdd(each.Id, each);
+            }
+            lookup = (items, byId);
+            _byId = lookup;
+        }
+        if (lookup.Value.ById.TryGetValue(id, out var item))
         {
             return item;
         }

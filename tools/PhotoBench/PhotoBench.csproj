@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Times the real photo backup against an iPhone, or against a fake one with a simulated USB link (no phone needed).
+       A developer tool: not shipped, not part of the release. Usage: README.md. -->
+
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <AssemblyName>photobench</AssemblyName>
+    <RootNamespace>PhotoBench</RootNamespace>
+    <IsPackable>false</IsPackable>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\src\DeviceDeck.Ios\DeviceDeck.Ios.csproj" />
+  </ItemGroup>
+
+  <!-- The iPhone test fakes (usbmuxd, lockdown, AFC) for fake mode, shared with the tests rather than copied. -->
+  <ItemGroup>
+    <Compile Include="..\..\tests\DeviceDeck.Ios.Tests\Fakes\FakeUsbmux.cs" Link="Fakes\FakeUsbmux.cs" />
+    <Compile Include="..\..\tests\DeviceDeck.Ios.Tests\Fakes\FakePhone.cs" Link="Fakes\FakePhone.cs" />
+    <Compile Include="..\..\tests\DeviceDeck.Ios.Tests\Fakes\FakeAfcServer.cs" Link="Fakes\FakeAfcServer.cs" />
+    <Compile Include="..\..\tests\DeviceDeck.Ios.Tests\Fakes\DuplexStream.cs" Link="Fakes\DuplexStream.cs" />
+    <Compile Include="..\..\tests\DeviceDeck.Ios.Tests\Fakes\Wire.cs" Link="Fakes\Wire.cs" />
+    <Compile Include="..\..\tests\DeviceDeck.Ios.Tests\Fakes\TestPairing.cs" Link="Fakes\TestPairing.cs" />
+    <Compile Include="..\..\tests\DeviceDeck.Ios.Tests\Fixture.cs" Link="Fakes\Fixture.cs" />
+    <None Include="..\..\tests\DeviceDeck.Ios.Tests\Fixtures\Plist\lockdown_getvalue_all.xml" Link="Fixtures\Plist\lockdown_getvalue_all.xml" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
+</Project>

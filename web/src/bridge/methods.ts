@@ -36,6 +36,9 @@ import type {
   PhotoAlbum,
   PhotoAsset,
   PhotoBackupCount,
+  PhotoBackupOnConnect,
+  PhotoBackupRange,
+  PhotoBackupSpace,
   PhotoBackupStatus,
   RebootTarget,
   Settings,
@@ -147,6 +150,9 @@ export interface BridgeMethods {
       convertHeic?: boolean;
       includeHidden?: boolean;
       useDefaults?: boolean;
+      range?: PhotoBackupRange;
+      onConnect?: PhotoBackupOnConnect;
+      saveEdited?: boolean;
     };
     result: PhotoBackupStatus;
   };
@@ -259,6 +265,8 @@ export interface BridgeMethods {
   'localsend.send': { params: DeviceParams & { target: LocalSendTarget; files: string[] }; result: JobStarted };
   'localsend.retry': { params: { jobId: string; pin?: string }; result: Empty };
   'localsend.job': { params: { jobId: string }; result: LocalSendJobStatus };
+  // Photo backup (round 3)
+  'photos.backupSpace': { params: { folder: string }; result: PhotoBackupSpace };
 }
 
 export type MethodName = keyof BridgeMethods;
@@ -396,6 +404,8 @@ const methodTable = {
   'localsend.send': true,
   'localsend.retry': true,
   'localsend.job': true,
+  // Photo backup (round 3)
+  'photos.backupSpace': true,
 } as const satisfies Record<MethodName, true>;
 
 export const METHOD_NAMES = Object.keys(methodTable) as MethodName[];

@@ -13,11 +13,16 @@ public sealed record PhotosBackupConfigureParams(
     string? FolderPattern = null,
     bool? ConvertHeic = null,
     bool? IncludeHidden = null,
-    bool UseDefaults = false);
+    bool UseDefaults = false,
+    PhotoBackupRange? Range = null,
+    PhotoBackupOnConnect? OnConnect = null,
+    bool? SaveEdited = null);
 
 public sealed record PhotosImportToAppParams(string DeviceId, string AppId, IReadOnlyList<string> Files);
 
 public sealed record ForgottenResult(int Forgotten);
+
+public sealed record PhotosBackupSpaceParams(string Folder);
 
 /// <summary>photos.newCount, photos.backup*, photos.importToApp.</summary>
 public static class PhotosBackupMethods
@@ -29,7 +34,7 @@ public static class PhotosBackupMethods
         rpc.Register<PhotosBackupConfigureParams, PhotoBackupStatus>("photos.backupConfigure", (p, ct) =>
         {
             var backup = Backup(s);
-            backup.Configure(p.DeviceId, p.Destination, p.FolderPattern, p.ConvertHeic, p.IncludeHidden, p.UseDefaults);
+            backup.Configure(p.DeviceId, p.Destination, p.FolderPattern, p.ConvertHeic, p.IncludeHidden, p.UseDefaults, p.Range, p.OnConnect, p.SaveEdited);
             return backup.GetStatusAsync(p.DeviceId, ct);
         });
         rpc.Register<DeviceParams, JobIdResult>("photos.backup", async (p, ct) =>
@@ -39,6 +44,7 @@ public static class PhotosBackupMethods
             s.Hub.GetUsableDevice(p.DeviceId);
             return Task.FromResult(new ForgottenResult(Backup(s).Forget(p.DeviceId)));
         });
+        rpc.Register<PhotosBackupSpaceParams, PhotoBackupSpace>("photos.backupSpace", (p, _) => Task.FromResult(Backup(s).CheckSpace(p.Folder)));
         // Round 3 (localsend): a dated folder per send, split into parts of 200; the result says where they are.
         rpc.Register<PhotosImportToAppParams, Core.Transfers.Handlers.PhotosToAppStarted>("photos.importToApp", (p, ct) =>
             Core.Transfers.Handlers.PhotosToAppHandler.EnqueueAsync(s.Hub, s.Transfers, p.DeviceId, p.AppId, p.Files, ct));

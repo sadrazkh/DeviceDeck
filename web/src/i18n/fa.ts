@@ -5,6 +5,7 @@ import { batteryFa } from '../screens/battery/strings';
 import { cleanupFa } from '../screens/cleanup/strings';
 import { backupFa } from './backup';
 import { localSendFa } from './localSend';
+import { photoBackupFa } from '../screens/photos/backupStrings';
 import type { MessageKey } from './en';
 
 export const fa: Record<MessageKey, string> = {
@@ -621,4 +622,6 @@ export const fa: Record<MessageKey, string> = {
   'appDocs.emptyDrop': 'خالی · فایل‌ها را اینجا رها کنید',
   // Add to iPhone: LocalSend and the save-them-all steps (round 3)
   ...localSendFa,
+  // Photo backup (round 3)
+  ...photoBackupFa,
 };

@@ -2,18 +2,19 @@ import { FolderOpenRegular } from '@fluentui/react-icons';
 import { useActions } from '../../app/actions';
 import { useSettings, useUpdateSettings } from '../../app/queries';
 import { Button } from '../../components/Button';
-import { Card, Segmented, Switch } from '../../components/ui';
+import { Banner, Card, Segmented, Switch } from '../../components/ui';
 import { useI18n } from '../../i18n';
 import screen from '../Screen.module.css';
-import { PATTERN_PRESETS, exampleFolder } from './backupQueries';
+import { PATTERN_PRESETS, exampleFolder, useBackupSpace } from './backupQueries';
 import styles from './Backup.module.css';
 
 /** Settings › Photo backup: the defaults a phone uses until it has options of its own. */
 export function PhotosBackupSettings() {
-  const { t } = useI18n();
+  const { t, bytes } = useI18n();
   const settings = useSettings().data;
   const update = useUpdateSettings();
   const actions = useActions();
+  const space = useBackupSpace(settings?.photoBackupFolder).data;
   if (!settings) return null;
   const today = new Date();
   const pattern = settings.photoBackupPattern;
@@ -38,6 +39,15 @@ export function PhotosBackupSettings() {
           </Button>
         </div>
       </div>
+      {space?.driveMissing ? (
+        <div data-testid="settings-backup-space" data-state="missing">
+          <Banner tone="warning">{t('settings.photoBackup.missing', { root: `⁦${space.root}⁩` })}</Banner>
+        </div>
+      ) : space?.nearlyFull && space.freeBytes !== null ? (
+        <div data-testid="settings-backup-space" data-state="nearlyFull">
+          <Banner tone="warning">{t('settings.photoBackup.nearlyFull', { root: `⁦${space.root}⁩`, free: bytes(space.freeBytes) })}</Banner>
+        </div>
+      ) : null}
       <div className={screen.settingRow}>
         <span className={screen.settingLabel}>{t('photos.backup.folders')}</span>
         <Segmented

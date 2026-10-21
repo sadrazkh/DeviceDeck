@@ -29,7 +29,7 @@ import { clickSelect, emptySelection, pruneSelection, selectAll, toggleGroup, to
 import { useDevicePlace, useUi } from '../../state/ui';
 import { ScreenLayout } from '../ScreenLayout';
 import { BackupPanel } from './BackupPanel';
-import { addsPhotosThroughApps, canBackUp, useBackupStatus } from './backupQueries';
+import { addsPhotosThroughApps, canBackUp, useBackupPanelRequest, useBackupStatus } from './backupQueries';
 import backupStyles from './Backup.module.css';
 import { ExportDialog } from './ExportDialog';
 import { ImportToAppDialog } from './ImportToAppDialog';
@@ -172,6 +172,13 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
   const importInput = useRef<HTMLInputElement>(null);
   // Photos backup and adding photos to an iPhone app (round 2).
   const [backupOpen, setBackupOpen] = useState(false);
+  // A notification asked for this phone's Back up panel (round 3).
+  const panelRequest = useBackupPanelRequest((s) => s.deviceId);
+  useEffect(() => {
+    if (panelRequest !== device.id) return;
+    useBackupPanelRequest.getState().clear();
+    setBackupOpen(true);
+  }, [panelRequest, device.id]);
   const [toAppFiles, setToAppFiles] = useState<File[] | null>(null);
   const backupStatus = useBackupStatus(device);
   const newCount = backupStatus.data?.count.newCount ?? 0;

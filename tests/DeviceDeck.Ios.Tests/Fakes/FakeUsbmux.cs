@@ -24,12 +24,21 @@ internal sealed class FakeUsbmux : IUsbmuxConnector
     /// <summary>How long Listen waits before replaying Attached for phones already there (AMDS can take over a second).</summary>
     public TimeSpan ListenReplayDelay { get; set; }
 
-    public Task<UsbmuxClient> ConnectAsync(CancellationToken ct)
+    /// <summary>PhotoBench: how long opening a connection to usbmuxd takes.</summary>
+    public TimeSpan ConnectDelay { get; set; }
+
+    /// <summary>PhotoBench: makes each connection's two ends (default: an in-memory pipe, no latency).</summary>
+    public Func<(Stream Client, Stream Server)>? CreatePair { get; set; }
+
+    public async Task<UsbmuxClient> ConnectAsync(CancellationToken ct)
     {
-        Connections++;
-        var (client, server) = DuplexStream.CreatePair();
+        lock (_listeners)
+            Connections++;
+        if (ConnectDelay > TimeSpan.Zero)
+            await Task.Delay(ConnectDelay, ct);
+        var (client, server) = (CreatePair ?? DuplexStream.CreatePair)();
         _ = Task.Run(() => ServeAsync(server, CancellationToken.None), CancellationToken.None);
-        return Task.FromResult(new UsbmuxClient(client));
+        return new UsbmuxClient(client);
     }
 
     public FakePhone Attach(int deviceId, FakePhone phone)

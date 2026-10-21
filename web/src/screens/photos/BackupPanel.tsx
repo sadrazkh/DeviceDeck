@@ -1,5 +1,6 @@
 import {
   ArrowResetRegular,
+  CalendarLtrRegular,
   CheckmarkCircleRegular,
   CloudOffRegular,
   FolderOpenRegular,
@@ -14,11 +15,21 @@ import { useTransfers } from '../../app/queries';
 import { Button } from '../../components/Button';
 import { ConfirmDialog, Dialog } from '../../components/Dialog';
 import { ErrorBanner } from '../../components/ErrorState';
-import { Banner, LinearProgress, Segmented, Skeleton, Switch } from '../../components/ui';
+import { Banner, LinearProgress, RadioCards, Segmented, Skeleton, Switch } from '../../components/ui';
 import { useI18n, type I18n } from '../../i18n';
 import { jobFraction } from '../../state/transfers';
 import { useUi } from '../../state/ui';
-import { PATTERN_PRESETS, exampleFolder, useBackupActions, useBackupStatus, useConfigureBackup } from './backupQueries';
+import {
+  PATTERN_PRESETS,
+  RANGE_DAYS,
+  exampleFolder,
+  isoDay,
+  rangeFor,
+  useBackupActions,
+  useBackupStatus,
+  useConfigureBackup,
+  type ConfigurePatch,
+} from './backupQueries';
 import styles from './Backup.module.css';
 
 function runSummary(run: PhotoBackupRun, i18n: I18n): string {
@@ -28,6 +39,10 @@ function runSummary(run: PhotoBackupRun, i18n: I18n): string {
   if (run.failed > 0) parts.push(t('photos.backup.run.failed', { count: run.failed }));
   if (run.keptHeic > 0) parts.push(t('photos.backup.run.keptHeic', { count: run.keptHeic }));
   if (run.state === 'cancelled') parts.push(t('photos.backup.run.cancelled'));
+  if (run.edited > 0) parts.push(t('photos.backup.run.edited', { count: run.edited }));
+  if (run.editsMissing > 0) parts.push(t('photos.backup.run.editsMissing', { count: run.editsMissing }));
+  if (run.trigger === 'automatic') parts.push(t('photos.backup.run.automatic'));
+  if (run.trigger === 'notification') parts.push(t('photos.backup.run.fromNotification'));
   return parts.join(' · ');
 }
 
@@ -94,10 +109,14 @@ export function BackupPanel({ device, open, onOpenChange }: { device: DeviceSumm
                 variant="accent"
                 onClick={() => void start()}
                 loading={busy}
-                disabled={!count || count.newCount === 0}
+                disabled={!count || count.newCount + count.newEdits === 0 || !data.space.enough}
                 data-testid="backup-start"
               >
-                {count && count.newCount > 0 ? t('photos.backup.start', { count: count.newCount }) : t('photos.backup.upToDate')}
+                {count && count.newCount > 0
+                  ? t('photos.backup.start', { count: count.newCount })
+                  : count && count.newEdits > 0
+                    ? t('photos.backup.startEdits', { count: count.newEdits })
+                    : t('photos.backup.upToDate')}
               </Button>
             )}
           </>
@@ -143,6 +162,44 @@ export function BackupPanel({ device, open, onOpenChange }: { device: DeviceSumm
   );
 }
 
+/** No room, no drive, or nearly full: said before the button is pressed, with a way out. */
+function SpaceBanner({ data, onPick, disabled }: { data: PhotoBackupStatus; onPick(): void; disabled: boolean }) {
+  const { t, bytes } = useI18n();
+  const { space, count } = data;
+  const choose = (
+    <Button onClick={onPick} disabled={disabled} data-testid="backup-space-choose">
+      {t('photos.backup.space.choose')}
+    </Button>
+  );
+  const root = `⁦${space.root}⁩`;
+  if (space.driveMissing) {
+    return (
+      <div data-testid="backup-space" data-state="missing">
+        <Banner tone="danger" title={t('photos.backup.space.missing.title', { root })} actions={choose}>
+          {t('photos.backup.space.missing.body')}
+        </Banner>
+      </div>
+    );
+  }
+  if (!space.enough && count.newCount > 0) {
+    return (
+      <div data-testid="backup-space" data-state="short">
+        <Banner tone="warning" title={t('photos.backup.space.short.title', { root })} actions={choose}>
+          {t('photos.backup.space.short.body', { needed: bytes(space.neededBytes), free: bytes(space.freeBytes ?? 0) })}
+        </Banner>
+      </div>
+    );
+  }
+  if (space.nearlyFull && space.freeBytes !== null) {
+    return (
+      <div data-testid="backup-space" data-state="nearlyFull">
+        <Banner tone="warning">{t('photos.backup.space.nearlyFull', { root, free: bytes(space.freeBytes) })}</Banner>
+      </div>
+    );
+  }
+  return null;
+}
+
 function Body({
   data,
   device,
@@ -155,7 +212,7 @@ function Body({
   device: DeviceSummary;
   running: TransferJob | undefined;
   onPick(): void;
-  configure(patch: { folderPattern?: string; convertHeic?: boolean; includeHidden?: boolean; useDefaults?: boolean }): void;
+  configure(patch: ConfigurePatch): void;
   i18n: I18n;
 }) {
   const { t, n, bytes, percent } = i18n;
@@ -178,6 +235,7 @@ function Body({
               <span className={styles.heroTitle}>{t('photos.backup.new')}</span>
               <span className="t-caption t-secondary num">
                 {t('photos.backup.newDetail', { photos: count.newPhotos, videos: count.newVideos })}
+                {count.newEdits > 0 ? ` · ${t('photos.backup.newEdits', { count: count.newEdits })}` : ''}
                 {count.newBytes > 0 ? ` · ${t('photos.backup.about', { size: bytes(count.newBytes) })}` : ''}
               </span>
             </span>
@@ -209,11 +267,18 @@ function Body({
       {count.cloudOnly > 0 ? (
         <Banner icon={<CloudOffRegular />}>{t('photos.backup.cloudOnly', { count: count.cloudOnly })}</Banner>
       ) : null}
+      {count.outOfRange > 0 ? (
+        <div data-testid="backup-out-of-range">
+          <Banner icon={<CalendarLtrRegular />}>{t('photos.backup.outOfRange', { count: count.outOfRange })}</Banner>
+        </div>
+      ) : null}
       {count.hiddenLeftOut > 0 ? (
         <Banner icon={<LockClosedRegular />}>
           {hiddenRevealed ? t('photos.backup.hiddenLeftOut', { count: count.hiddenLeftOut }) : t('photos.backup.hiddenLeftOutLocked')}
         </Banner>
       ) : null}
+
+      <SpaceBanner data={data} onPick={onPick} disabled={!!running} />
 
       <div className={styles.section}>
         <span className={styles.label}>{t('photos.backup.destination')}</span>
@@ -243,6 +308,36 @@ function Body({
         />
       </div>
 
+      <div className={styles.section} data-testid="backup-range">
+        <span className={styles.label}>{t('photos.backup.range')}</span>
+        <Segmented
+          label={t('photos.backup.range')}
+          value={options.range.kind}
+          onChange={(kind) => configure({ range: rangeFor(kind, today, options.range.since) })}
+          options={[
+            { value: 'all', label: t('photos.backup.range.all') },
+            { value: 'lastDays', label: t('photos.backup.range.lastDays', { count: options.range.days ?? RANGE_DAYS }) },
+            { value: 'since', label: t('photos.backup.range.since') },
+          ]}
+        />
+        {options.range.kind === 'since' ? (
+          <label className={styles.dateField}>
+            <span>{t('photos.backup.range.sinceLabel')}</span>
+            <input
+              type="date"
+              className={styles.dateInput}
+              value={options.range.since ?? ''}
+              max={isoDay(today)}
+              onChange={(e) => {
+                if (e.target.value) configure({ range: rangeFor('since', today, e.target.value) });
+              }}
+              data-testid="backup-range-since"
+            />
+          </label>
+        ) : null}
+        <span className={styles.hint}>{t('photos.backup.range.hint')}</span>
+      </div>
+
       <div className={styles.section}>
         <Switch checked={options.convertHeic} onChange={(convertHeic) => configure({ convertHeic })} label={t('photos.backup.convertHeic')} />
         <span className={styles.hint}>{t('photos.backup.convertHeicHint')}</span>
@@ -259,6 +354,27 @@ function Body({
           <span className={styles.hint}>{t('photos.backup.includeHiddenHint')}</span>
         </div>
       ) : null}
+
+      {device.platform === 'ios' ? (
+        <div className={styles.section} data-testid="backup-save-edited">
+          <Switch checked={options.saveEdited} onChange={(saveEdited) => configure({ saveEdited })} label={t('photos.backup.saveEdited')} />
+          <span className={styles.hint}>{t('photos.backup.saveEditedHint')}</span>
+        </div>
+      ) : null}
+
+      <div className={styles.section} data-testid="backup-on-connect">
+        <span className={styles.label}>{t('photos.backup.onConnect')}</span>
+        <RadioCards
+          label={t('photos.backup.onConnect')}
+          value={data.onConnect}
+          onChange={(onConnect) => configure({ onConnect })}
+          options={[
+            { value: 'nothing', label: t('photos.backup.onConnect.nothing'), hint: t('photos.backup.onConnect.nothingHint') },
+            { value: 'notify', label: t('photos.backup.onConnect.notify'), hint: t('photos.backup.onConnect.notifyHint') },
+            { value: 'backUp', label: t('photos.backup.onConnect.backUp'), hint: t('photos.backup.onConnect.backUpHint') },
+          ]}
+        />
+      </div>
 
       <p className={styles.fine}>
         {t('photos.backup.how')}{' '}

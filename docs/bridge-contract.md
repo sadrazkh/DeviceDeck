@@ -724,3 +724,142 @@ Error codes (`TransferJob.error.code`, item errors): `localsend_not_listening` (
 `localsend_connection_lost` (dropped or stalled mid-file), `localsend_pin_required`, `localsend_pin_wrong`,
 `localsend_rejected` (declined on the phone), `localsend_busy` (409, 429), `localsend_checksum` (422),
 `localsend_session_lost` (403 on upload: cancelled on the phone), `localsend_fingerprint`, `localsend_failed` (anything else).
+## Photo backup (round 3, backup session)
+
+Additions to "Photos backup and adding photos (round 2)". C#: `src/DeviceDeck.Core/Photos/**`,
+`PhotosBackupHandler.cs`, `PhotosBackupMethods.cs`; TypeScript: the photo backup types in `types.ts` and `methods.ts`.
+
+### Date range
+
+`photos.backupConfigure` takes `range?: PhotoBackupRange`; `PhotoBackupOptions` gains `range` and `PhotoBackupCount`
+gains `outOfRange`. The range is the phone's own (Settings has none): everything until it is set, and
+`useDefaults: true` brings everything back. A photo is in range by the date it was taken; a photo without any date
+is always in. An iPhone photo newer than the Photos.sqlite copy has no date in the list; it counts as in range until
+the backup asks the phone for its date, and is left out then if it is older.
+
+```ts
+type PhotoBackupRange = {
+  kind: "all" | "lastDays" | "since";
+  days: number | null;      // lastDays: 1–36500 (the panel offers 30)
+  since: string | null;     // since: "yyyy-MM-dd", from midnight on this PC
+};
+// PhotoBackupOptions gains  range: PhotoBackupRange;
+// PhotoBackupCount gains    outOfRange: number;   // new, but taken before the range: left out, in no other count
+```
+
+A field the kind doesn't use is dropped (`{ kind: "since", since: "2026-09-01", days: 7 }` is stored without `days`);
+a missing or bad field is `-32602`. A job queued before ranges existed has no `range` in its request and copies everything.
+
+### Speed
+
+Nothing changes on the wire. A `photosBackup` job copies three photos at once (the queue runs several items of one
+job side by side for handlers that ask for it, and saves item states in batches); on an iPhone the originals come over
+a pool of up to four AFC connections kept open for the whole job (closed after 20 s idle) instead of a lockdown session
+per file, with two FileReads in flight per file (one at a time for the rest of the connection's life if a phone drops a
+read ahead). The destination folder is read once per run, the ledger is written in batches, and a HEIC is read once to
+be converted. Measured with `tools/PhotoBench --fake` (240 photos, 1.07 GB, a 34 MB/s link): 57.7 s → 32.6 s, 618 → 8
+connections.
+
+### Free space
+
+Before any start (the panel's button, the "Back up now" notification, or the automatic start) the bytes to copy are
+compared with the free space on the destination's drive. The bytes are the sizes the phone reported, an average of
+those for the ones it hasn't said yet, HEIC counted 1.6× when it becomes JPG; the margin is 1 GB or a tenth of that,
+whichever is more. `photos.backup` then fails with:
+
+- `no_space` — "Not enough space on E:\ for 312 new photos: about 8.9 GB needed with room to spare, 2.1 GB free. Free
+  some space, or choose another folder." (only when something is new);
+- `path_not_found` — "The backup folder's drive E:\ isn't there. Connect it, or choose another folder." (an unplugged
+  disk, an offline share).
+
+Nothing is queued then. `PhotoBackupStatus` gains `space`, so the panel says it before the button is pressed (with
+"Choose another folder"); Settings asks about its default folder:
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `photos.backupSpace` | `{ folder }` (a full path) | `PhotoBackupSpace` with `neededBytes: 0` |
+
+```ts
+type PhotoBackupSpace = {
+  root: string;                 // "E:\\" or the share
+  freeBytes: number | null;     // null: the drive isn't there, or (a share) can't say
+  totalBytes: number | null;
+  neededBytes: number;          // the new photos plus the margin; 0 when nothing is new
+  enough: boolean;
+  nearlyFull: boolean;          // under 20 GB, or under a tenth of the drive, left
+  driveMissing: boolean;
+};
+// PhotoBackupStatus gains  space: PhotoBackupSpace;
+```
+
+### When this phone connects
+
+`photos.backupConfigure` takes `onConnect?: "nothing" | "notify" | "backUp"`; `PhotoBackupStatus` gains `onConnect`
+(default `"notify"`). It is the phone's own and `useDefaults` leaves it alone. The host's `PhotoBackupWatcher`
+(`src/DeviceDeck.Core/Photos/PhotoBackupWatcher.cs`, made by the main window) acts once per connection when the phone
+turns `ready`:
+
+- `nothing` — nothing.
+- `notify` — when it has new photos, a Windows notification "128 new photos on Nima's iPhone" ("120 photos · 8 videos
+  · about 2.3 GB") with **Back up now** (command `photos.backupNow`; the host starts the backup). Only for a phone
+  plugged in while DeviceDeck runs, like the "connected" notification. Unplugging takes it back.
+- `backUp` — the backup starts by itself, also for a phone that was plugged in when DeviceDeck started and while the
+  window is in the notification area; with the phone's range and options, through the transfer queue like any other.
+  Nothing new: nothing happens. A destination whose drive isn't there or is too full: no job, and a notification
+  "Nima's iPhone's photos weren't backed up" with the reason and **Open DeviceDeck** (`photos.openBackup`; the page
+  opens the phone's Back up panel).
+
+A run started by a notification or by the phone ends with a notification: "312 photos backed up" ("From Nima's
+iPhone · 1.2 GB") with **Open folder** (`photos.openFolder`, `args.folder`; the host opens only a folder a backup used),
+"Photos from … are up to date" when everything new was already in the folder, or "The backup of … stopped" with the
+error. A run started from the panel ends as before (the page's toast). Texts follow `settings.language` (English, Persian).
+
+```ts
+// PhotoBackupStatus gains  onConnect: "nothing" | "notify" | "backUp";
+// PhotoBackupRun gains     trigger: "manual" | "notification" | "automatic";
+```
+
+The page follows a click: `photos.openBackup` selects the phone, opens Photos and its Back up panel; `photos.backupNow`
+opens the transfers. When a `photosBackup` job appears that the page didn't start, the phone's status is fetched again,
+and again when it finishes (the Photos screen's badge).
+
+### Edited iPhone photos
+
+`photos.backupConfigure` takes `saveEdited?: boolean` (iPhone; off by default; one of the phone's own options, so
+`useDefaults` turns it off). `PhotoBackupOptions` gains `saveEdited`, `PhotoBackupCount` gains `newEdits`, and
+`PhotoBackupRun` gains `edited` and `editsMissing`.
+
+- **Which.** Photos.sqlite's `ZASSET.ZHASADJUSTMENTS` (iOS 14+; `ZGENERICASSET` before) says a photo was edited, and
+  `ZADJUSTMENTTIMESTAMP` when; that time is the edit's stamp. A database without these columns reports no edits.
+- **Where.** The rendered version is looked for, read-only, in
+  `PhotoData/Mutations/<the photo's DCIM folder>/<its name without extension>/Adjustments/FullSizeRender.*` on the
+  Media root (an image for a photo, a movie for a video). When the phone has no such file the backup says so
+  (`editsMissing`) and doesn't guess; it looks again only after a new edit.
+- **On the PC.** Next to the copy of the original, as `IMG_1234 (edited).heic` (`.jpg` when HEIC becomes JPG; the
+  render's own extension otherwise), with the photo's date. The original's copy is never touched.
+- **A later edit** (a new stamp) makes an item of its own: the edited version replaces the one an earlier backup wrote,
+  when that file is still as written (size, and the photo's date as its write time); a file someone changed on the PC is
+  kept and the new edit gets a free name (`IMG_1234 (edited) (1).heic`).
+- `newEdits` counts new photos' edits and new edits of photos already copied; the panel's button says "Save 3 edited
+  versions" when nothing else is new. A Live Photo's edited video is not saved (only the still's render).
+- Asset ids of rendered versions (`PhotoData/Mutations/DCIM/…`) are readable through the photo library like DCIM ones;
+  nothing else under PhotoData is.
+
+### Already in the folder (after "forget history", or a new device id)
+
+Before a photo is copied, when the destination has a file of its size whose name (without a clash number like ` (2)`)
+is the photo's, a sample of the phone's file is compared with it: SHA-256 over the size and the first, middle and last
+64 KB (the whole file up to 192 KB), read with AFC FileSeek on an iPhone (`IPhotoRangeReader`, a new optional interface).
+A match is remembered as there already (`duplicates`), a Live Photo's video checked the same way next to it; anything
+else is copied and compared whole as before. A JPEG made from a HEIC keeps the HEIC's size and sample in the ledger's
+hash cache, so it is found again without converting. So a library already on the PC isn't downloaded again; only the
+samples are read. A photo whose edited version is to be saved is copied as before. Android has no part reads yet: it
+copies and compares whole, as before.
+
+### Leftover temp files
+
+The backup's temp files have names nothing else uses: `<name>.original.ddpart`, `.motion.ddpart`, `.edited.ddpart`
+and `.backup.ddpart` (a download always starts over, so none is ever resumed from). When the app starts and after
+every run, those in the folders backups went to are removed, but only where no backup is queued, running, paused or
+waiting for that folder, and only when not written in the last minute. Nothing else is touched: not another copy's
+`.ddpart`, not a file outside the backup folders. The host logs what went and how much space it freed.

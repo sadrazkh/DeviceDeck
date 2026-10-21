@@ -416,6 +416,19 @@ export interface PhotoBackupCount {
   cloudOnly: number;
   /** New, in the iPhone's Hidden album, left out by the options. */
   hiddenLeftOut: number;
+  /** New, but taken before the options' date range: left out, in no other count. */
+  outOfRange: number;
+  /** Edited versions to copy (iPhone, with saveEdited): new photos' edits and new edits of photos already copied. */
+  newEdits: number;
+}
+
+/** Which photos a backup looks at, by the date taken. Undated photos are always included. */
+export interface PhotoBackupRange {
+  kind: 'all' | 'lastDays' | 'since';
+  /** For lastDays (1–36500). */
+  days: number | null;
+  /** For since: "yyyy-MM-dd", from midnight on the PC. */
+  since: string | null;
 }
 
 export interface PhotoBackupOptions {
@@ -423,6 +436,10 @@ export interface PhotoBackupOptions {
   folderPattern: string;
   convertHeic: boolean;
   includeHidden: boolean;
+  /** The phone's own only (Settings has none): everything by default. */
+  range: PhotoBackupRange;
+  /** iPhone: also "IMG_1234 (edited).jpg" next to a photo edited in Photos, kept up to date. Off by default. */
+  saveEdited: boolean;
 }
 
 export type PhotoBackupRunState = 'running' | 'done' | 'failed' | 'cancelled';
@@ -441,6 +458,11 @@ export interface PhotoBackupRun {
   keptHeic: number;
   startedAt: string;
   finishedAt: string | null;
+  trigger: PhotoBackupTrigger;
+  /** Edited versions written (new or updated). */
+  edited: number;
+  /** Photos the iPhone says were edited but has no edited version of where Photos keeps them. */
+  editsMissing: number;
 }
 
 export type HeicConversion = 'available' | 'missingCodec' | 'unknown';
@@ -455,6 +477,31 @@ export interface PhotoBackupStatus {
   lastRun: PhotoBackupRun | null;
   activeJobId: string | null;
   heicConversion: HeicConversion;
+  /** Room for the new photos on the destination's drive; photos.backup is refused when it isn't enough. */
+  space: PhotoBackupSpace;
+  /** "When this phone connects" (round 3); the phone's own, kept by useDefaults. */
+  onConnect: PhotoBackupOnConnect;
+}
+
+/** Nothing; a Windows notification of new photos with "Back up now" (default); or a backup that starts by itself. */
+export type PhotoBackupOnConnect = 'nothing' | 'notify' | 'backUp';
+
+/** What started a run; the last two end with a notification. */
+export type PhotoBackupTrigger = 'manual' | 'notification' | 'automatic';
+
+/** Room on a backup folder's drive (round 3). */
+export interface PhotoBackupSpace {
+  /** "E:\" or the share. */
+  root: string;
+  /** null when the drive isn't there or can't say. */
+  freeBytes: number | null;
+  totalBytes: number | null;
+  /** The new photos (estimated where the phone hasn't said; HEIC counted bigger as JPG) plus a margin; 0 when nothing is new. */
+  neededBytes: number;
+  enough: boolean;
+  /** Under 20 GB, or under a tenth of the drive, left. */
+  nearlyFull: boolean;
+  driveMissing: boolean;
 }
 
 // Backup, contacts and messages (round 2).

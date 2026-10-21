@@ -6,11 +6,15 @@ namespace DeviceDeck.Core.Photos;
 /// <summary>
 /// The files already in a backup folder (all sub-folders), by size, so a photo that is there already — copied by an
 /// earlier run, by another app, or under another name — is recognised: same size, then same SHA-256. Sums of PC files
-/// are cached in the ledger by path, size and write time.
+/// are cached in the ledger by path, size and write time; sums found or written during a run wait in memory until the
+/// handler saves them with its batch (<see cref="TakeUnsavedHashes"/>). Built once per run of a job.
 /// </summary>
 internal sealed class PhotoDestinationIndex
 {
     private readonly Dictionary<long, List<string>> _bySize = [];
+    private readonly Dictionary<string, (long Size, long Modified, byte[] Sha256)> _hashes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<(string Path, long Size, long Modified, byte[] Sha256, long? OriginSize, byte[]? OriginSample)> _unsaved = [];
+    private readonly Dictionary<string, (long Size, long Modified, byte[] Sample)> _samples = new(StringComparer.OrdinalIgnoreCase);
     private readonly PhotoBackupLedger _ledger;
     private readonly Lock _gate = new();
 
@@ -77,13 +81,115 @@ internal sealed class PhotoDestinationIndex
     }
 
     /// <summary>Notes a file this backup just wrote, with its sum, so later photos of the run see it.</summary>
-    public void Add(string path, long size, byte[] sha256)
+    /// <param name="origin">A JPEG made from a HEIC: the HEIC's size and sample (the next backup finds the JPEG by them).</param>
+    public void Add(string path, long size, byte[] sha256, (long Size, byte[] Sample)? origin = null)
     {
         AddPath(path, size);
         var info = new FileInfo(path);
         if (info.Exists)
         {
-            _ledger.PutHash(info.FullName, info.Length, info.LastWriteTimeUtc.Ticks, sha256);
+            Remember(info.FullName, info.Length, info.LastWriteTimeUtc.Ticks, sha256, origin);
+        }
+    }
+
+    /// <summary>True when the folder has a file of this size whose name, without a clash number, is <paramref name="stem"/>.</summary>
+    public bool HasNamesake(long size, string stem)
+    {
+        lock (_gate)
+        {
+            return _bySize.TryGetValue(size, out var list) && list.Any(p => SameStem(p, stem));
+        }
+    }
+
+    /// <summary>A file of this size and name stem whose sample is <paramref name="sample"/>: the photo is there, nothing needs copying.</summary>
+    public async Task<string?> FindBySampleAsync(long size, byte[] sample, string stem, CancellationToken ct)
+    {
+        string[] candidates;
+        lock (_gate)
+        {
+            candidates = _bySize.TryGetValue(size, out var list) ? list.Where(p => SameStem(p, stem)).ToArray() : [];
+        }
+
+        foreach (var path in candidates)
+        {
+            if (await SampleOfAsync(path, size, ct).ConfigureAwait(false) is { } found && found.AsSpan().SequenceEqual(sample))
+            {
+                return path;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>A JPEG this PC made from a HEIC with this size and sample, still as written then and with the photo's name.</summary>
+    public string? FindConverted(long originSize, byte[] originSample, string stem)
+    {
+        foreach (var (path, size, modified, sample) in _ledger.FindByOrigin(originSize))
+        {
+            if (!SameStem(path, stem) || !sample.AsSpan().SequenceEqual(originSample) || !path.StartsWith(Root, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            var file = new FileInfo(path);
+            if (file.Exists && file.Length == size && file.LastWriteTimeUtc.Ticks == modified)
+            {
+                return file.FullName;
+            }
+        }
+
+        return null;
+    }
+
+    private static bool SameStem(string path, string stem) =>
+        string.Equals(PhotoBackupSample.Stem(Path.GetFileName(path)), stem, StringComparison.OrdinalIgnoreCase);
+
+    private async Task<byte[]?> SampleOfAsync(string path, long size, CancellationToken ct)
+    {
+        var info = new FileInfo(path);
+        if (!info.Exists || info.Length != size)
+        {
+            return null;
+        }
+
+        var modified = info.LastWriteTimeUtc.Ticks;
+        lock (_gate)
+        {
+            if (_samples.TryGetValue(info.FullName, out var known) && known.Size == size && known.Modified == modified)
+            {
+                return known.Sample;
+            }
+        }
+
+        var sample = await PhotoBackupSample.OfFileAsync(path, size, ct).ConfigureAwait(false);
+        if (sample is not null)
+        {
+            lock (_gate)
+            {
+                _samples[info.FullName] = (size, modified, sample);
+            }
+        }
+
+        return sample;
+    }
+
+    /// <summary>The sums learnt since the last call, for the ledger.</summary>
+    public IReadOnlyList<(string Path, long Size, long Modified, byte[] Sha256, long? OriginSize, byte[]? OriginSample)> TakeUnsavedHashes()
+    {
+        lock (_gate)
+        {
+            var taken = _unsaved.ToArray();
+            _unsaved.Clear();
+            return taken;
+        }
+    }
+
+    private void Remember(string fullPath, long size, long modified, byte[] sha256, (long Size, byte[] Sample)? origin = null)
+    {
+        lock (_gate)
+        {
+            _hashes[fullPath] = (size, modified, sha256);
+            _unsaved.Add((fullPath, size, modified, sha256, origin?.Size, origin?.Sample));
         }
     }
 
@@ -113,6 +219,14 @@ internal sealed class PhotoDestinationIndex
         }
 
         var modified = info.LastWriteTimeUtc.Ticks;
+        lock (_gate)
+        {
+            if (_hashes.TryGetValue(info.FullName, out var known) && known.Size == size && known.Modified == modified)
+            {
+                return known.Sha256;
+            }
+        }
+
         if (_ledger.GetHash(info.FullName, size, modified) is { } cached)
         {
             return cached;
@@ -122,7 +236,7 @@ internal sealed class PhotoDestinationIndex
         {
             await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read, 1 << 20, FileOptions.Asynchronous | FileOptions.SequentialScan);
             var hash = await SHA256.HashDataAsync(stream, ct).ConfigureAwait(false);
-            _ledger.PutHash(info.FullName, size, modified, hash);
+            Remember(info.FullName, size, modified, hash);
             return hash;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
