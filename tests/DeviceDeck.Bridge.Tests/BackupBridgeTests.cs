@@ -104,7 +104,9 @@ public sealed class BackupBridgeTests
         Assert.Equal(("backup", "Test iPhone"), ((string?)started!["kind"], (string?)started["deviceName"]));
         var job = await FinishedAsync(host, started);
         Assert.Equal(100, (double)job["percent"]!);
-        Assert.Contains(host.Transport.EventsNamed("backup.updated"), e => (string?)e["params"]!["phase"] == "transferring");
+        // FinishedAsync reads the job from the service; its events reach the transport through the service's pump a little later.
+        await Wait.UntilAsync(() => host.Transport.EventsNamed("backup.updated").Any(e => (string?)e["params"]!["phase"] == "transferring"),
+            "a backup.updated event in the transferring phase");
 
         var list = (await host.ResultAsync("backup.list", new { deviceId = TestPhones.IphoneId }))!.AsArray();
         var backup = Assert.Single(list)!;

@@ -427,7 +427,8 @@ public sealed class PhotosBackupTests
         Assert.Equal(["jobId", "destination", "state", "planned", "copied", "duplicates", "failed", "bytes", "keptHeic", "startedAt", "finishedAt", "trigger", "edited", "editsMissing"], last.Select(p => p.Key));
         Assert.Equal("done", (string?)last["state"]);
         Assert.Equal(1, (int)last["copied"]!);
-        Assert.Contains(host.Transport.EventsNamed("transfer.updated"), e => (string?)e["params"]!["kind"] == "photosBackup");
+        await Wait.UntilAsync(() => host.Transport.EventsNamed("transfer.updated").Any(e => (string?)e["params"]!["kind"] == "photosBackup"),
+            "a transfer.updated event for the backup");
 
         var forgot = (await bridge.ResultAsync("photos.backupForget", new { deviceId = phone.Summary.Id }))!;
         Assert.Equal(1, (int)forgot["forgotten"]!);
