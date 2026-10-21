@@ -1,4 +1,5 @@
 import { useEffect, useState } from 'react';
+import type { CleanupResult } from '../../bridge/cleanupTypes';
 import type { DeviceSummary } from '../../bridge/types';
 import { useActions } from '../../app/actions';
 import { Button } from '../../components/Button';
@@ -7,6 +8,7 @@ import { Switch } from '../../components/ui';
 import { useI18n, type MessageKey } from '../../i18n';
 import styles from './Cleanup.module.css';
 import type { CleanupKind, CleanupRequest } from './useCleanup';
+import { PhotoDeleteResults } from '../photos/PhotoDeleteResults';
 
 export interface PlanRow {
   key: string;
@@ -28,6 +30,8 @@ export interface CleanupPlan {
   notes: string[];
   /** Offer "copy to this PC first": the label and the folder it starts with. */
   copy: { label: MessageKey; folder: string } | null;
+  /** Round 4: the items can be brought back (an iPhone's Recently Deleted), so no "can't be undone". */
+  reversible?: boolean;
   request(copyFirstTo: string | null): CleanupRequest;
 }
 
@@ -44,19 +48,23 @@ export function ConfirmCleanup({
   plan: CleanupPlan | null;
   device: DeviceSummary;
   onClose(): void;
-  run(request: CleanupRequest): Promise<boolean>;
+  /** The result, or null after an error (already shown). */
+  run(request: CleanupRequest): Promise<CleanupResult | null>;
 }) {
   const { t, bytes } = useI18n();
   const actions = useActions();
   const [copy, setCopy] = useState(true);
   const [folder, setFolder] = useState('');
   const [busy, setBusy] = useState(false);
+  // Round 4: photos and videos come back item by item; shown when one wasn't deleted, and always for an iPhone.
+  const [results, setResults] = useState<CleanupResult | null>(null);
 
   useEffect(() => {
     if (plan) {
       setCopy(plan.copy !== null);
       setFolder(plan.copy?.folder ?? '');
       setBusy(false);
+      setResults(null);
     }
   }, [plan]);
 
@@ -66,10 +74,37 @@ export function ConfirmCleanup({
 
   const confirm = async () => {
     setBusy(true);
-    const ok = await run(plan.request(copying ? folder : null));
+    const result = await run(plan.request(copying ? folder : null));
     setBusy(false);
-    if (ok) onClose();
+    if (!result) return;
+    const items = result.items ?? [];
+    if (items.length > 0 && (device.platform === 'ios' || items.some((i) => i.outcome !== 'deleted'))) setResults(result);
+    else onClose();
   };
+
+  if (results?.items) {
+    return (
+      <Dialog
+        open
+        wide
+        onOpenChange={(open) => (open ? undefined : onClose())}
+        title={t('photoDelete.result.title')}
+        footer={
+          <Button variant="accent" onClick={onClose} autoFocus data-testid="cleanup-results-done">
+            {t('photoDelete.done')}
+          </Button>
+        }
+      >
+        <PhotoDeleteResults
+          items={results.items}
+          deleted={results.deleted}
+          freedBytes={results.freedBytes}
+          goesTo={results.goesTo ?? 'unknown'}
+          copyIncomplete={results.copyIncomplete}
+        />
+      </Dialog>
+    );
+  }
 
   return (
     <Dialog
@@ -141,7 +176,7 @@ export function ConfirmCleanup({
             {note}
           </p>
         ))}
-        {plan.kind !== 'caches' ? <p className={styles.warn}>{t('cleanup.confirm.undo')}</p> : null}
+        {plan.kind !== 'caches' && !plan.reversible ? <p className={styles.warn}>{t('cleanup.confirm.undo')}</p> : null}
       </div>
     </Dialog>
   );

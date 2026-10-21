@@ -35,6 +35,15 @@ public class LockdownMappingTests
         Assert.Equal(expected, LockdownMapping.CapabilitiesFor(state));
 
     [Fact]
+    public void PhotosDelete_comes_only_from_the_camera_connection_and_only_when_ready()
+    {
+        Assert.False(LockdownMapping.ReadyCapabilities.HasFlag(DeviceCapability.PhotosDelete));
+        Assert.Equal(LockdownMapping.ReadyCapabilities | DeviceCapability.PhotosDelete, LockdownMapping.CapabilitiesFor(DeviceState.Ready, photosDelete: true));
+        Assert.Equal(DeviceCapability.Info, LockdownMapping.CapabilitiesFor(DeviceState.Locked, photosDelete: true));
+        Assert.True(LockdownMapping.Summary("X", new PlistDict(), ConnectionKind.Usb, DeviceState.Ready, photosDelete: true).Capabilities.HasFlag(DeviceCapability.PhotosDelete));
+    }
+
+    [Fact]
     public void Summary_before_pairing_uses_what_is_there()
     {
         var s = LockdownMapping.Summary("X", new PlistDict { ["ProductType"] = "iPhone15,2" }, ConnectionKind.Wifi, DeviceState.AwaitingTrust);

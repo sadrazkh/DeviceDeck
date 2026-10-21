@@ -8,6 +8,7 @@ import { localSendEn } from './localSend';
 import { photoBackupEn } from '../screens/photos/backupStrings';
 import { updatesEn } from '../shell/updateStrings';
 import { whatsAppEn } from '../screens/contacts/whatsAppStrings';
+import { photoDeleteEn } from '../screens/photos/deleteStrings';
 
 export const en = {
   'app.name': 'DeviceDeck',
@@ -635,6 +636,8 @@ export const en = {
   ...updatesEn,
   // WhatsApp (round 4)
   ...whatsAppEn,
+  // Deleting photos, iPhone included (round 4, photodelete)
+  ...photoDeleteEn,
 } as const;
 
 export type MessageKey = keyof typeof en;

@@ -12,6 +12,9 @@ import { Badge, Banner, Card, Checkbox } from '../../components/ui';
 import { useI18n, type I18n } from '../../i18n';
 import styles from './Cleanup.module.css';
 import type { CleanupPlan } from './ConfirmCleanup';
+// Deleting an iPhone's photos too (round 4, photodelete).
+import { whereTheyGoNotes } from '../photos/PhotoDeleteDialog';
+import { usePhotoDeleteSupport } from '../photos/photoDelete';
 
 const COLLAPSED = 8;
 const GROUPS_COLLAPSED = 6;
@@ -168,13 +171,17 @@ export function DuplicatesCard({ data, ...props }: SectionProps & { data: Cleanu
   const wholeGroup = data.groups.some((g) => g.assets.every((a) => selection.has(a.id)));
   const [allGroups, setAllGroups] = useState(false);
   const groups = allGroups ? data.groups : data.groups.slice(0, GROUPS_COLLAPSED);
+  // Round 4: what the phone allows now (an iPhone through its camera connection), not what it allowed at the analysis.
+  const canDelete = device.capabilities.includes('photosDelete');
+  const support = usePhotoDeleteSupport(device).data;
 
   const plan = (): CleanupPlan => ({
     kind: 'media',
     title: t('cleanup.confirm.media', { count: picked.length, device: device.name }),
     rows: picked.map(({ asset, size }) => ({ key: asset.id, label: asset.fileName, detail: mediaDetail(i18n, asset), size })),
     confirmLabel: t('cleanup.action.delete'),
-    notes: [t('cleanup.duplicates.keepHint')],
+    notes: [t('cleanup.duplicates.keepHint'), ...whereTheyGoNotes(t, device, support)],
+    reversible: support?.goesTo === 'recentlyDeleted',
     copy: { label: 'cleanup.confirm.copyFirst', folder: folders.photos },
     request: (copyFirstTo) => ({ kind: 'media', items: picked.map(({ asset, size }) => ({ id: asset.id, size })), copyFirstTo }),
   });
@@ -228,7 +235,7 @@ export function DuplicatesCard({ data, ...props }: SectionProps & { data: Cleanu
           ) : null}
           {wholeGroup ? <Banner tone="warning">{t('cleanup.duplicates.allSelected')}</Banner> : null}
           <SelectionBar count={picked.length} size={total} onClear={selection.clear}>
-            <MediaAction {...props} canDelete={data.canDelete} disabled={locked || wholeGroup} onDelete={() => confirm(plan())} ids={picked.map((p) => p.asset.id)} />
+            <MediaAction {...props} canDelete={canDelete} disabled={locked || wholeGroup} onDelete={() => confirm(plan())} ids={picked.map((p) => p.asset.id)} />
           </SelectionBar>
         </>
       )}
@@ -236,7 +243,7 @@ export function DuplicatesCard({ data, ...props }: SectionProps & { data: Cleanu
   );
 }
 
-/** Delete on Android; on an iPhone, copy to the PC (deleting is up to the Photos app). */
+/** Delete when the phone allows it (Android; an iPhone whose camera connection does); otherwise copy to the PC. */
 function MediaAction({
   canDelete,
   disabled,
@@ -268,13 +275,17 @@ export function MediaCard({ data, kind, ...props }: SectionProps & { data: Clean
   const selection = useSelection(keys);
   const picked = list.filter((a) => selection.has(a.id));
   const total = picked.reduce((n, a) => n + a.size, 0);
+  // Round 4: what the phone allows now (an iPhone through its camera connection), not what it allowed at the analysis.
+  const canDelete = device.capabilities.includes('photosDelete');
+  const support = usePhotoDeleteSupport(device).data;
 
   const plan = (): CleanupPlan => ({
     kind: 'media',
     title: t('cleanup.confirm.media', { count: picked.length, device: device.name }),
     rows: picked.map((a) => ({ key: a.id, label: a.fileName, detail: mediaDetail(i18n, a), size: a.size })),
     confirmLabel: t('cleanup.action.delete'),
-    notes: [],
+    notes: whereTheyGoNotes(t, device, support),
+    reversible: support?.goesTo === 'recentlyDeleted',
     copy: { label: 'cleanup.confirm.copyFirst', folder: folders.photos },
     request: (copyFirstTo) => ({ kind: 'media', items: picked.map((a) => ({ id: a.id, size: a.size })), copyFirstTo }),
   });
@@ -305,7 +316,7 @@ export function MediaCard({ data, kind, ...props }: SectionProps & { data: Clean
       />
       {kind === 'photos' && data.cloudOnlyCount > 0 ? <p className={styles.hint}>{t('cleanup.media.cloudOnly', { count: data.cloudOnlyCount })}</p> : null}
       <SelectionBar count={picked.length} size={total} onClear={selection.clear}>
-        <MediaAction {...props} canDelete={data.canDelete} disabled={locked} onDelete={() => confirm(plan())} ids={picked.map((a) => a.id)} />
+        <MediaAction {...props} canDelete={canDelete} disabled={locked} onDelete={() => confirm(plan())} ids={picked.map((a) => a.id)} />
       </SelectionBar>
     </SectionCard>
   );

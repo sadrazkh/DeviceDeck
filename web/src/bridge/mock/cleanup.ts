@@ -7,6 +7,7 @@ import type {
   CleanupApps,
   CleanupCaches,
   CleanupDuplicates,
+  CleanupItem,
   CleanupMedia,
   CleanupReport,
   CleanupResult,
@@ -15,6 +16,7 @@ import type {
   DuplicateGroup,
 } from '../cleanupTypes';
 import type { AppInfo, DeviceCapability, DeviceSummary, PhotoAsset, StorageInfo, TransferJob, TransferKind } from '../types';
+import type { PhotoDeleteDestination, PhotoDeleteResult } from '../photoDeleteTypes';
 import type { MockFileSystem } from './files';
 import { MB } from './mock-data';
 import { assetsInAlbum, toContractAsset, type MockAsset, type MockLibrary } from './photos';
@@ -36,6 +38,8 @@ export interface MockCleanupContext {
   now(): number;
   fault(code: string, message?: string): Error;
   badParams(message: string): Error;
+  /** Round 4: deletes photos item by item, iPhone included (./photoDelete.ts). */
+  photoDeletes?(deviceId: string, items: readonly CleanupItem[]): { results: PhotoDeleteResult[]; goesTo: PhotoDeleteDestination };
 }
 
 const TOP_APPS = 30;
@@ -157,8 +161,8 @@ export function cleanupHandlers(ctx: MockCleanupContext): { [M in CleanupMethodN
       confirmed(items.map((i) => i.size), items.map((i) => i.id), expectedBytes);
       const device = ctx.requireReady(deviceId, 'photosRead');
       const report = requireReport(deviceId);
-      if (device.platform === 'ios') throw ctx.fault('not_supported', IOS_PHOTO_MESSAGE);
-      if (!device.capabilities.includes('photosDelete')) throw ctx.fault('not_supported');
+      // Round 4: an iPhone deletes too, when its camera connection allows it (photosDelete).
+      if (!device.capabilities.includes('photosDelete')) throw ctx.fault('not_supported', device.platform === 'ios' ? IOS_PHOTO_MESSAGE : undefined);
       const listed = listedMedia(report);
       for (const item of items) {
         if (listed.get(item.id)?.size !== item.size) throw ctx.badParams(`'${item.id}' isn't a photo or video the analysis listed at that size.`);
@@ -166,6 +170,13 @@ export function cleanupHandlers(ctx: MockCleanupContext): { [M in CleanupMethodN
       const library = ctx.library(deviceId);
       const present = items.filter((i) => library.byId.has(i.id));
       const jobs = copyJob(deviceId, 'photosExport', copyFirstTo, present.map((i) => ({ name: listed.get(i.id)!.fileName, size: i.size })), `${present.length} photos and videos`);
+      if (ctx.photoDeletes) {
+        const { results, goesTo } = ctx.photoDeletes(deviceId, present);
+        const deleted = results.filter((r) => r.outcome === 'deleted');
+        const freedBytes = deleted.reduce((n, r) => n + r.size, 0);
+        mutate(deviceId, (r) => withoutMedia(r, new Set(deleted.map((d) => d.id)), freedBytes));
+        return { ...result(deleted.length, items.length - deleted.length, freedBytes, jobs), items: results, goesTo };
+      }
       const gone = new Set(present.map((i) => i.id));
       library.assets = library.assets.filter((a) => !gone.has(a.id));
       for (const id of gone) library.byId.delete(id);
@@ -316,7 +327,7 @@ function buildReport(ctx: MockCleanupContext, device: DeviceSummary, startedAt: 
     const photos = local.filter((a) => a.kind !== 'video');
     const largest = (list: MockAsset[]) => [...list].sort((a, b) => b.size - a.size).slice(0, TOP_MEDIA).map(toContractAsset);
     const sum = (list: MockAsset[]) => list.reduce((n, a) => n + a.size, 0);
-    const canDelete = android && caps.has('photosDelete');
+    const canDelete = caps.has('photosDelete'); // round 4: an iPhone too, when its camera connection allows it
     media = {
       largestVideos: largest(videos),
       largestPhotos: largest(photos),

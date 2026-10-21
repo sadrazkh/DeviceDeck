@@ -194,7 +194,10 @@ public sealed class CleanupService : IAsyncDisposable
 
     // ---------- Confirmed actions ----------
 
-    /// <summary>Deletes photos and videos the analysis listed. Android only (MediaStore); an iPhone's library is left to the Photos app.</summary>
+    /// <summary>
+    /// Deletes photos and videos the analysis listed: Android through MediaStore, an iPhone through Windows' camera
+    /// connection when it allows it (round 4), item by item, stopping at the first one that doesn't match or fails.
+    /// </summary>
     public Task<CleanupResult> DeleteMediaAsync(string deviceId, IReadOnlyList<CleanupItem> items, long expectedBytes, string? copyFirstTo, CancellationToken ct)
     {
         RequireConfirmed(items.Select(i => i.Size), items.Select(i => i.Id), expectedBytes);
@@ -203,7 +206,7 @@ public sealed class CleanupService : IAsyncDisposable
             if (!StorageAnalyzer.CanDeleteMedia(device.Summary))
             {
                 throw new DeviceException(DeviceErrorCodes.NotSupported, device.Summary.Platform == DevicePlatform.Ios
-                    ? "Photos on an iPhone can't be deleted safely over USB. Copy them to the PC, then delete them in the Photos app on the iPhone."
+                    ? "This iPhone doesn't let the PC delete its photos right now. Copy them to the PC, then delete them in the Photos app on the iPhone."
                     : $"{device.Summary.Name} can't delete photos from the PC.");
             }
 
@@ -228,24 +231,27 @@ public sealed class CleanupService : IAsyncDisposable
             var jobs = new List<string>();
             if (copyFirstTo is not null)
             {
-                var job = await _transfers.EnqueueAsync(deviceId, TransferKind.PhotosExport,
-                    new PhotosExportRequest(verified.Select(i => i.Id).ToList(), copyFirstTo, ConvertHeic: false, _settings.Current.PhotoFolderPattern),
-                    ConflictRule.KeepBoth, ct).ConfigureAwait(false);
-                jobs.Add(job.Id);
+                // A Live Photo's video is copied beside its still (round 4: iPhone media can be deleted too).
+                jobs.AddRange(await PhotoDelete.PhotoDeletes.EnqueueCopiesAsync(_transfers, device, verified.Select(i => i.Id).ToList(), copyFirstTo,
+                    _settings.Current.PhotoFolderPattern, ct).ConfigureAwait(false));
                 if (!await WaitForCopiesAsync(jobs, ct).ConfigureAwait(false))
                 {
                     return new CleanupResult(0, skipped, 0, jobs, true);
                 }
             }
 
-            await device.Photos.DeleteAsync(verified.Select(i => i.Id).ToList(), ct).ConfigureAwait(false);
-
-            var after = await ReadLibraryAsync(device, ct).ConfigureAwait(false);
-            var gone = verified.Where(i => !after.ContainsKey(i.Id)).ToList();
-            var freed = gone.Sum(i => i.Size);
-            var goneIds = gone.Select(i => i.Id).ToHashSet(StringComparer.Ordinal);
+            // Item by item, checked against the library first; an iPhone goes through Windows' camera connection.
+            var results = await PhotoDelete.PhotoDeletes.DeleteItemsAsync(device, verified.Select(i => new PhotoDeleteItem(i.Id, i.Size)).ToList(), ct).ConfigureAwait(false);
+            var gone = results.Where(r => r.Outcome == PhotoDeleteOutcome.Deleted).ToList();
+            var freed = gone.Sum(r => r.Size);
+            var goneIds = gone.Select(r => r.Id).ToHashSet(StringComparer.Ordinal);
             Mutate(deviceId, r => WithoutMedia(r, goneIds, freed));
-            return new CleanupResult(gone.Count, skipped + verified.Count - gone.Count, freed, jobs, false);
+            var support = await PhotoDelete.PhotoDeletes.SupportOf(device, recheck: false, ct).ConfigureAwait(false);
+            return new CleanupResult(gone.Count, skipped + verified.Count - gone.Count, freed, jobs, false)
+            {
+                Items = results,
+                GoesTo = PhotoDelete.PhotoDeletes.WentTo(results, support.GoesTo),
+            };
         }, ct);
     }
 

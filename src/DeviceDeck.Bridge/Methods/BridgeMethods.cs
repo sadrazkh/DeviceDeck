@@ -260,6 +260,8 @@ public static class BridgeMethods
 
         // WhatsApp (round 4).
         WhatsAppMethods.Register(rpc, s);
+        // Deleting photos, iPhone included, with a reason when it can't (round 4, photodelete).
+        PhotoDeleteMethods.Register(rpc, s);
 
         return rpc;
     }

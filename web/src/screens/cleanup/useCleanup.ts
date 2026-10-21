@@ -96,8 +96,8 @@ export function useCleanupActions(device: DeviceSummary) {
         }
       },
 
-      /** Runs a confirmed clean-up. Resolves true when it finished (even with nothing deleted), false on an error. */
-      async run(request: CleanupRequest): Promise<boolean> {
+      /** Runs a confirmed clean-up. Resolves with the result when it finished (even with nothing deleted), null on an error. */
+      async run(request: CleanupRequest): Promise<CleanupResult | null> {
         try {
           let result: CleanupResult;
           let copyFirstTo: string | null = null;
@@ -116,14 +116,14 @@ export function useCleanupActions(device: DeviceSummary) {
           }
           refresh(request.kind);
           report(request.kind, result, copyFirstTo);
-          return true;
+          return result;
         } catch (error) {
           actions.fail(error);
-          return false;
+          return null;
         }
       },
 
-      /** iPhone photos: copy only (the user deletes them in Photos). */
+      /** Photos the phone won't let the PC delete: copy only (the user deletes them on the phone). */
       async copyMedia(assetIds: string[], destination: string, folderPattern: 'yyyy/MM' | '') {
         const jobId = await actions.exportPhotos(device, assetIds, destination, false, folderPattern);
         if (jobId) toast({ tone: 'info', title: t('cleanup.copyStarted'), duration: 3000 });

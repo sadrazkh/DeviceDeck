@@ -63,6 +63,7 @@ import type {
 import type { LocalSendDiscovery, LocalSendJobStatus, LocalSendTarget, PhotosToAppStarted } from './localSend';
 import type { ReleaseNotes } from './releaseNotes';
 import type { WhatsAppAndroidInfo, WhatsAppChat, WhatsAppMessage, WhatsAppStatus } from './whatsApp';
+import type { PhotoDeleteItem, PhotoDeleteReport, PhotoDeleteSupport } from './photoDeleteTypes';
 
 type DeviceParams = { deviceId: string };
 
@@ -283,6 +284,12 @@ export interface BridgeMethods {
   'whatsapp.exportMedia': { params: { backupId: string; destination: string; chatIds?: string[] }; result: BackupJob };
   'whatsapp.android': { params: DeviceParams; result: WhatsAppAndroidInfo };
   'whatsapp.backupAndroid': { params: DeviceParams & { destination: string }; result: { jobId: string; folder: string } };
+  // Deleting photos, iPhone included (round 4, photodelete)
+  'photos.deleteSupport': { params: DeviceParams & { recheck?: boolean }; result: PhotoDeleteSupport };
+  'photos.deleteItems': {
+    params: DeviceParams & { items: PhotoDeleteItem[]; expectedBytes: number; copyFirstTo?: string | null };
+    result: PhotoDeleteReport;
+  };
 }
 
 export type MethodName = keyof BridgeMethods;
@@ -436,6 +443,9 @@ const methodTable = {
   'whatsapp.exportMedia': true,
   'whatsapp.android': true,
   'whatsapp.backupAndroid': true,
+  // Deleting photos, iPhone included (round 4, photodelete)
+  'photos.deleteSupport': true,
+  'photos.deleteItems': true,
 } as const satisfies Record<MethodName, true>;
 
 export const METHOD_NAMES = Object.keys(methodTable) as MethodName[];

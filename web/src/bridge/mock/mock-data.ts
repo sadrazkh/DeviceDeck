@@ -43,8 +43,8 @@ export const IPHONE_FULL_CAPABILITIES: DeviceCapability[] = [
   'rename',
 ];
 
-/** iPhone without Apple's driver, over PTP: camera-roll photos only. */
-export const IPHONE_LIMITED_CAPABILITIES: DeviceCapability[] = ['info', 'photosRead', 'photosDelete'];
+/** iPhone without Apple's driver, over PTP: camera-roll photos only (no delete: the real app has no such route). */
+export const IPHONE_LIMITED_CAPABILITIES: DeviceCapability[] = ['info', 'photosRead'];
 
 export const ANDROID_CAPABILITIES: DeviceCapability[] = [
   'info',

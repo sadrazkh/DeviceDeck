@@ -46,6 +46,16 @@ internal sealed class Cli
           cleanup [--top 10] [--min-mb 10] [--names]   biggest apps, largest media, exact duplicates, big app files
                                               (sizes only; photo and file names hidden unless --names)
 
+        Deleting photos through Windows' camera connection (round 4)
+          wpd-devices                         the portable devices Windows lists (no phone needed), Apple ones opened read-only
+          wpd                                 the app's verdict, then the camera roll as Windows shows it: folders, files,
+                                              the can-delete flag, how paths map (read-only)
+          photodelete [--find <folder>]       find the pictures in <folder> (default E:\DeviceDeck-test\localsend) on the phone
+                                              by content (SHA-256), else by name/size/date, and how each maps in Windows (read-only)
+          photodelete --delete --yes [--find <folder>] [--allow-fallback]
+                                              then delete exactly those, through the app's own delete; prints each result,
+                                              whether they left the photo index and the phone's DCIM, and the log lines
+
         Diagnostics
           values <domain|-> [--key K]         raw lockdown values of a domain ('-' = top; e.g. com.apple.disk_usage)
           carrier                             the SIMs' carrier bundles (no ICCID / IMSI) and the mapped name
@@ -91,7 +101,7 @@ internal sealed class Cli
     public IReadOnlyList<string> Positional { get; }
     public IReadOnlyDictionary<string, string?> Options { get; }
 
-    private static readonly HashSet<string> Flags = ["reveal", "system", "yes", "recursive", "browse", "names", "wifi"];
+    private static readonly HashSet<string> Flags = ["reveal", "system", "yes", "recursive", "browse", "names", "wifi", "delete", "allow-fallback"];
 
     public static Cli Parse(string[] args)
     {

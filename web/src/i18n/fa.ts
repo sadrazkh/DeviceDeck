@@ -8,6 +8,7 @@ import { localSendFa } from './localSend';
 import { photoBackupFa } from '../screens/photos/backupStrings';
 import { updatesFa } from '../shell/updateStrings';
 import { whatsAppFa } from '../screens/contacts/whatsAppStrings';
+import { photoDeleteFa } from '../screens/photos/deleteStrings';
 import type { MessageKey } from './en';
 
 export const fa: Record<MessageKey, string> = {
@@ -619,4 +620,6 @@ export const fa: Record<MessageKey, string> = {
   ...updatesFa,
   // WhatsApp (round 4)
   ...whatsAppFa,
+  // Deleting photos, iPhone included (round 4, photodelete)
+  ...photoDeleteFa,
 };

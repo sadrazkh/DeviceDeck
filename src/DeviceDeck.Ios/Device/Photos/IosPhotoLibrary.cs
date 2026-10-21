@@ -250,8 +250,8 @@ public sealed partial class IosPhotoLibrary(IosDevice device, string cacheDirect
         public override void SetLength(long value) => throw new NotSupportedException();
     }
 
-    public Task DeleteAsync(IReadOnlyList<string> assetIds, CancellationToken ct) =>
-        Task.FromException(IosErrors.NotSupported("Deleting photos on an iPhone is not supported; the library is read-only over USB."));
+    /// <summary>Through Windows' camera connection, as File Explorer deletes (never over AFC: that corrupts the library).</summary>
+    public Task DeleteAsync(IReadOnlyList<string> assetIds, CancellationToken ct) => device.DeleteThroughWindowsAsync(assetIds, ct);
 
     public Task ImportAsync(string fileName, Stream source, long length, IProgress<long>? progress, CancellationToken ct) =>
         Task.FromException(IosErrors.NotSupported("Adding photos to an iPhone's library is not supported over USB."));

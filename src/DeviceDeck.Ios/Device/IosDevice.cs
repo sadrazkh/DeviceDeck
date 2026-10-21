@@ -295,12 +295,18 @@ public sealed partial class IosDevice : IDevice, IAsyncDisposable
         ConnectionKind connection;
         lock (_gate)
             connection = _links.Count == 0 || _links.ContainsValue(UsbmuxConnectionType.Usb) ? ConnectionKind.Usb : ConnectionKind.Wifi;
-        var next = LockdownMapping.Summary(Udid, _values, connection, state) with { StateDetail = StateDetailFor(state) };
+        var next = LockdownMapping.Summary(Udid, _values, connection, state, _photosDeletable) with { StateDetail = StateDetailFor(state) };
         if (next == Summary || _gone)
             return;
+        var before = Summary.State;
         Summary = next;
         _onChanged(this);
+        if (before != state)
+            OnPhotoDeleteStateChanged(before, state);
     }
+
+    /// <summary>Round 4 (photodelete): PhotoDelete/IosDevice.PhotoDelete.cs.</summary>
+    partial void OnPhotoDeleteStateChanged(DeviceState before, DeviceState now);
 
     // ---- operations ----
 

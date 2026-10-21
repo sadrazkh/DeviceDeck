@@ -173,9 +173,11 @@ public sealed class StorageAnalyzer(StorageAnalyzerOptions? options = null)
         return report with { Notes = notes.ToArray() };
     }
 
-    /// <summary>Media can be deleted from the PC only through Android's MediaStore; an iPhone's library is left to the Photos app.</summary>
-    public static bool CanDeleteMedia(DeviceSummary summary) =>
-        summary.Platform == DevicePlatform.Android && summary.Capabilities.HasFlag(DeviceCapability.PhotosDelete);
+    /// <summary>
+    /// Media can be deleted from the PC when the phone reports PhotosDelete: Android through MediaStore, an iPhone while
+    /// Windows' camera connection shows its photos as deletable (round 4; otherwise its library is left to the Photos app).
+    /// </summary>
+    public static bool CanDeleteMedia(DeviceSummary summary) => summary.Capabilities.HasFlag(DeviceCapability.PhotosDelete);
 
     /// <summary>Files in an app's own root ("app:…") need AppDocuments; files in shared storage need Files.</summary>
     public static bool CanDeleteIn(DeviceCapability caps, string root) =>

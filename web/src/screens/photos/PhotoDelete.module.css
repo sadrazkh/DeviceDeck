@@ -1,0 +1,170 @@
+/* Deleting photos (round 4): the confirmation, the per-item results and the "why not" notice. */
+
+.body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.list {
+  display: flex;
+  flex-direction: column;
+  max-height: 240px;
+  overflow: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border: 1px solid var(--color-stroke-divider);
+  border-radius: var(--radius-control);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3);
+  font-variant-numeric: var(--type-numeric);
+}
+
+.row + .row {
+  border-top: 1px solid var(--color-stroke-divider);
+}
+
+.rowPlain {
+  grid-template-columns: minmax(0, 1fr) auto;
+}
+
+.text {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+}
+
+.name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.detail {
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  overflow-wrap: anywhere;
+}
+
+.size {
+  color: var(--color-text-secondary);
+  white-space: nowrap;
+}
+
+.icon {
+  display: inline-flex;
+  font-size: 18px;
+  margin-top: 1px;
+}
+
+.deleted {
+  color: var(--color-success-text);
+}
+
+.failed {
+  color: var(--color-danger-text);
+}
+
+.mismatch {
+  color: var(--color-warning-text);
+}
+
+.notTried {
+  color: var(--color-text-secondary);
+}
+
+.total {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-3);
+  padding: var(--space-2) var(--space-3) 0;
+  font-weight: var(--type-strong-weight);
+  font-variant-numeric: var(--type-numeric);
+}
+
+.goes {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-subtle);
+}
+
+.goesTitle {
+  font-weight: var(--type-strong-weight);
+}
+
+.copyBox {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  padding: var(--space-3);
+  border-radius: var(--radius-control);
+  background: var(--color-surface-subtle);
+}
+
+.copyFolder {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding-inline-start: 44px;
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  overflow-wrap: anywhere;
+}
+
+.hint {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+.warn {
+  margin: 0;
+  color: var(--color-danger-text);
+}
+
+.summary {
+  margin: 0;
+  font-weight: var(--type-strong-weight);
+}
+
+.notice {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.notice p {
+  margin: 0;
+}
+
+.fastest {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+}
+
+.fastestTitle {
+  font-weight: var(--type-strong-weight);
+}
+
+/* The selection bar's one-line reason next to "Why can't I delete?" */
+.reason {
+  max-width: 260px;
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}

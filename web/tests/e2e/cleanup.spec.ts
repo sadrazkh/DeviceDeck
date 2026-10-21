@@ -84,10 +84,11 @@ test('Cancel in the dialog deletes nothing', async ({ page }) => {
   await expect(row).toBeVisible();
 });
 
-test('iPhone: photos can be copied but never deleted from the PC', async ({ page }) => {
-  await page.goto(query('light', { screen: 'cleanup', device: 'iphone' }));
+test('iPhone that won’t let the PC delete (iCloud Photos): photos can be copied, not deleted', async ({ page }) => {
+  // Round 4: an iPhone deletes when its camera connection allows it (photo-delete.spec.ts); this one doesn't.
+  await page.goto(query('light', { screen: 'cleanup', device: 'iphone', photodelete: 'iCloudPhotos' }));
   await analyse(page);
-  await expect(page.getByText('On an iPhone, delete photos in the Photos app')).toBeVisible();
+  await expect(page.getByTestId('photo-delete-notice')).toHaveAttribute('data-reason', 'iCloudPhotos');
   const videos = page.getByTestId('cleanup-videos');
   await videos.getByTestId('cleanup-media-row').first().getByRole('checkbox').click();
   await expect(videos.getByTestId('cleanup-delete')).toHaveCount(0);

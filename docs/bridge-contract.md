@@ -1025,3 +1025,55 @@ type WhatsAppAndroidApp = {
 
 Also in this round: `SqliteImage.FromBytes` opens WAL-mode database images (a phone's databases are in WAL mode;
 before, an encrypted backup's databases failed with "unable to open database file").
+## Deleting photos (round 4, photodelete)
+
+An iPhone's photos can now be deleted from the PC the way File Explorer does: through Windows' camera connection
+(Windows Portable Devices over PTP, This PC › Apple iPhone › Internal Storage › DCIM), so the phone's Photos library
+removes them itself. Never over AFC: removing DCIM files behind Photos' back leaves Photos.sqlite pointing at missing
+files. An iPhone reports `photosDelete` only while Windows lists it as a camera (by its UDID) and its camera roll says
+its files can be deleted (`WPD_OBJECT_CAN_DELETE`); `photos.deleteSupport` says why not otherwise. Android: as before
+(MediaStore), now with a result per item too.
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `photos.deleteSupport` | `{ deviceId, recheck?: boolean }` | `PhotoDeleteSupport` — `recheck` asks the phone again (a few seconds over USB) |
+| `photos.deleteItems` | `{ deviceId, items: { id, size }[], expectedBytes, copyFirstTo? }` | `PhotoDeleteReport` — no timeout on the page (it may copy to the PC first) |
+
+- Exactly the items sent, each at the size the page showed, `expectedBytes` their total (`-32602` otherwise). Every item
+  is matched first; if one doesn't match exactly (gone, changed, iCloud only, ambiguous), nothing is deleted and the
+  others say `notTried`. Then batches of five; the delete stops after the first batch with a failure.
+- iPhone matching: a DCIM path maps to the object Windows lists by folder + name + size when Windows shows the phone's
+  own folders (100APPLE), and by name + size when it shows month folders (202510_a, recent iOS) — then only when the
+  name is unique both on the phone and in Windows' list. A Live Photo's video goes in the same call as its still.
+  Only files under the camera roll's folders are ever deleted; never a folder, never recursively.
+- `copyFirstTo`: the photos are copied through the queue first (`photos.export`, plus, on an iPhone, a `files.copyToPc`
+  of each Live Photo's video into the same folder as its still); nothing is deleted unless every copy finished.
+- One line per deleted object (DCIM path and size, never content) in `logs\photo-deletes-yyyyMMdd.log`.
+- `cleanup.deleteMedia` now works on an iPhone with `photosDelete` too, through the same per-item delete; its
+  `CleanupResult` gains `items` (`PhotoDeleteResult[]`, null for files/apps/caches) and `goesTo`.
+
+```ts
+type PhotoDeleteBlock = "none" | "checking" | "iCloudPhotos" | "readOnly" | "locked" | "notCamera" | "converted" | "unsupported";
+type PhotoDeleteDestination = "unknown" | "recentlyDeleted" | "permanent";
+type PhotoDeleteSupport = {
+  canDelete: boolean; reason: PhotoDeleteBlock;
+  detail: string | null;          // one technical sentence of what the check saw (for a details fold)
+  goesTo: PhotoDeleteDestination; // iPhone: "permanent" as users report, until a delete on this phone shows otherwise
+  observed: boolean;              // goesTo comes from a delete on this phone in this session
+  checkedAt: string | null; iCloudPhotos: boolean | null;   // a delete then reaches iCloud and the other devices
+};
+type PhotoDeleteResult = {
+  id: string; fileName: string; size: number;   // size: what it freed (a Live Photo's video included)
+  outcome: "deleted" | "mismatch" | "failed" | "notTried";
+  code: string | null; message: string | null;  // why not, or a note (its edit, its video)
+  also: string[];                               // files that went with it ("IMG_0001.MOV")
+  wentTo: PhotoDeleteDestination;               // seen on the phone afterwards: file gone, or kept and marked deleted
+};
+type PhotoDeleteReport = { items: PhotoDeleteResult[]; deleted: number; freedBytes: number; copyJobIds: string[];
+                           copyIncomplete: boolean; goesTo: PhotoDeleteDestination };
+```
+
+Reasons: `iCloudPhotos` / `readOnly` (the phone marks its photos read-only for the PC; the first when the library shows
+iCloud Photos), `locked` (Windows shows no storage, or an empty one, until the phone is unlocked and trusted),
+`notCamera` (Windows doesn't list it), `converted` (Settings › Photos › Transfer to Mac or PC is Automatic, so Windows sees
+JPGs, not the phone's files), `unsupported` (no camera connection on this PC or this phone), `checking`.
