@@ -138,7 +138,9 @@ public sealed class PhotoBackupLedger : IDisposable
 
         // Round 3: columns added to version 1's tables. Added when missing, so any older file opens.
         using var tx = _db.BeginTransaction();
-        AddMissingColumns(tx, "devices", ("range_kind", "TEXT NULL"), ("range_days", "INTEGER NULL"), ("range_since", "TEXT NULL"));
+        AddMissingColumns(tx, "devices", ("range_kind", "TEXT NULL"), ("range_days", "INTEGER NULL"), ("range_since", "TEXT NULL"),
+            ("on_connect", "TEXT NULL"));
+        AddMissingColumns(tx, "runs", ("started_by", "TEXT NULL"));
         Execute($"PRAGMA user_version = {SchemaVersion};", tx);
         tx.Commit();
     }
@@ -254,6 +256,44 @@ public sealed class PhotoBackupLedger : IDisposable
                 ("$d", deviceId), ("$dest", options.Destination), ("$p", options.Pattern), ("$c", options.ConvertHeic), ("$h", options.IncludeHidden),
                 ("$rk", options.Range?.Kind.ToString()), ("$rd", options.Range?.Days),
                 ("$rs", options.Range?.Since?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)));
+            cmd.ExecuteNonQuery();
+        }
+    }
+
+    /// <summary>Every folder a backup was made into or a phone is set to back up to.</summary>
+    public IReadOnlyList<string> Destinations()
+    {
+        lock (_gate)
+        {
+            using var cmd = Command("SELECT destination FROM runs UNION SELECT destination FROM devices WHERE destination IS NOT NULL;");
+            using var r = cmd.ExecuteReader();
+            var folders = new List<string>();
+            while (r.Read())
+            {
+                folders.Add(r.GetString(0));
+            }
+
+            return folders.Distinct(StringComparer.OrdinalIgnoreCase).ToList();
+        }
+    }
+
+    /// <summary>"When this phone connects"; a notification of new photos unless the user chose otherwise.</summary>
+    public PhotoBackupOnConnect GetOnConnect(string deviceId)
+    {
+        lock (_gate)
+        {
+            using var cmd = Command("SELECT on_connect FROM devices WHERE device_id = $d;", ("$d", deviceId));
+            return cmd.ExecuteScalar() is string text && Enum.TryParse<PhotoBackupOnConnect>(text, out var mode) ? mode : PhotoBackupOnConnect.Notify;
+        }
+    }
+
+    public void SetOnConnect(string deviceId, PhotoBackupOnConnect mode)
+    {
+        lock (_gate)
+        {
+            using var cmd = Command(
+                "INSERT INTO devices (device_id, on_connect) VALUES ($d, $m) ON CONFLICT(device_id) DO UPDATE SET on_connect = excluded.on_connect;",
+                ("$d", deviceId), ("$m", mode.ToString()));
             cmd.ExecuteNonQuery();
         }
     }
@@ -376,14 +416,17 @@ public sealed class PhotoBackupLedger : IDisposable
 
     // ---------- runs ----------
 
-    public void StartRun(string jobId, string deviceId, string destination, DateTimeOffset startedAt)
+    /// <summary>Opens a run (once; a second call only fills in the trigger when it has one).</summary>
+    public void StartRun(string jobId, string deviceId, string destination, DateTimeOffset startedAt, PhotoBackupTrigger? trigger = null)
     {
         lock (_gate)
         {
             using var cmd = Command("""
-                INSERT OR IGNORE INTO runs (job_id, device_id, destination, state, started_at) VALUES ($j, $d, $dest, $s, $at);
+                INSERT INTO runs (job_id, device_id, destination, state, started_at, started_by) VALUES ($j, $d, $dest, $s, $at, $t)
+                ON CONFLICT(job_id) DO UPDATE SET started_by = COALESCE(excluded.started_by, runs.started_by);
                 """,
-                ("$j", jobId), ("$d", deviceId), ("$dest", destination), ("$s", PhotoBackupRunState.Running.ToString()), ("$at", Text(startedAt)));
+                ("$j", jobId), ("$d", deviceId), ("$dest", destination), ("$s", PhotoBackupRunState.Running.ToString()), ("$at", Text(startedAt)),
+                ("$t", trigger?.ToString()));
             cmd.ExecuteNonQuery();
         }
     }
@@ -429,7 +472,7 @@ public sealed class PhotoBackupLedger : IDisposable
         lock (_gate)
         {
             using var cmd = Command($"""
-                SELECT job_id, destination, state, planned, copied, duplicates, failed, bytes, kept_heic, started_at, finished_at FROM runs {where};
+                SELECT job_id, destination, state, planned, copied, duplicates, failed, bytes, kept_heic, started_at, finished_at, started_by FROM runs {where};
                 """, ("$x", value));
             using var r = cmd.ExecuteReader();
             return r.Read()
@@ -444,7 +487,8 @@ public sealed class PhotoBackupLedger : IDisposable
                     r.GetInt64(7),
                     r.GetInt32(8),
                     DateTimeOffset.Parse(r.GetString(9), CultureInfo.InvariantCulture),
-                    r.IsDBNull(10) ? null : DateTimeOffset.Parse(r.GetString(10), CultureInfo.InvariantCulture))
+                    r.IsDBNull(10) ? null : DateTimeOffset.Parse(r.GetString(10), CultureInfo.InvariantCulture),
+                    !r.IsDBNull(11) && Enum.TryParse<PhotoBackupTrigger>(r.GetString(11), out var trigger) ? trigger : PhotoBackupTrigger.Manual)
                 : null;
         }
     }

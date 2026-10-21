@@ -452,6 +452,7 @@ export interface PhotoBackupRun {
   keptHeic: number;
   startedAt: string;
   finishedAt: string | null;
+  trigger: PhotoBackupTrigger;
 }
 
 export type HeicConversion = 'available' | 'missingCodec' | 'unknown';
@@ -468,7 +469,15 @@ export interface PhotoBackupStatus {
   heicConversion: HeicConversion;
   /** Room for the new photos on the destination's drive; photos.backup is refused when it isn't enough. */
   space: PhotoBackupSpace;
+  /** "When this phone connects" (round 3); the phone's own, kept by useDefaults. */
+  onConnect: PhotoBackupOnConnect;
 }
+
+/** Nothing; a Windows notification of new photos with "Back up now" (default); or a backup that starts by itself. */
+export type PhotoBackupOnConnect = 'nothing' | 'notify' | 'backUp';
+
+/** What started a run; the last two end with a notification. */
+export type PhotoBackupTrigger = 'manual' | 'notification' | 'automatic';
 
 /** Room on a backup folder's drive (round 3). */
 export interface PhotoBackupSpace {

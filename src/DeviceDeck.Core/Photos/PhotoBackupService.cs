@@ -96,7 +96,8 @@ public sealed class PhotoBackupService : IDisposable
             Ledger.GetLastRun(deviceId),
             ActiveJob(deviceId)?.Id,
             _heic,
-            CheckSpace(options.Destination, copyBytes));
+            CheckSpace(options.Destination, copyBytes),
+            Ledger.GetOnConnect(deviceId));
     }
 
     /// <summary>Room on the drive of <paramref name="folder"/> for <paramref name="bytes"/> (0: is the drive there, is it nearly full).</summary>
@@ -136,8 +137,19 @@ public sealed class PhotoBackupService : IDisposable
     /// first, so the phone follows Settings again (its destination too, and the range goes back to everything).
     /// </summary>
     public void Configure(string deviceId, string? destination, string? folderPattern, bool? convertHeic, bool? includeHidden, bool useDefaults = false,
-        PhotoBackupRange? range = null)
+        PhotoBackupRange? range = null, PhotoBackupOnConnect? onConnect = null)
     {
+        if (onConnect is { } mode)
+        {
+            if (!Enum.IsDefined(mode))
+            {
+                throw new ArgumentException("onConnect must be \"nothing\", \"notify\" or \"backUp\".");
+            }
+
+            // Not one of the options Settings has defaults for: "Use the Settings defaults" leaves it alone.
+            Ledger.SetOnConnect(deviceId, mode);
+        }
+
         if (destination is not null)
         {
             if (string.IsNullOrWhiteSpace(destination) || !Path.IsPathFullyQualified(destination))
@@ -166,7 +178,13 @@ public sealed class PhotoBackupService : IDisposable
     /// queued or running for it. The destination is pinned to the phone on its first backup, so renaming the
     /// phone later doesn't start a second folder.
     /// </summary>
-    public async Task<TransferJob> StartAsync(string deviceId, CancellationToken ct)
+    public Task<TransferJob> StartAsync(string deviceId, CancellationToken ct) => StartAsync(deviceId, PhotoBackupTrigger.Manual, ct);
+
+    /// <summary>
+    /// As <see cref="StartAsync(string, CancellationToken)"/>, saying what started it: a run started by the "Back up now"
+    /// notification or by the phone connecting ends with a notification of its own.
+    /// </summary>
+    public async Task<TransferJob> StartAsync(string deviceId, PhotoBackupTrigger trigger, CancellationToken ct)
     {
         var queue = _queue ?? throw new InvalidOperationException("The photo backup isn't attached to the transfer queue.");
         var device = Require(deviceId);
@@ -183,9 +201,9 @@ public sealed class PhotoBackupService : IDisposable
             Configure(deviceId, options.Destination, null, null, null);
         }
 
-        var request = new PhotoBackupRequest(options.Destination, options.FolderPattern, options.ConvertHeic, options.IncludeHidden, options.Range);
+        var request = new PhotoBackupRequest(options.Destination, options.FolderPattern, options.ConvertHeic, options.IncludeHidden, options.Range, trigger);
         var job = await queue.EnqueueAsync(deviceId, TransferKind.PhotosBackup, request, ConflictRule.KeepBoth, ct).ConfigureAwait(false);
-        Ledger.StartRun(job.Id, deviceId, options.Destination, job.CreatedAt);
+        Ledger.StartRun(job.Id, deviceId, options.Destination, job.CreatedAt, trigger);
 
         // The job may have got ahead of this (nothing new: done at once); catch its run up with it.
         if (queue.Get(job.Id) is { } now)

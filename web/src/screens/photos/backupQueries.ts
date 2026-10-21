@@ -1,11 +1,12 @@
 // Queries and actions of the photo backup (photos.backup*) and of adding photos to an iPhone app.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
+import { create } from 'zustand';
 import type { FileSource } from '../../bridge';
 import type { MethodParams } from '../../bridge/methods';
 import type { DeviceSummary, PhotoBackupRange, PhotoBackupStatus } from '../../bridge/types';
-import { useClient } from '../../app/bridgeContext';
+import { useBridge, useClient } from '../../app/bridgeContext';
 import { useActions } from '../../app/actions';
 import { useI18n } from '../../i18n';
 import { toast } from '../../state/toasts';
@@ -14,6 +15,36 @@ import { useUi } from '../../state/ui';
 export const backupKeys = {
   status: (deviceId: string) => ['photos.backupStatus', deviceId] as const,
 };
+
+/** A request to open a phone's Back up panel (from a notification); the Photos screen takes it. */
+export const useBackupPanelRequest = create<{ deviceId: string | null; open(deviceId: string): void; clear(): void }>((set) => ({
+  deviceId: null,
+  open: (deviceId) => set({ deviceId }),
+  clear: () => set({ deviceId: null }),
+}));
+
+/**
+ * Clicks on the photo backup's Windows notifications (round 3). The host starts the backup for "Back up now" and
+ * opens Explorer for "Open folder"; here the page follows: the phone, its Photos screen, the panel or the transfers.
+ */
+export function usePhotoBackupEvents() {
+  const { client } = useBridge();
+  useEffect(
+    () =>
+      client.on('notification.activated', ({ command, deviceId }) => {
+        if (!deviceId || !command.startsWith('photos.')) return;
+        const ui = useUi.getState();
+        if (command === 'photos.openBackup') {
+          ui.selectDevice(deviceId);
+          ui.navigate('photos');
+          useBackupPanelRequest.getState().open(deviceId);
+        } else if (command === 'photos.backupNow') {
+          ui.setDrawerOpen(true);
+        }
+      }),
+    [client],
+  );
+}
 
 export function canBackUp(device: DeviceSummary | null | undefined): device is DeviceSummary {
   return device?.state === 'ready' && device.capabilities.includes('photosRead');
@@ -57,8 +88,13 @@ export function useConfigureBackup(device: DeviceSummary) {
       const key = backupKeys.status(device.id);
       const previous = queryClient.getQueryData<PhotoBackupStatus>(key);
       if (previous && !patch.useDefaults) {
-        const { useDefaults: _ignored, ...options } = patch;
-        queryClient.setQueryData<PhotoBackupStatus>(key, { ...previous, options: { ...previous.options, ...options }, customized: true });
+        const { useDefaults: _ignored, onConnect, ...options } = patch;
+        queryClient.setQueryData<PhotoBackupStatus>(key, {
+          ...previous,
+          options: { ...previous.options, ...options },
+          customized: Object.keys(options).length > 0 || previous.customized,
+          onConnect: onConnect ?? previous.onConnect,
+        });
       }
       return { previous };
     },

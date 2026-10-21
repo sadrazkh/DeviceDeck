@@ -32,7 +32,7 @@ describe('photo backup (mock)', () => {
     expect((await client.call('photos.newCount', { deviceId: ANDROID_ID })).newCount).toBe(46);
 
     const status = await client.call('photos.backupStatus', { deviceId: IPHONE_ID });
-    expect(Object.keys(status)).toEqual(['deviceId', 'count', 'options', 'customized', 'backedUp', 'lastRun', 'activeJobId', 'heicConversion', 'space']);
+    expect(Object.keys(status)).toEqual(['deviceId', 'count', 'options', 'customized', 'backedUp', 'lastRun', 'activeJobId', 'heicConversion', 'space', 'onConnect']);
     expect(status.space).toMatchObject({ root: 'D:\\', enough: true, nearlyFull: false, driveMissing: false });
     expect(status.space.neededBytes).toBeGreaterThan(status.count.newBytes);
     expect(status.options).toEqual({
@@ -127,6 +127,33 @@ describe('photo backup (mock)', () => {
       nearlyFull: true,
     });
     await expect(client.call('photos.backupSpace', { folder: 'Pictures' })).rejects.toMatchObject({ rpcCode: -32602 });
+  });
+
+  it('backs up by itself when a phone set to do so connects, and only then', async () => {
+    const { client, backend } = setup();
+    expect((await client.call('photos.backupStatus', { deviceId: ANDROID_ID })).onConnect).toBe('notify');
+
+    // The default (a notification is the host's): plugging in starts nothing.
+    backend.unplug(ANDROID_ID);
+    backend.plugBack(ANDROID_ID);
+    run(backend, 2_000);
+    expect((await client.call('transfers.list')).filter((j) => j.kind === 'photosBackup')).toHaveLength(0);
+
+    const set = await client.call('photos.backupConfigure', { deviceId: ANDROID_ID, onConnect: 'backUp' });
+    expect(set.onConnect).toBe('backUp');
+    expect(set.customized).toBe(false); // not one of the Settings defaults
+    await expect(client.call('photos.backupConfigure', { deviceId: ANDROID_ID, onConnect: 'sometimes' as never })).rejects.toMatchObject({ rpcCode: -32602 });
+
+    backend.unplug(ANDROID_ID);
+    backend.plugBack(ANDROID_ID);
+    run(backend, 2_000);
+    const job = (await client.call('transfers.list')).find((j) => j.kind === 'photosBackup' && j.deviceId === ANDROID_ID);
+    expect(job).toBeDefined();
+    run(backend, 120_000);
+    const after = await client.call('photos.backupStatus', { deviceId: ANDROID_ID });
+    expect(after.lastRun).toMatchObject({ jobId: job!.id, state: 'done', trigger: 'automatic' });
+    expect(after.count.newCount).toBe(0);
+    expect((await client.call('photos.backupConfigure', { deviceId: ANDROID_ID, useDefaults: true })).onConnect).toBe('backUp');
   });
 
   it('forgets the history without touching files', async () => {

@@ -17,6 +17,15 @@ export const photoBackupEn = {
   'photos.backup.space.choose': 'Choose another folder',
   'settings.photoBackup.nearlyFull': '{root} is nearly full ({free} free). Backing up a whole phone can take tens of gigabytes; a folder on a drive with more room is safer.',
   'settings.photoBackup.missing': 'The drive {root} isn’t connected.',
+  'photos.backup.onConnect': 'When this phone connects',
+  'photos.backup.onConnect.nothing': 'Do nothing',
+  'photos.backup.onConnect.nothingHint': 'Back up from here when you want to.',
+  'photos.backup.onConnect.notify': 'Tell me about new photos',
+  'photos.backup.onConnect.notifyHint': 'A Windows notification with Back up now, when it has photos this PC hasn’t copied.',
+  'photos.backup.onConnect.backUp': 'Back up new photos automatically',
+  'photos.backup.onConnect.backUpHint': 'Starts by itself, also when DeviceDeck runs in the notification area. Never into a missing or full drive; a notification says when it’s done.',
+  'photos.backup.run.automatic': 'started when the phone connected',
+  'photos.backup.run.fromNotification': 'started from a notification',
 } as const;
 
 export const photoBackupFa: Record<keyof typeof photoBackupEn, string> = {
@@ -35,4 +44,13 @@ export const photoBackupFa: Record<keyof typeof photoBackupEn, string> = {
   'photos.backup.space.choose': 'انتخاب پوشهٔ دیگر',
   'settings.photoBackup.nearlyFull': '{root} تقریباً پر است ({free} خالی). پشتیبان کامل یک گوشی ممکن است ده‌ها گیگابایت جا بگیرد؛ پوشه‌ای روی درایوی با جای بیشتر امن‌تر است.',
   'settings.photoBackup.missing': 'درایو {root} وصل نیست.',
+  'photos.backup.onConnect': 'وقتی این گوشی وصل می‌شود',
+  'photos.backup.onConnect.nothing': 'کاری نکن',
+  'photos.backup.onConnect.nothingHint': 'هر وقت خواستید از همین‌جا پشتیبان بگیرید.',
+  'photos.backup.onConnect.notify': 'عکس‌های تازه را خبر بده',
+  'photos.backup.onConnect.notifyHint': 'وقتی عکس‌هایی دارد که این رایانه هنوز کپی نکرده، یک اعلان ویندوز با دکمهٔ «پشتیبان‌گیری».',
+  'photos.backup.onConnect.backUp': 'از عکس‌های تازه خودکار پشتیبان بگیر',
+  'photos.backup.onConnect.backUpHint': 'خودش شروع می‌شود، حتی وقتی DeviceDeck در ناحیهٔ اعلان‌ها است. هرگز روی درایوی که نیست یا پر است نمی‌نویسد؛ وقتی تمام شد اعلانی خبر می‌دهد.',
+  'photos.backup.run.automatic': 'با وصل شدن گوشی شروع شد',
+  'photos.backup.run.fromNotification': 'از اعلان شروع شد',
 };

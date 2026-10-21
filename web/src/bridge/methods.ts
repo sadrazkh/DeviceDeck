@@ -36,6 +36,7 @@ import type {
   PhotoAlbum,
   PhotoAsset,
   PhotoBackupCount,
+  PhotoBackupOnConnect,
   PhotoBackupRange,
   PhotoBackupSpace,
   PhotoBackupStatus,
@@ -149,6 +150,7 @@ export interface BridgeMethods {
       includeHidden?: boolean;
       useDefaults?: boolean;
       range?: PhotoBackupRange;
+      onConnect?: PhotoBackupOnConnect;
     };
     result: PhotoBackupStatus;
   };

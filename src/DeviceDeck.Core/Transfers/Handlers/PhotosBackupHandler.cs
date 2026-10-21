@@ -78,7 +78,7 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
     protected override async Task<IReadOnlyList<TransferItemPlan>> PlanAsync(TransferWorkContext context, PhotoBackupRequest request, CancellationToken ct)
     {
         var deviceId = context.Device.Summary.Id;
-        ledger.StartRun(context.JobId, deviceId, request.Destination, _time.GetLocalNow());
+        ledger.StartRun(context.JobId, deviceId, request.Destination, _time.GetLocalNow(), request.Trigger);
         var source = PhotoBackupSources.For(context.Device.Photos);
         var all = await source.GetBackupAssetsAsync(ct).ConfigureAwait(false);
         var known = ledger.LoadKnown(deviceId);

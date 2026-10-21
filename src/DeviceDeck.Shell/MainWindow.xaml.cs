@@ -39,6 +39,8 @@ public sealed partial class MainWindow : Window
     private readonly ShellNotifications _notifications;
     private readonly DeviceNotifier _deviceNotifier;
     private readonly UpdateService _updates;
+    // Photo backup (round 3): "When this phone connects" (new photos, or a backup by itself).
+    private readonly DeviceDeck.Core.Photos.PhotoBackupWatcher _photoBackupWatcher;
     private readonly DesktopShell _desktop;
     private TrayIcon? _tray;
     private bool _quitting;
@@ -101,6 +103,9 @@ public sealed partial class MainWindow : Window
             () => DispatcherQueue.TryEnqueue(BringToFront), action => DispatcherQueue.TryEnqueue(() => action()), () => _tray);
         _notifications.Activated += OnNotificationActivated;
         _deviceNotifier = new DeviceNotifier(host.Hub, host.Settings, _notifications, () => Tray.IsInFront(_hwnd));
+        _photoBackupWatcher = new DeviceDeck.Core.Photos.PhotoBackupWatcher(host.Hub, host.PhotoBackup, _notifications, host.Settings,
+            new DeviceDeck.Core.Photos.PhotoBackupWatcherOptions { OpenFolder = folder => new ShellServices(DispatcherQueue, AppWindow.Id).RevealInExplorer(folder) });
+        _photoBackupWatcher.CheckFailed += (_, ex) => ShellLog.Error("The photo backup's look at a connected phone failed.", ex);
         _updates = new UpdateService(HostServices.Version, host.Settings, _notifications, Quit);
         _updates.Start();
         var dragOut = new DragOutService(host.Hub, host.Transfers, host.DragOuts, host.DragOutStaging,
@@ -125,7 +130,11 @@ public sealed partial class MainWindow : Window
     }
 
     /// <summary>Called once the providers have started: phones that connect from now on get a notification.</summary>
-    public void ArmNotifications() => _deviceNotifier.Arm();
+    public void ArmNotifications()
+    {
+        _deviceNotifier.Arm();
+        _photoBackupWatcher.Arm();
+    }
 
     /// <summary>For a second launch: show this window instead.</summary>
     public void BringToFront()
@@ -399,6 +408,7 @@ public sealed partial class MainWindow : Window
         _host.Settings.Changed -= OnSettingsChanged;
         _windowsColors.ColorValuesChanged -= OnWindowsColorsChanged;
         _deviceNotifier.Dispose();
+        _photoBackupWatcher.Dispose();
         _updates.Dispose();
         _tray?.Dispose();
         _tray = null;

@@ -14,7 +14,8 @@ public sealed record PhotosBackupConfigureParams(
     bool? ConvertHeic = null,
     bool? IncludeHidden = null,
     bool UseDefaults = false,
-    PhotoBackupRange? Range = null);
+    PhotoBackupRange? Range = null,
+    PhotoBackupOnConnect? OnConnect = null);
 
 public sealed record PhotosImportToAppParams(string DeviceId, string AppId, IReadOnlyList<string> Files);
 
@@ -32,7 +33,7 @@ public static class PhotosBackupMethods
         rpc.Register<PhotosBackupConfigureParams, PhotoBackupStatus>("photos.backupConfigure", (p, ct) =>
         {
             var backup = Backup(s);
-            backup.Configure(p.DeviceId, p.Destination, p.FolderPattern, p.ConvertHeic, p.IncludeHidden, p.UseDefaults, p.Range);
+            backup.Configure(p.DeviceId, p.Destination, p.FolderPattern, p.ConvertHeic, p.IncludeHidden, p.UseDefaults, p.Range, p.OnConnect);
             return backup.GetStatusAsync(p.DeviceId, ct);
         });
         rpc.Register<DeviceParams, JobIdResult>("photos.backup", async (p, ct) =>

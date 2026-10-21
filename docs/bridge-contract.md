@@ -690,3 +690,34 @@ type PhotoBackupSpace = {
 };
 // PhotoBackupStatus gains  space: PhotoBackupSpace;
 ```
+
+### When this phone connects
+
+`photos.backupConfigure` takes `onConnect?: "nothing" | "notify" | "backUp"`; `PhotoBackupStatus` gains `onConnect`
+(default `"notify"`). It is the phone's own and `useDefaults` leaves it alone. The host's `PhotoBackupWatcher`
+(`src/DeviceDeck.Core/Photos/PhotoBackupWatcher.cs`, made by the main window) acts once per connection when the phone
+turns `ready`:
+
+- `nothing` — nothing.
+- `notify` — when it has new photos, a Windows notification "128 new photos on Nima's iPhone" ("120 photos · 8 videos
+  · about 2.3 GB") with **Back up now** (command `photos.backupNow`; the host starts the backup). Only for a phone
+  plugged in while DeviceDeck runs, like the "connected" notification. Unplugging takes it back.
+- `backUp` — the backup starts by itself, also for a phone that was plugged in when DeviceDeck started and while the
+  window is in the notification area; with the phone's range and options, through the transfer queue like any other.
+  Nothing new: nothing happens. A destination whose drive isn't there or is too full: no job, and a notification
+  "Nima's iPhone's photos weren't backed up" with the reason and **Open DeviceDeck** (`photos.openBackup`; the page
+  opens the phone's Back up panel).
+
+A run started by a notification or by the phone ends with a notification: "312 photos backed up" ("From Nima's
+iPhone · 1.2 GB") with **Open folder** (`photos.openFolder`, `args.folder`; the host opens only a folder a backup used),
+"Photos from … are up to date" when everything new was already in the folder, or "The backup of … stopped" with the
+error. A run started from the panel ends as before (the page's toast). Texts follow `settings.language` (English, Persian).
+
+```ts
+// PhotoBackupStatus gains  onConnect: "nothing" | "notify" | "backUp";
+// PhotoBackupRun gains     trigger: "manual" | "notification" | "automatic";
+```
+
+The page follows a click: `photos.openBackup` selects the phone, opens Photos and its Back up panel; `photos.backupNow`
+opens the transfers. When a `photosBackup` job appears that the page didn't start, the phone's status is fetched again,
+and again when it finishes (the Photos screen's badge).

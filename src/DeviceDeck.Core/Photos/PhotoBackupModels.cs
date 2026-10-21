@@ -73,6 +73,12 @@ public sealed record PhotoBackupCount(string DeviceId, int NewCount, int NewPhot
 
 public enum PhotoBackupRunState { Running, Done, Failed, Cancelled }
 
+/// <summary>"When this phone connects": nothing, a notification of its new photos (the default), or a backup that starts by itself.</summary>
+public enum PhotoBackupOnConnect { Nothing, Notify, BackUp }
+
+/// <summary>What started a run: the panel, the "Back up now" notification, or the phone connecting. The last two end with a notification.</summary>
+public enum PhotoBackupTrigger { Manual, Notification, Automatic }
+
 /// <param name="Copied">Items written to the PC this run.</param>
 /// <param name="Duplicates">Items that were already in the destination (same size and SHA-256), now remembered.</param>
 /// <param name="KeptHeic">HEIC files kept as HEIC because this PC couldn't convert them.</param>
@@ -87,7 +93,8 @@ public sealed record PhotoBackupRun(
     long Bytes,
     int KeptHeic,
     DateTimeOffset StartedAt,
-    DateTimeOffset? FinishedAt);
+    DateTimeOffset? FinishedAt,
+    PhotoBackupTrigger Trigger = PhotoBackupTrigger.Manual);
 
 /// <param name="Customized">The phone has options of its own; false = the Settings defaults.</param>
 /// <param name="BackedUp">Photos this PC remembers copying from the phone.</param>
@@ -102,11 +109,13 @@ public sealed record PhotoBackupStatus(
     PhotoBackupRun? LastRun,
     string? ActiveJobId,
     HeicConversion HeicConversion,
-    PhotoBackupSpace Space);
+    PhotoBackupSpace Space,
+    PhotoBackupOnConnect OnConnect = PhotoBackupOnConnect.Notify);
 
 /// <summary>The transfer request of a photosBackup job: the options as they were when it started.</summary>
 /// <param name="Range">Null in jobs queued before ranges existed: everything.</param>
-public sealed record PhotoBackupRequest(string Destination, string FolderPattern, bool ConvertHeic, bool IncludeHidden, PhotoBackupRange? Range = null);
+public sealed record PhotoBackupRequest(string Destination, string FolderPattern, bool ConvertHeic, bool IncludeHidden, PhotoBackupRange? Range = null,
+    PhotoBackupTrigger Trigger = PhotoBackupTrigger.Manual);
 
 /// <summary>The transfer request of a photosToApp job: PC pictures and videos into an iPhone app's Documents.</summary>
 public sealed record PhotosToAppRequest(string AppId, IReadOnlyList<string> Files);

@@ -15,7 +15,7 @@ import { useTransfers } from '../../app/queries';
 import { Button } from '../../components/Button';
 import { ConfirmDialog, Dialog } from '../../components/Dialog';
 import { ErrorBanner } from '../../components/ErrorState';
-import { Banner, LinearProgress, Segmented, Skeleton, Switch } from '../../components/ui';
+import { Banner, LinearProgress, RadioCards, Segmented, Skeleton, Switch } from '../../components/ui';
 import { useI18n, type I18n } from '../../i18n';
 import { jobFraction } from '../../state/transfers';
 import { useUi } from '../../state/ui';
@@ -39,6 +39,8 @@ function runSummary(run: PhotoBackupRun, i18n: I18n): string {
   if (run.failed > 0) parts.push(t('photos.backup.run.failed', { count: run.failed }));
   if (run.keptHeic > 0) parts.push(t('photos.backup.run.keptHeic', { count: run.keptHeic }));
   if (run.state === 'cancelled') parts.push(t('photos.backup.run.cancelled'));
+  if (run.trigger === 'automatic') parts.push(t('photos.backup.run.automatic'));
+  if (run.trigger === 'notification') parts.push(t('photos.backup.run.fromNotification'));
   return parts.join(' · ');
 }
 
@@ -345,6 +347,20 @@ function Body({
           <span className={styles.hint}>{t('photos.backup.includeHiddenHint')}</span>
         </div>
       ) : null}
+
+      <div className={styles.section} data-testid="backup-on-connect">
+        <span className={styles.label}>{t('photos.backup.onConnect')}</span>
+        <RadioCards
+          label={t('photos.backup.onConnect')}
+          value={data.onConnect}
+          onChange={(onConnect) => configure({ onConnect })}
+          options={[
+            { value: 'nothing', label: t('photos.backup.onConnect.nothing'), hint: t('photos.backup.onConnect.nothingHint') },
+            { value: 'notify', label: t('photos.backup.onConnect.notify'), hint: t('photos.backup.onConnect.notifyHint') },
+            { value: 'backUp', label: t('photos.backup.onConnect.backUp'), hint: t('photos.backup.onConnect.backUpHint') },
+          ]}
+        />
+      </div>
 
       <p className={styles.fine}>
         {t('photos.backup.how')}{' '}

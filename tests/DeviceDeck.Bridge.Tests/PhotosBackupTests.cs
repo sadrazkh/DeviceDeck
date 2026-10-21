@@ -409,7 +409,7 @@ public sealed class PhotosBackupTests
         Assert.Equal(1, (int)count["newCount"]!);
 
         var status = (await bridge.ResultAsync("photos.backupStatus", new { deviceId = phone.Summary.Id }))!.AsObject();
-        Assert.Equal(["deviceId", "count", "options", "customized", "backedUp", "lastRun", "activeJobId", "heicConversion", "space"], status.Select(p => p.Key));
+        Assert.Equal(["deviceId", "count", "options", "customized", "backedUp", "lastRun", "activeJobId", "heicConversion", "space", "onConnect"], status.Select(p => p.Key));
         Assert.Equal(["destination", "folderPattern", "convertHeic", "includeHidden", "range"], status["options"]!.AsObject().Select(p => p.Key));
         Assert.Equal("available", (string?)status["heicConversion"]);
 
@@ -424,7 +424,7 @@ public sealed class PhotosBackupTests
         await Wait.ForStateAsync(host.Queue, jobId, TransferState.Done);
         await Wait.UntilAsync(() => host.Backup.Ledger.GetRun(jobId)?.State == PhotoBackupRunState.Done, "the run to close");
         var last = (await bridge.ResultAsync("photos.backupStatus", new { deviceId = phone.Summary.Id }))!["lastRun"]!.AsObject();
-        Assert.Equal(["jobId", "destination", "state", "planned", "copied", "duplicates", "failed", "bytes", "keptHeic", "startedAt", "finishedAt"], last.Select(p => p.Key));
+        Assert.Equal(["jobId", "destination", "state", "planned", "copied", "duplicates", "failed", "bytes", "keptHeic", "startedAt", "finishedAt", "trigger"], last.Select(p => p.Key));
         Assert.Equal("done", (string?)last["state"]);
         Assert.Equal(1, (int)last["copied"]!);
         Assert.Contains(host.Transport.EventsNamed("transfer.updated"), e => (string?)e["params"]!["kind"] == "photosBackup");

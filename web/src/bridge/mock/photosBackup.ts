@@ -11,11 +11,13 @@ import type {
   DeviceCapability,
   DeviceSummary,
   PhotoBackupCount,
+  PhotoBackupOnConnect,
   PhotoBackupOptions,
   PhotoBackupRange,
   PhotoBackupRun,
   PhotoBackupSpace,
   PhotoBackupStatus,
+  PhotoBackupTrigger,
   Settings,
 } from '../types';
 import { ANDROID_ID, GB, IPHONE_ID } from './mock-data';
@@ -113,6 +115,7 @@ interface DeviceBackup {
   own: Partial<PhotoBackupOptions>;
   lastRun: PhotoBackupRun | null;
   activeJobId: string | null;
+  onConnect: PhotoBackupOnConnect;
 }
 
 const LIVE_MOTION_BYTES = 2.6 * 1024 * 1024;
@@ -167,9 +170,11 @@ export class MockPhotoBackup {
                 keptHeic: 0,
                 startedAt: new Date(finished - 40 * 60 * 1000).toISOString(),
                 finishedAt: new Date(finished).toISOString(),
+                trigger: 'manual',
               }
             : null,
         activeJobId: null,
+        onConnect: 'notify',
       };
       this.devices.set(deviceId, state);
     }
@@ -235,13 +240,87 @@ export class MockPhotoBackup {
       activeJobId: state.activeJobId,
       heicConversion: 'available',
       space: spaceFor(options.destination, this.count(device).newBytes),
+      onConnect: state.onConnect,
     };
+  }
+
+  /** photos.backup, and the start when a phone connects: the job already going, or a new one (refused without room or drive). */
+  private start(device: DeviceSummary, trigger: PhotoBackupTrigger): { jobId: string } {
+    const deviceId = device.id;
+    const state = this.state(deviceId);
+    const engine = this.host.engine();
+    const running = state.activeJobId ? engine.get(state.activeJobId) : undefined;
+    if (running && !['done', 'failed', 'cancelled'].includes(running.state)) return { jobId: running.id };
+
+    const options = this.options(device);
+    const space = spaceFor(options.destination, this.count(device).newBytes);
+    if (space.driveMissing) throw this.host.fault('path_not_found', `The backup folder's drive ${space.root} isn't there. Connect it, or choose another folder.`);
+    if (!space.enough && this.count(device).newCount > 0) {
+      throw this.host.fault('no_space', `Not enough space on ${space.root} for the new photos. Free some space, or choose another folder.`);
+    }
+    state.own.destination ??= options.destination;
+    const { copy } = this.candidates(deviceId, options);
+    const assetOf = new Map<JobItem, MockAsset>();
+    const items = copy.map<JobItem>((a) => {
+      const name = options.convertHeic ? a.fileName.replace(/\.HEIC$/i, '.jpg') : a.fileName;
+      const item = { name: folderFor(options.folderPattern, a.takenAt) + name, size: a.size + (a.livePairId ? LIVE_MOTION_BYTES : 0) };
+      assetOf.set(item, a);
+      return item;
+    });
+    const startedAt = new Date(this.host.now()).toISOString();
+    const run: PhotoBackupRun = {
+      jobId: '',
+      destination: options.destination,
+      state: 'running',
+      planned: items.length,
+      copied: 0,
+      duplicates: 0,
+      failed: 0,
+      bytes: 0,
+      keptHeic: 0,
+      startedAt,
+      finishedAt: null,
+      trigger,
+    };
+    const job = engine.add({
+      deviceId,
+      kind: 'photosBackup',
+      title: `Backing up new photos from ${device.name} to ${options.destination}`,
+      items,
+      onItemDone: (item) => {
+        const asset = assetOf.get(item);
+        if (asset) state.backedUp.add(asset.id);
+        run.copied++;
+        run.bytes += item.size;
+      },
+      onDone: () => {
+        run.state = 'done';
+        run.finishedAt = new Date(this.host.now()).toISOString();
+        state.activeJobId = null;
+      },
+    });
+    run.jobId = job.id;
+    state.lastRun = run;
+    state.activeJobId = job.id;
+    return { jobId: job.id };
+  }
+
+  /** The phone became ready (plugged back, trusted): what the host's PhotoBackupWatcher does, minus the Windows notification. */
+  connected(deviceId: string): void {
+    const state = this.state(deviceId);
+    if (state.onConnect !== 'backUp') return;
+    try {
+      const device = this.host.requireReady(deviceId, 'photosRead');
+      if (this.count(device).newCount > 0) this.start(device, 'automatic');
+    } catch {
+      // No room, or the drive is gone: the host shows a Windows notification instead; the page shows the panel's warning.
+    }
   }
 
   readonly handlers: Handlers = {
     'photos.newCount': ({ deviceId }) => this.count(this.host.requireReady(deviceId, 'photosRead')),
     'photos.backupStatus': ({ deviceId }) => this.status(this.host.requireReady(deviceId, 'photosRead')),
-    'photos.backupConfigure': ({ deviceId, destination, folderPattern, convertHeic, includeHidden, useDefaults, range }) => {
+    'photos.backupConfigure': ({ deviceId, destination, folderPattern, convertHeic, includeHidden, useDefaults, range, onConnect }) => {
       const device = this.host.requireReady(deviceId, 'photosRead');
       if (destination !== undefined && !/^[a-z]:\\/i.test(destination)) throw this.host.badParams('destination must be a full folder path on this PC.');
       if (folderPattern !== undefined && !isValidPattern(folderPattern)) {
@@ -249,7 +328,11 @@ export class MockPhotoBackup {
       }
       const checkedRange = range === undefined ? undefined : validRange(range);
       if (typeof checkedRange === 'string') throw this.host.badParams(checkedRange);
+      if (onConnect !== undefined && !['nothing', 'notify', 'backUp'].includes(onConnect)) {
+        throw this.host.badParams('onConnect must be "nothing", "notify" or "backUp".');
+      }
       const state = this.state(deviceId);
+      if (onConnect !== undefined) state.onConnect = onConnect;
       if (useDefaults) state.own = {};
       if (checkedRange !== undefined) state.own.range = checkedRange;
       if (destination !== undefined) state.own.destination = destination;
@@ -258,64 +341,7 @@ export class MockPhotoBackup {
       if (includeHidden !== undefined) state.own.includeHidden = includeHidden;
       return this.status(device);
     },
-    'photos.backup': ({ deviceId }) => {
-      const device = this.host.requireReady(deviceId, 'photosRead');
-      const state = this.state(deviceId);
-      const engine = this.host.engine();
-      const running = state.activeJobId ? engine.get(state.activeJobId) : undefined;
-      if (running && !['done', 'failed', 'cancelled'].includes(running.state)) return { jobId: running.id };
-
-      const options = this.options(device);
-      const space = spaceFor(options.destination, this.count(device).newBytes);
-      if (space.driveMissing) throw this.host.fault('path_not_found', `The backup folder's drive ${space.root} isn't there. Connect it, or choose another folder.`);
-      if (!space.enough && this.count(device).newCount > 0) {
-        throw this.host.fault('no_space', `Not enough space on ${space.root} for the new photos. Free some space, or choose another folder.`);
-      }
-      state.own.destination ??= options.destination;
-      const { copy } = this.candidates(deviceId, options);
-      const assetOf = new Map<JobItem, MockAsset>();
-      const items = copy.map<JobItem>((a) => {
-        const name = options.convertHeic ? a.fileName.replace(/\.HEIC$/i, '.jpg') : a.fileName;
-        const item = { name: folderFor(options.folderPattern, a.takenAt) + name, size: a.size + (a.livePairId ? LIVE_MOTION_BYTES : 0) };
-        assetOf.set(item, a);
-        return item;
-      });
-      const startedAt = new Date(this.host.now()).toISOString();
-      const run: PhotoBackupRun = {
-        jobId: '',
-        destination: options.destination,
-        state: 'running',
-        planned: items.length,
-        copied: 0,
-        duplicates: 0,
-        failed: 0,
-        bytes: 0,
-        keptHeic: 0,
-        startedAt,
-        finishedAt: null,
-      };
-      const job = engine.add({
-        deviceId,
-        kind: 'photosBackup',
-        title: `Backing up new photos from ${device.name} to ${options.destination}`,
-        items,
-        onItemDone: (item) => {
-          const asset = assetOf.get(item);
-          if (asset) state.backedUp.add(asset.id);
-          run.copied++;
-          run.bytes += item.size;
-        },
-        onDone: () => {
-          run.state = 'done';
-          run.finishedAt = new Date(this.host.now()).toISOString();
-          state.activeJobId = null;
-        },
-      });
-      run.jobId = job.id;
-      state.lastRun = run;
-      state.activeJobId = job.id;
-      return { jobId: job.id };
-    },
+    'photos.backup': ({ deviceId }) => this.start(this.host.requireReady(deviceId, 'photosRead'), 'manual'),
     'photos.backupForget': ({ deviceId }) => {
       this.host.requireReady(deviceId, 'photosRead');
       const state = this.state(deviceId);
