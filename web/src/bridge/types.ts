@@ -391,15 +391,32 @@ export interface NotificationActivation {
   args: Record<string, string>;
 }
 
-export type UpdateState = 'notInstalled' | 'idle' | 'checking' | 'upToDate' | 'downloading' | 'ready' | 'error';
+/**
+ * ready: downloaded, a restart installs it (a Setup copy). available: a newer version is on GitHub that this copy can't
+ * install by itself (the portable zip): Download opens its release page. Round 4 replaced 'notInstalled' with install: 'portable'.
+ */
+export type UpdateState = 'idle' | 'checking' | 'upToDate' | 'downloading' | 'ready' | 'available' | 'error';
 
 export interface UpdateStatus {
   state: UpdateState;
   currentVersion: string;
   newVersion: string | null;
   percent: number | null;
+  /** One plain English sentence for the log and a tooltip; the page shows its own words. */
   error: string | null;
+  /** When a check last finished, also in an earlier run. */
   lastChecked: string | null;
+  // Updates you can see (round 4)
+  /** Installed by the Setup (updates itself) or the portable zip (only checks GitHub). */
+  install: 'setup' | 'portable';
+  channel: 'stable' | 'prerelease';
+  architecture: 'x64' | 'arm64';
+  /** What the check at lastChecked found. */
+  lastResult: 'upToDate' | 'newVersion' | 'error' | null;
+  /** With an error: GitHub asked to wait until then (its limit for checks from this network). */
+  retryAt: string | null;
+  /** The first run of a newer version: show "What's new in v{whatsNew}" once, then call app.whatsNewShown. */
+  whatsNew: string | null;
 }
 
 // ---------- Photos backup (docs/bridge-contract.md, "Photos backup and adding photos") ----------

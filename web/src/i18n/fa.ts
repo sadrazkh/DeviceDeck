@@ -6,6 +6,7 @@ import { cleanupFa } from '../screens/cleanup/strings';
 import { backupFa } from './backup';
 import { localSendFa } from './localSend';
 import { photoBackupFa } from '../screens/photos/backupStrings';
+import { updatesFa } from '../shell/updateStrings';
 import type { MessageKey } from './en';
 
 export const fa: Record<MessageKey, string> = {
@@ -483,17 +484,6 @@ export const fa: Record<MessageKey, string> = {
   'settings.notifyOnConnect': 'وقتی گوشی وصل شد خبرم کن',
   'settings.windowHint': 'در ناحیهٔ اعلان‌ها DeviceDeck منتظر گوشی‌ها می‌ماند و کپی‌ها ادامه پیدا می‌کنند. برای بستن کامل، از منوی آن «خروج» را بزنید.',
   'settings.updates': 'به‌روزرسانی',
-  'settings.autoUpdate': 'نسخه‌های تازه خودکار دریافت شوند',
-  'settings.update.check': 'الان بررسی کن',
-  'settings.update.restart': 'راه‌اندازی دوباره و به‌روزرسانی',
-  'settings.update.idle': 'نسخهٔ {version}',
-  'settings.update.notInstalled': 'نسخهٔ {version}. این نسخه از فایل zip اجرا می‌شود؛ به‌روزرسانی خودکار مال نسخهٔ نصب‌شده است (DeviceDeck Setup در GitHub).',
-  'settings.update.checking': 'در حال جست‌وجوی نسخهٔ تازه…',
-  'settings.update.upToDate': 'DeviceDeck {version} به‌روز است',
-  'settings.update.downloading': 'در حال دریافت نسخهٔ {version}… {percent}',
-  'settings.update.ready': 'نسخهٔ {version} آماده است. برای تمام شدن کار، DeviceDeck را دوباره باز کنید.',
-  'settings.update.error': 'جست‌وجوی به‌روزرسانی ممکن نشد.',
-  'settings.update.lastChecked': 'بررسی: {when}',
   'device.rename': 'تغییر نام گوشی',
   'device.rename.save': 'ذخیرهٔ نام',
   'device.rename.hint': 'گوشی هم همین نام را نشان می‌دهد.',
@@ -624,4 +614,6 @@ export const fa: Record<MessageKey, string> = {
   ...localSendFa,
   // Photo backup (round 3)
   ...photoBackupFa,
+  // Updates you can see (round 4)
+  ...updatesFa,
 };

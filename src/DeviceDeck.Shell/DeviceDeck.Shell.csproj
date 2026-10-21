@@ -51,4 +51,9 @@
     <None Include="Assets\make-icon.py" />
   </ItemGroup>
 
+  <!-- What's new (round 4): this version's release notes, for when GitHub can't be reached. -->
+  <ItemGroup Condition="Exists('..\..\docs\releases\v$(Version).md')">
+    <EmbeddedResource Include="..\..\docs\releases\v$(Version).md" LogicalName="DeviceDeck.ReleaseNotes.md" Link="ReleaseNotes.md" />
+  </ItemGroup>
+
 </Project>

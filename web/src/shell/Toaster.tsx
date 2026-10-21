@@ -6,6 +6,7 @@ import { useI18n } from '../i18n';
 import { useToasts, type Toast } from '../state/toasts';
 import { useUi } from '../state/ui';
 import styles from './Toaster.module.css';
+import { UpdateBanner } from './UpdateBanner';
 
 const ICONS = { info: InfoFilled, success: CheckmarkCircleFilled, warning: WarningFilled, danger: ErrorCircleFilled };
 
@@ -59,6 +60,7 @@ export function Toaster() {
   const drawerOpen = useUi((s) => s.drawerOpen);
   return (
     <ol className={styles.region} aria-live="polite" data-beside-drawer={drawerOpen || undefined}>
+      <UpdateBanner />
       <AnimatePresence initial={false}>
         {toasts.map((toast) => (
           <ToastView key={toast.id} toast={toast} />

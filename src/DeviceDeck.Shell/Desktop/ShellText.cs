@@ -15,7 +15,10 @@ internal sealed record ShellText(
     string StillRunningBody,
     string UpdateReady,
     string UpdateReadyBody,
-    string Restart)
+    string Restart,
+    string UpdateOnGithub,
+    string UpdateOnGithubBody,
+    string Download)
 {
     public static readonly ShellText English = new(
         RightToLeft: false,
@@ -28,7 +31,10 @@ internal sealed record ShellText(
         StillRunningBody: "It keeps watching for phones in the notification area. You can change this in Settings.",
         UpdateReady: "DeviceDeck {0} is ready",
         UpdateReadyBody: "Restart DeviceDeck to finish updating.",
-        Restart: "Restart");
+        Restart: "Restart",
+        UpdateOnGithub: "DeviceDeck {0} is on GitHub",
+        UpdateOnGithubBody: "This copy runs from the zip and can't update itself. Download the new version; the Setup installs one that updates itself.",
+        Download: "Download");
 
     public static readonly ShellText Persian = new(
         RightToLeft: true,
@@ -41,7 +47,10 @@ internal sealed record ShellText(
         StillRunningBody: "در ناحیهٔ اعلان‌ها منتظر گوشی‌ها می‌ماند. این را می‌توانید در تنظیمات عوض کنید.",
         UpdateReady: "DeviceDeck {0} آماده است",
         UpdateReadyBody: "برای تمام شدن به‌روزرسانی، DeviceDeck را دوباره باز کنید.",
-        Restart: "راه‌اندازی دوباره");
+        Restart: "راه‌اندازی دوباره",
+        UpdateOnGithub: "DeviceDeck {0} در GitHub منتشر شد",
+        UpdateOnGithubBody: "این نسخه از فایل zip اجرا می‌شود و خودش به‌روز نمی‌شود. نسخهٔ تازه را دانلود کنید؛ Setup نسخه‌ای نصب می‌کند که خودش به‌روز می‌شود.",
+        Download: "دانلود");
 
     public static ShellText For(AppLanguage language) => language == AppLanguage.Fa ? Persian : English;
 

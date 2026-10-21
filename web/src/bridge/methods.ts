@@ -61,6 +61,7 @@ import type {
   WirelessResult,
 } from './toolbox';
 import type { LocalSendDiscovery, LocalSendJobStatus, LocalSendTarget, PhotosToAppStarted } from './localSend';
+import type { ReleaseNotes } from './releaseNotes';
 
 type DeviceParams = { deviceId: string };
 
@@ -267,6 +268,10 @@ export interface BridgeMethods {
   'localsend.job': { params: { jobId: string }; result: LocalSendJobStatus };
   // Photo backup (round 3)
   'photos.backupSpace': { params: { folder: string }; result: PhotoBackupSpace };
+  // Updates you can see (round 4)
+  'app.releaseNotes': { params: { version: string }; result: ReleaseNotes };
+  'app.openReleasePage': { params: { version?: string }; result: Empty };
+  'app.whatsNewShown': { params: { version: string }; result: Empty };
 }
 
 export type MethodName = keyof BridgeMethods;
@@ -406,6 +411,10 @@ const methodTable = {
   'localsend.job': true,
   // Photo backup (round 3)
   'photos.backupSpace': true,
+  // Updates you can see (round 4)
+  'app.releaseNotes': true,
+  'app.openReleasePage': true,
+  'app.whatsNewShown': true,
 } as const satisfies Record<MethodName, true>;
 
 export const METHOD_NAMES = Object.keys(methodTable) as MethodName[];

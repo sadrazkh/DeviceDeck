@@ -6,6 +6,7 @@ import { cleanupEn } from '../screens/cleanup/strings';
 import { backupEn } from './backup';
 import { localSendEn } from './localSend';
 import { photoBackupEn } from '../screens/photos/backupStrings';
+import { updatesEn } from '../shell/updateStrings';
 
 export const en = {
   'app.name': 'DeviceDeck',
@@ -498,17 +499,6 @@ export const en = {
   'settings.notifyOnConnect': 'Tell me when a phone connects',
   'settings.windowHint': 'In the notification area DeviceDeck keeps watching for phones and copies keep going. Quit it from its menu there.',
   'settings.updates': 'Updates',
-  'settings.autoUpdate': 'Download new versions automatically',
-  'settings.update.check': 'Check now',
-  'settings.update.restart': 'Restart to update',
-  'settings.update.idle': 'Version {version}',
-  'settings.update.notInstalled': 'Version {version}. This copy runs from the zip; updates come with the installed version (DeviceDeck Setup on GitHub).',
-  'settings.update.checking': 'Looking for a new version…',
-  'settings.update.upToDate': 'DeviceDeck {version} is up to date',
-  'settings.update.downloading': 'Downloading version {version}… {percent}',
-  'settings.update.ready': 'Version {version} is ready. Restart DeviceDeck to finish.',
-  'settings.update.error': 'Couldn’t look for updates.',
-  'settings.update.lastChecked': 'checked {when}',
   'device.rename': 'Rename phone',
   'device.rename.save': 'Save name',
   'device.rename.hint': 'The phone shows this name too.',
@@ -640,6 +630,8 @@ export const en = {
   ...localSendEn,
   // Photo backup (round 3)
   ...photoBackupEn,
+  // Updates you can see (round 4)
+  ...updatesEn,
 } as const;
 
 export type MessageKey = keyof typeof en;

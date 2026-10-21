@@ -9,7 +9,7 @@ import {
   type JsonRpcErrorObject,
 } from '../jsonrpc';
 import type { BridgeEvents, EventName, MethodName, MethodParams, MethodResult } from '../methods';
-import type { AppInfo, DeviceCapability, DeviceSummary, DriverStatus, FolderPattern, NotificationShowParams, Settings, UpdateStatus } from '../types';
+import type { AppInfo, DeviceCapability, DeviceSummary, DriverStatus, FolderPattern, NotificationShowParams, Settings } from '../types';
 import { mockAppFiles, mockMeasure } from './appFiles';
 import { addLongNameApps, addLongNameFiles } from './longNames';
 import { batteryHandlers } from './battery';
@@ -43,6 +43,7 @@ import { hashString } from './random';
 import { TransferEngine, type JobItem } from './transfers';
 import { MockToolbox } from './toolbox';
 import { MockLocalSend, type MockLocalSendScenario } from './localSend';
+import { MockUpdates, type MockNotesScenario, type MockUpdateScenario } from './updates';
 
 export type MockScenario = 'ready' | 'empty' | 'trust' | 'limited' | 'driverMissing' | 'iphoneOnly';
 
@@ -58,6 +59,10 @@ export interface MockOptions {
   longNames?: boolean;
   /** LocalSend on the phone (round 3): ?localsend=closed and so on. Default "ready". */
   localSend?: MockLocalSendScenario;
+  /** Updates (round 4): ?update=ready and so on (./updates.ts). Default "idle". */
+  update?: MockUpdateScenario;
+  /** Release notes (round 4): ?notes=hostile and so on. Default "owner". */
+  notes?: MockNotesScenario;
 }
 
 /** A JSON-RPC error raised by a mock handler. */
@@ -117,7 +122,6 @@ export class MockBackend {
   private readonly pc = new MockPc();
   /** What notifications.show was asked to show, for tests. */
   readonly notifications: NotificationShowParams[] = [];
-  private update: UpdateStatus = { state: 'idle', currentVersion: '0.1.0-mock', newVersion: null, percent: null, error: null, lastChecked: null };
 
   constructor(
     private readonly emit: <E extends EventName>(event: E, params: BridgeEvents[E]) => void,
@@ -127,6 +131,7 @@ export class MockBackend {
     this.indexing = options.indexing ?? true;
     this.settings = { ...defaultSettings, ...options.settings };
     this.localSend.scenario = options.localSend ?? 'ready';
+    this.updates.configure(options.update ?? 'idle', options.notes ?? 'owner');
     const scenario = options.scenario ?? 'ready';
     this.driverList = scenario === 'limited' || scenario === 'driverMissing' ? driversIosMissing : drivers;
 
@@ -338,9 +343,18 @@ export class MockBackend {
     badParams: (message) => badParams(message),
   });
 
+  /** Updates (round 4): ./updates.ts; its handlers end the table below. */
+  readonly updates = new MockUpdates({
+    emit: (event, params) => this.emit(event, params),
+    now: () => this.now(),
+    after: (ms, run) => this.after(ms, run),
+    fault: (code, message) => fault(code, message),
+    badParams: (message) => badParams(message),
+  });
+
   readonly handlers: { [M in MethodName]: Handler<M> } = {
     ...this.backups.handlers,
-    'app.hello': () => ({ version: '0.1.0-mock', isWebView: false }),
+    'app.hello': () => ({ version: this.updates.version, isWebView: false }),
     'drivers.status': () => this.driverList.map((d) => ({ ...d })),
     'device.list': () => [...this.devices.values()].map((d) => ({ ...d, capabilities: [...d.capabilities] })),
     'device.storage': ({ deviceId }) => {
@@ -584,15 +598,6 @@ export class MockBackend {
     }),
     // A plain browser can't start a native drag; the page falls back to its own drop handling.
     'shell.dragOut': () => ({ effect: 'none', droppedInside: null }),
-    'app.updateStatus': () => ({ ...this.update }),
-    'app.checkForUpdates': () => {
-      this.update = { ...this.update, state: 'upToDate', error: null, percent: null, lastChecked: new Date(this.now()).toISOString() };
-      this.emit('app.updateChanged', { ...this.update });
-      return { ...this.update };
-    },
-    'app.applyUpdate': () => {
-      throw fault('internal', 'No update has been downloaded yet.');
-    },
     // App files (round 2)
     'appFiles.list': ({ deviceId }) => {
       const device = this.requireReady(deviceId, 'appDocuments');
@@ -631,6 +636,7 @@ export class MockBackend {
     }),
     ...this.toolbox.handlers,
     ...this.localSend.handlers,
+    ...this.updates.handlers,
   };
 
   private pcCall<T>(run: () => T): T {

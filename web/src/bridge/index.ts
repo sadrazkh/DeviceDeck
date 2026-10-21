@@ -2,6 +2,7 @@ import { BridgeClient } from './client';
 import type { MockBackend, MockScenario } from './mock/backend';
 import { createMockTransport, type MockTransportOptions } from './mock/transport';
 import { MOCK_LOCALSEND_SCENARIOS } from './mock/localSend';
+import { MOCK_NOTES_SCENARIOS, MOCK_UPDATE_SCENARIOS } from './mock/updates';
 import { createWebViewTransport, getWebView } from './webview';
 
 export { BridgeClient, type FileSource } from './client';
@@ -34,6 +35,10 @@ export function mockOptionsFromUrl(search: string): MockTransportOptions {
     longNames: query.get('names') === 'long',
     // LocalSend on the phone (round 3): ?localsend=closed|opening|background|wifi|pin|reject|busy|quickSave|backgroundMidSend
     localSend: MOCK_LOCALSEND_SCENARIOS.find((s) => s === query.get('localsend')) ?? 'ready',
+    // Updates (round 4): ?update=checking|downloading|downloadThenReady|ready|error|rateLimited|upToDate|portable|portableNew|whatsNew
+    // and ?notes=english|hostile|missing|cache
+    update: MOCK_UPDATE_SCENARIOS.find((s) => s === query.get('update')) ?? 'idle',
+    notes: MOCK_NOTES_SCENARIOS.find((s) => s === query.get('notes')) ?? 'owner',
     settings: {
       ...(lang === 'fa' || lang === 'en' ? { language: lang } : {}),
       ...(theme === 'light' || theme === 'dark' || theme === 'system' ? { theme } : {}),

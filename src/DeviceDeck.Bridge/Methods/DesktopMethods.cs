@@ -7,7 +7,8 @@ using DeviceDeck.Core.Transfers;
 namespace DeviceDeck.Bridge.Methods;
 
 // Round 2, desktop: device.rename, transfers.retry / clear, notifications.show, pc.*, shell.dragOut / openFile,
-// app.updateStatus / checkForUpdates / applyUpdate (docs/bridge-contract.md, "Desktop").
+// app.updateStatus / checkForUpdates / applyUpdate (docs/bridge-contract.md, "Desktop"); round 4, updates:
+// app.releaseNotes / openReleasePage / whatsNewShown ("Updates you can see").
 
 public sealed record DeviceRenameParams(string DeviceId, string Name);
 
@@ -124,7 +125,23 @@ public static class DesktopMethods
             RequireDesktop(s).Updates.ApplyAndRestart();
             return Task.FromResult(Empty.Value);
         });
+        // Round 4: What's new, the portable copy's Download, and "What's new" once after an update.
+        rpc.Register<UpdateVersionParams, ReleaseNotes>("app.releaseNotes", (p, ct) =>
+            RequireDesktop(s).Updates.GetReleaseNotesAsync(RequireVersion(p.Version), ct));
+        rpc.Register<ReleasePageParams, Empty>("app.openReleasePage", (p, _) =>
+        {
+            RequireDesktop(s).Updates.OpenReleasePage(p.Version is null ? null : RequireVersion(p.Version));
+            return Task.FromResult(Empty.Value);
+        });
+        rpc.Register<UpdateVersionParams, Empty>("app.whatsNewShown", (p, _) =>
+        {
+            RequireDesktop(s).Updates.MarkWhatsNewShown(RequireVersion(p.Version));
+            return Task.FromResult(Empty.Value);
+        });
     }
+
+    private static string RequireVersion(string version) =>
+        ReleaseLinks.IsVersion(version) ? version : throw new ArgumentException("version must look like 0.4.0 (MAJOR.MINOR.PATCH, optionally -prerelease).");
 
     private static IDesktopShell RequireDesktop(BridgeServices s) =>
         s.Desktop ?? throw new DeviceException(DeviceErrorCodes.NotSupported, "This needs the DeviceDeck window.");

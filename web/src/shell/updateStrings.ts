@@ -1,0 +1,138 @@
+// Strings of "updates you can see" (round 4): the title-bar button, What's new, the banner and Settings › Updates.
+// Spread into en.ts and fa.ts; every English key has a Persian one. GitHub, Setup and zip stay as they are written.
+
+export const updatesEn = {
+  // Title bar
+  'update.button.ready': 'Update ready',
+  'update.button.readyLabel': 'DeviceDeck {version} is ready to install. See what’s new',
+  'update.button.available': 'v{version} on GitHub',
+  'update.button.availableLabel': 'DeviceDeck {version} is on GitHub. See what’s new and download it',
+  'update.downloading': 'Downloading {percent}',
+  'update.downloadingLabel': 'Downloading DeviceDeck {version}: {percent}',
+
+  // What's new
+  'update.whatsNew.title': 'What’s new in v{version}',
+  'update.whatsNew.readyLead': 'Version {version} is downloaded. Restarting DeviceDeck installs it in a few seconds.',
+  'update.whatsNew.busy': '{count, plural, one {A copy is still running} other {# copies are still running}}: restarting stops it. Choose Later to let it finish.',
+  'update.whatsNew.availableLead': 'Version {version} is on GitHub. This copy runs from the zip and can’t update itself.',
+  'update.whatsNew.availableHint': 'Download opens the release page on GitHub. There, {setup} installs a copy that updates itself; the .zip is another portable copy.',
+  'update.whatsNew.installedLead': 'DeviceDeck is now version {version}.',
+  'update.whatsNew.currentLead': 'This is the version you have.',
+  'update.whatsNew.restart': 'Restart and update',
+  'update.whatsNew.restarting': 'Restarting…',
+  'update.whatsNew.later': 'Later',
+  'update.whatsNew.download': 'Download',
+  'update.notes.label': 'Release notes',
+  'update.notes.loading': 'Loading the release notes…',
+  'update.notes.missing': 'The release notes couldn’t be loaded.',
+  'update.notes.link': 'Read them on GitHub',
+  'update.notes.fromCache': 'GitHub couldn’t be reached; these are the notes saved last time.',
+  'update.notes.englishOnly': 'These notes are in English only.',
+
+  // The in-app banner, the first time an update is ready (or, for the zip, out)
+  'update.banner.ready': 'DeviceDeck {version} is ready',
+  'update.banner.readyBody': 'Restart DeviceDeck when it suits you. The Update ready button at the top stays until then.',
+  'update.banner.available': 'DeviceDeck {version} is on GitHub',
+  'update.banner.availableBody': 'This copy runs from the zip and can’t update itself.',
+  'update.banner.whatsNew': 'What’s new',
+
+  // Settings › Updates
+  'update.settings.version': 'Version',
+  'update.settings.channel': 'Channel',
+  'update.settings.install': 'Installed as',
+  'update.settings.lastCheck': 'Last check',
+  'update.settings.never': 'Not yet',
+  'update.settings.lastCheckValue': '{when} · {result}',
+  'update.channel.stable': 'Stable',
+  'update.channel.prerelease': 'Pre-release',
+  'update.install.setup': 'Setup (updates itself)',
+  'update.install.portable': 'Portable zip (checks only)',
+  'update.result.upToDate': 'up to date',
+  'update.result.newVersion': 'found version {version}',
+  'update.result.newVersionPlain': 'found a new version',
+  'update.result.error': 'couldn’t reach GitHub',
+  'update.status.checking': 'Looking for a new version…',
+  'update.status.downloading': 'Downloading version {version}… {percent}',
+  'update.status.ready': 'Version {version} is ready. Restart DeviceDeck to install it.',
+  'update.status.available': 'Version {version} is on GitHub. This copy can’t update itself: download it from the release page.',
+  'update.status.upToDate': 'DeviceDeck {version} is up to date.',
+  'update.status.offline': 'Couldn’t reach GitHub. Check the connection and try again.',
+  'update.status.rateLimited': 'GitHub’s limit for update checks from this network is used up. Try again after {time}.',
+  'update.settings.check': 'Check now',
+  'update.settings.whatsNew': 'What’s new',
+  'update.settings.restart': 'Restart and update',
+  'update.settings.download': 'Download',
+  'update.settings.auto': 'Look for new versions automatically',
+  'update.settings.autoSetup':
+    'DeviceDeck asks GitHub a minute after it starts and then every {hours} hours. A new version downloads in the background and is installed when you restart DeviceDeck; nothing restarts by itself.',
+  'update.settings.autoPortable':
+    'DeviceDeck asks GitHub a minute after it starts and then every {hours} hours, and tells you when a new version is out. This copy runs from the zip and can’t update itself; the Setup on the release page installs one that does.',
+} as const;
+
+export const updatesFa: Record<keyof typeof updatesEn, string> = {
+  // Title bar
+  'update.button.ready': 'به‌روزرسانی آماده است',
+  'update.button.readyLabel': 'DeviceDeck {version} آمادهٔ نصب است. تازه‌ها را ببینید',
+  'update.button.available': 'نسخهٔ {version} در GitHub',
+  'update.button.availableLabel': 'DeviceDeck {version} در GitHub منتشر شده است. تازه‌ها را ببینید و دانلودش کنید',
+  'update.downloading': 'در حال دریافت {percent}',
+  'update.downloadingLabel': 'در حال دریافت DeviceDeck {version}: {percent}',
+
+  // What's new
+  'update.whatsNew.title': 'تازه‌های نسخهٔ {version}',
+  'update.whatsNew.readyLead': 'نسخهٔ {version} دریافت شده است. با راه‌اندازی دوبارهٔ DeviceDeck در چند ثانیه نصب می‌شود.',
+  'update.whatsNew.busy': '{count, plural, one {یک کپی هنوز در جریان است} other {# کپی هنوز در جریان است}}؛ راه‌اندازی دوباره آن را متوقف می‌کند. برای تمام شدنش «بعداً» را بزنید.',
+  'update.whatsNew.availableLead': 'نسخهٔ {version} در GitHub منتشر شده است. این نسخه از فایل zip اجرا می‌شود و خودش به‌روز نمی‌شود.',
+  'update.whatsNew.availableHint': '«دانلود» صفحهٔ این نسخه را در GitHub باز می‌کند. آنجا {setup} نسخه‌ای نصب می‌کند که خودش به‌روز می‌شود؛ فایل zip یک نسخهٔ قابل‌حمل دیگر است.',
+  'update.whatsNew.installedLead': 'DeviceDeck به نسخهٔ {version} به‌روز شد.',
+  'update.whatsNew.currentLead': 'این همان نسخه‌ای است که دارید.',
+  'update.whatsNew.restart': 'راه‌اندازی دوباره و به‌روزرسانی',
+  'update.whatsNew.restarting': 'در حال راه‌اندازی دوباره…',
+  'update.whatsNew.later': 'بعداً',
+  'update.whatsNew.download': 'دانلود',
+  'update.notes.label': 'یادداشت‌های انتشار',
+  'update.notes.loading': 'در حال آوردن یادداشت‌های انتشار…',
+  'update.notes.missing': 'یادداشت‌های این نسخه باز نشد.',
+  'update.notes.link': 'خواندن در GitHub',
+  'update.notes.fromCache': 'به GitHub وصل نشد؛ این یادداشت‌ها از دفعهٔ قبل ذخیره شده‌اند.',
+  'update.notes.englishOnly': 'این یادداشت‌ها فقط به انگلیسی هستند.',
+
+  // The in-app banner
+  'update.banner.ready': 'DeviceDeck {version} آماده است',
+  'update.banner.readyBody': 'هر وقت راحت بودید DeviceDeck را دوباره راه‌اندازی کنید. دکمهٔ «به‌روزرسانی آماده است» بالای پنجره تا آن موقع می‌ماند.',
+  'update.banner.available': 'DeviceDeck {version} در GitHub منتشر شد',
+  'update.banner.availableBody': 'این نسخه از فایل zip اجرا می‌شود و خودش به‌روز نمی‌شود.',
+  'update.banner.whatsNew': 'تازه‌ها',
+
+  // Settings › Updates
+  'update.settings.version': 'نسخه',
+  'update.settings.channel': 'کانال',
+  'update.settings.install': 'نوع نصب',
+  'update.settings.lastCheck': 'آخرین بررسی',
+  'update.settings.never': 'هنوز نه',
+  'update.settings.lastCheckValue': '{when} · {result}',
+  'update.channel.stable': 'پایدار',
+  'update.channel.prerelease': 'پیش‌انتشار',
+  'update.install.setup': 'با Setup (خودش به‌روز می‌شود)',
+  'update.install.portable': 'فایل zip قابل‌حمل (فقط بررسی می‌کند)',
+  'update.result.upToDate': 'به‌روز بود',
+  'update.result.newVersion': 'نسخهٔ {version} پیدا شد',
+  'update.result.newVersionPlain': 'نسخهٔ تازه پیدا شد',
+  'update.result.error': 'به GitHub وصل نشد',
+  'update.status.checking': 'در حال جست‌وجوی نسخهٔ تازه…',
+  'update.status.downloading': 'در حال دریافت نسخهٔ {version}… {percent}',
+  'update.status.ready': 'نسخهٔ {version} آماده است. با راه‌اندازی دوبارهٔ DeviceDeck نصب می‌شود.',
+  'update.status.available': 'نسخهٔ {version} در GitHub منتشر شده است. این نسخه خودش به‌روز نمی‌شود؛ از صفحهٔ انتشار دانلودش کنید.',
+  'update.status.upToDate': 'DeviceDeck {version} به‌روز است.',
+  'update.status.offline': 'به GitHub وصل نشد. اتصال را بررسی کنید و دوباره امتحان کنید.',
+  'update.status.rateLimited': 'سقف بررسی به‌روزرسانی GitHub برای این شبکه پر شده است. بعد از {time} دوباره امتحان کنید.',
+  'update.settings.check': 'الان بررسی کن',
+  'update.settings.whatsNew': 'تازه‌ها',
+  'update.settings.restart': 'راه‌اندازی دوباره و به‌روزرسانی',
+  'update.settings.download': 'دانلود',
+  'update.settings.auto': 'جست‌وجوی خودکار نسخهٔ تازه',
+  'update.settings.autoSetup':
+    'DeviceDeck یک دقیقه بعد از باز شدن و بعد هر {hours} ساعت از GitHub می‌پرسد. نسخهٔ تازه در پس‌زمینه دریافت می‌شود و با راه‌اندازی دوبارهٔ DeviceDeck نصب می‌شود؛ هیچ چیز خودبه‌خود دوباره راه‌اندازی نمی‌شود.',
+  'update.settings.autoPortable':
+    'DeviceDeck یک دقیقه بعد از باز شدن و بعد هر {hours} ساعت از GitHub می‌پرسد و وقتی نسخهٔ تازه منتشر شود خبرتان می‌کند. این نسخه از فایل zip اجرا می‌شود و خودش به‌روز نمی‌شود؛ Setup در صفحهٔ انتشار نسخه‌ای نصب می‌کند که خودش به‌روز می‌شود.',
+};

@@ -8,6 +8,7 @@ import { useI18n } from '../i18n';
 import { useUi } from '../state/ui';
 import styles from './Shell.module.css';
 import { TransferPill } from './TransferPill';
+import { UpdateButton } from './UpdateButton';
 
 export function TitleBar() {
   const { t } = useI18n();
@@ -49,7 +50,7 @@ export function TitleBar() {
       />
 
       <div className={styles.titleSpacer} />
-      <button type="button" className={`${styles.search} no-drag`} onClick={() => openPalette(true)} aria-keyshortcuts="Control+K">
+      <button type="button" className={`${styles.search} no-drag`} onClick={() => openPalette(true)} aria-keyshortcuts="Control+K" title={t('shell.search')}>
         <span className={styles.searchIcon} aria-hidden>
           <SearchRegular />
         </span>
@@ -58,6 +59,7 @@ export function TitleBar() {
       </button>
       <div className={styles.titleSpacer} />
 
+      <UpdateButton />
       <TransferPill />
 
       {client.kind === 'mock' ? (

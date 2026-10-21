@@ -1,5 +1,5 @@
-// Desktop events and update status: a click on a Windows notification selects its phone; app.updateChanged
-// keeps the Settings card's update status live.
+// Desktop events and update status: a click on a Windows notification selects its phone (or, for the update's, opens
+// What's new); app.updateChanged keeps the title-bar button, the banner and the Settings card live.
 
 import { useQuery, useQueryClient } from '@tanstack/react-query';
 import { useEffect } from 'react';
@@ -7,6 +7,7 @@ import type { DeviceSummary, UpdateStatus } from '../bridge/types';
 import { useBridge, useClient } from '../app/bridgeContext';
 import { keys } from '../app/queries';
 import { useUi } from '../state/ui';
+import { offerOf, useWhatsNew } from './updates';
 
 export const updateKey = ['app.updateStatus'] as const;
 
@@ -21,7 +22,10 @@ export function useDesktopEvents() {
   const queryClient = useQueryClient();
   useEffect(() => {
     const offs = [
-      client.on('notification.activated', ({ deviceId }) => {
+      client.on('notification.activated', ({ deviceId, tag, command }) => {
+        // The update's notification itself (not its Restart or Download button): show what the update brings.
+        const offer = offerOf(queryClient.getQueryData<UpdateStatus>(updateKey));
+        if (tag === 'app:update' && command === 'open' && offer) useWhatsNew.getState().show({ version: offer.version, reason: 'offer' });
         // The host has brought the window to the front; show the phone the notification was about.
         if (deviceId && queryClient.getQueryData<DeviceSummary[]>(keys.devices)?.some((d) => d.id === deviceId)) {
           useUi.getState().selectDevice(deviceId);

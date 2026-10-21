@@ -26,6 +26,7 @@ import styles from './Shell.module.css';
 import { TitleBar } from './TitleBar';
 import { Toaster } from './Toaster';
 import { TransferDrawer } from './TransferDrawer';
+import { WhatsNewDialog } from './WhatsNewDialog';
 
 function Screen() {
   const device = useSelectedDevice();
@@ -103,6 +104,7 @@ export function AppShell() {
           <Toaster />
           <CommandPalette />
           <ConflictDialog />
+          <WhatsNewDialog />
         </div>
       </RadixTooltip.Provider>
     </Direction.Provider>

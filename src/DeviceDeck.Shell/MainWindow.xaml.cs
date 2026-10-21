@@ -106,12 +106,12 @@ public sealed partial class MainWindow : Window
         UpdateTray(host.Settings.Current);
         _notifications = new ShellNotifications("DeviceDeck", Path.Combine(AppContext.BaseDirectory, "Assets", "DeviceDeck.png"),
             () => DispatcherQueue.TryEnqueue(BringToFront), action => DispatcherQueue.TryEnqueue(() => action()), () => _tray);
-        _notifications.Activated += OnNotificationActivated;
         _deviceNotifier = new DeviceNotifier(host.Hub, host.Settings, _notifications, () => Tray.IsInFront(_hwnd));
         _photoBackupWatcher = new DeviceDeck.Core.Photos.PhotoBackupWatcher(host.Hub, host.PhotoBackup, _notifications, host.Settings,
             new DeviceDeck.Core.Photos.PhotoBackupWatcherOptions { OpenFolder = folder => new ShellServices(DispatcherQueue, AppWindow.Id).RevealInExplorer(folder) });
         _photoBackupWatcher.CheckFailed += (_, ex) => ShellLog.Error("The photo backup's look at a connected phone failed.", ex);
-        _updates = new UpdateService(HostServices.Version, host.Settings, _notifications, Quit);
+        // Before InitializeWebViewAsync: UpdateSetup tells a first run from an update by the WebView2 folder.
+        _updates = UpdateSetup.Create(host, _notifications, Quit);
         _updates.Start();
         var dragOut = new DragOutService(host.Hub, host.Transfers, host.DragOuts, host.DragOutStaging,
             action => DispatcherQueue.TryEnqueue(() => action()), _hwnd, () => Scale);
@@ -197,21 +197,6 @@ public sealed partial class MainWindow : Window
         if (_tray is not null)
         {
             _tray.Text = text;
-        }
-    }
-
-    private void OnNotificationActivated(object? sender, NotificationActivation activation)
-    {
-        if (activation.Command == NotificationCommands.ApplyUpdate)
-        {
-            try
-            {
-                _updates.ApplyAndRestart();
-            }
-            catch (Exception ex)
-            {
-                ShellLog.Error("The update could not be applied.", ex);
-            }
         }
     }
 
