@@ -59,7 +59,7 @@ for (const variant of ['light', 'dark', 'rtl'] as const) {
       await expect(page.locator('html')).toHaveAttribute('dir', 'rtl');
     }
     // Found over USB: installing and opening are done; Accept comes next.
-    expect(await stepStates(dialog)).toEqual(['done', 'done', 'current', 'todo']);
+    await expect.poll(() => stepStates(dialog)).toEqual(['done', 'done', 'current', 'todo']);
     await addFiles(dialog);
     await settle(page);
     expect(await layoutProblems(page, '[role=dialog]')).toEqual([]);
@@ -76,7 +76,7 @@ for (const variant of ['light', 'dark', 'rtl'] as const) {
       await expect(dialog.getByTestId('localsend-keep-open')).toHaveText('Keep LocalSend open on your iPhone until this says Done.');
     }
     if (variant === 'rtl') await expect(dialog.getByTestId('localsend-keep-open')).toContainText('LocalSend را روی آیفون باز نگه دارید');
-    expect(await stepStates(dialog)).toEqual(['done', 'done', 'current', 'todo']);
+    await expect.poll(() => stepStates(dialog)).toEqual(['done', 'done', 'current', 'todo']);
     await settle(page);
     expect(await layoutProblems(page, '[role=dialog]')).toEqual([]);
     if (variant !== 'rtl') expect(await contrastProblems(page)).toEqual([]);
@@ -84,7 +84,7 @@ for (const variant of ['light', 'dark', 'rtl'] as const) {
 
     await expect(progress).toHaveAttribute('data-state', 'done', { timeout: 20_000 });
     await expect(dialog.getByTestId('localsend-keep-open')).toBeHidden();
-    expect(await stepStates(dialog)).toEqual(['done', 'done', 'done', 'done']);
+    await expect.poll(() => stepStates(dialog)).toEqual(['done', 'done', 'done', 'done']);
     if (variant === 'light') await expect(progress).toContainText('Done: 2 files are in Photos now.');
     if (variant === 'rtl') await expect(progress).toContainText('اکنون در Photos است');
     await settle(page);
@@ -110,7 +110,7 @@ for (const variant of ['light', 'rtl'] as const) {
       await expect(progress).toContainText('LocalSend به پس‌زمینه رفت: دوباره بازش کنید');
     }
     // Step 2 (keep it on screen) is the one to fix.
-    expect(await stepStates(dialog)).toEqual(['done', 'warn', 'todo', 'todo']);
+    await expect.poll(() => stepStates(dialog)).toEqual(['done', 'warn', 'todo', 'todo']);
     await expect(dialog.getByTestId('localsend-keep-open')).toBeHidden();
     await settle(page);
     expect(await layoutProblems(page, '[role=dialog]')).toEqual([]);
@@ -118,7 +118,7 @@ for (const variant of ['light', 'rtl'] as const) {
     await shot(page, `localsend-guide-background-${variant}`);
     await dialog.getByTestId('localsend-retry').click();
     await expect(progress).toHaveAttribute('data-state', 'done', { timeout: 20_000 });
-    expect(await stepStates(dialog)).toEqual(['done', 'done', 'done', 'done']);
+    await expect.poll(() => stepStates(dialog)).toEqual(['done', 'done', 'done', 'done']);
     consoleWatch.assertClean();
   });
 }
@@ -143,7 +143,7 @@ test('LocalSend not open yet: the walkthrough starts at installing it', async ({
   const consoleWatch = watchConsole(page);
   const dialog = await openDialog(page, 'light', 'closed');
   await expect(dialog.getByTestId('localsend-status')).toHaveAttribute('data-state', 'notListening');
-  expect(await stepStates(dialog)).toEqual(['current', 'todo', 'todo', 'todo']);
+  await expect.poll(() => stepStates(dialog)).toEqual(['current', 'todo', 'todo', 'todo']);
   consoleWatch.assertClean();
 });
 
