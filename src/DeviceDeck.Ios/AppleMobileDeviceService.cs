@@ -34,11 +34,14 @@ public static class AppleMobileDeviceService
         {
             if (!installed)
                 return new DriverStatus("ios", DriverState.Missing, null,
-                    "Apple Mobile Device Support is not installed. Install Apple Devices from the Microsoft Store (or iTunes).");
+                    "Apple Mobile Device Support is not installed. Install Apple Devices from the Microsoft Store (or iTunes).")
+                { Reason = DriverReasons.AmdsMissing };
             if (ex is DeviceException { Code: DeviceErrorCodes.DriverMissing })
                 return new DriverStatus("ios", DriverState.Stopped, version,
-                    "Apple Mobile Device Service is installed but not answering. Start it in Services, or reinstall Apple Devices.");
-            return new DriverStatus("ios", DriverState.Error, version, "Apple Mobile Device Service answered unexpectedly: " + ex.Message);
+                    "Apple Mobile Device Service is installed but not answering. Start it in Services, or reinstall Apple Devices.")
+                { Reason = DriverReasons.AmdsStopped };
+            return new DriverStatus("ios", DriverState.Error, version, "Apple Mobile Device Service answered unexpectedly: " + ex.Message)
+            { Reason = DriverReasons.AmdsError };
         }
     }
 
