@@ -31,20 +31,25 @@ public static class PhotoDeletes
     /// <summary>
     /// Deletes exactly these items. Every item is checked against the library first and nothing is deleted unless all of
     /// them match; then they go in small batches, stopping at the first one that fails. One result per item, in order.
+    /// <paramref name="ct"/> cancels outright until the first batch goes; after that the delete stops before the next
+    /// batch and the rest say not tried (see <see cref="IPhotoDeleter.DeleteConfirmedAsync"/>).
     /// </summary>
-    public static async Task<IReadOnlyList<PhotoDeleteResult>> DeleteItemsAsync(IDevice device, IReadOnlyList<PhotoDeleteItem> items, CancellationToken ct)
+    public static async Task<IReadOnlyList<PhotoDeleteResult>> DeleteItemsAsync(IDevice device, IReadOnlyList<PhotoDeleteItem> items,
+        IPhotoDeleteObserver? observer, CancellationToken ct)
     {
         if (items.Count == 0)
         {
             return [];
         }
 
+        observer ??= NoPhotoDeleteObserver.Instance;
         if (device is IPhotoDeleter deleter)
         {
-            return await deleter.DeleteConfirmedAsync(items, ct).ConfigureAwait(false);
+            return await deleter.DeleteConfirmedAsync(items, observer, ct).ConfigureAwait(false);
         }
 
         var results = new PhotoDeleteResult?[items.Count];
+        observer.Stage(PhotoDeleteStage.Reading, 0, items.Count);
         var library = await ReadLibraryAsync(device, ct).ConfigureAwait(false);
         for (var i = 0; i < items.Count; i++)
         {
@@ -58,26 +63,36 @@ public static class PhotoDeletes
             }
         }
 
+        observer.Stage(PhotoDeleteStage.Reading, items.Count, items.Count);
         if (results.Any(r => r is not null))
         {
             return Fill(items, results, library, "Nothing was deleted, because another selected item didn't match.");
         }
 
+        ct.ThrowIfCancellationRequested();
+        var done = 0;
+        observer.Stage(PhotoDeleteStage.Deleting, 0, items.Count);
         for (var start = 0; start < items.Count; start += LibraryBatchSize)
         {
-            ct.ThrowIfCancellationRequested();
+            if (ct.IsCancellationRequested)
+            {
+                return Fill(items, results, library, Cancelled);
+            }
+
             var batch = Enumerable.Range(start, Math.Min(LibraryBatchSize, items.Count - start)).ToList();
+            observer.Deleting(batch);
             DeviceException? error = null;
             try
             {
-                await device.Photos.DeleteAsync(batch.Select(i => items[i].Id).ToList(), ct).ConfigureAwait(false);
+                // Started batches finish: a cancel waits for the phone's answer instead of leaving the batch unknown.
+                await device.Photos.DeleteAsync(batch.Select(i => items[i].Id).ToList(), CancellationToken.None).ConfigureAwait(false);
             }
             catch (DeviceException ex) when (ex.Code is not (DeviceErrorCodes.Disconnected or DeviceErrorCodes.TrustRequired or DeviceErrorCodes.Unauthorized))
             {
                 error = ex;
             }
 
-            var after = await ReadLibraryAsync(device, ct).ConfigureAwait(false);
+            var after = await ReadLibraryAsync(device, CancellationToken.None).ConfigureAwait(false);
             var stop = false;
             foreach (var i in batch)
             {
@@ -92,8 +107,12 @@ public static class PhotoDeletes
                         error?.Message ?? "The phone still lists it after the delete.");
                     stop = true;
                 }
+
+                observer.Result(i, results[i]!);
             }
 
+            done += batch.Count;
+            observer.Stage(PhotoDeleteStage.Deleting, done, items.Count);
             if (stop)
             {
                 break;
@@ -101,6 +120,58 @@ public static class PhotoDeletes
         }
 
         return Fill(items, results, library, "Not tried: the delete stopped at an earlier item.");
+    }
+
+    /// <summary>What an item not reached says when the delete was cancelled part-way.</summary>
+    public const string Cancelled = "Not tried: the delete was stopped.";
+
+    /// <summary>
+    /// Waits for copy jobs to finish. True only when every job is done with every item copied; false as soon as one fails,
+    /// is cancelled, or waits for an unplugged phone (it carries on by itself when the phone is back, but nothing is
+    /// deleted). <paramref name="progress"/> hears items copied of all the jobs' items.
+    /// </summary>
+    public static async Task<bool> WaitForCopiesAsync(TransferQueue transfers, IReadOnlyList<string> jobIds, Action<int, int>? progress, CancellationToken ct)
+    {
+        using var signal = new SemaphoreSlim(0);
+        var watched = jobIds.ToHashSet(StringComparer.Ordinal);
+        void OnJob(object? sender, TransferJob job)
+        {
+            if (watched.Contains(job.Id))
+            {
+                try
+                {
+                    signal.Release();
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+            }
+        }
+
+        transfers.JobUpdated += OnJob;
+        try
+        {
+            while (true)
+            {
+                var jobs = jobIds.Select(transfers.Get).ToList();
+                if (jobs.Any(j => j is null || j.State is TransferState.Failed or TransferState.Cancelled or TransferState.WaitingForDevice or TransferState.NeedsDecision))
+                {
+                    return false;
+                }
+
+                progress?.Invoke(jobs.Sum(j => j!.DoneItems), jobs.Sum(j => j!.TotalItems));
+                if (jobs.All(j => j!.State == TransferState.Done))
+                {
+                    return jobs.All(j => j!.FailedItems == 0 && j.DoneItems == j.TotalItems);
+                }
+
+                await signal.WaitAsync(TimeSpan.FromSeconds(1), ct).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            transfers.JobUpdated -= OnJob;
+        }
     }
 
     /// <summary>

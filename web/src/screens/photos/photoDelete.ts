@@ -2,13 +2,12 @@
 // confirmed delete with its per-item results. Used by Photos and Clean-up.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import type { PhotoDeleteBlock, PhotoDeleteReport, PhotoDeleteSupport } from '../../bridge/photoDeleteTypes';
+import type { PhotoDeleteBlock, PhotoDeleteStarted, PhotoDeleteSupport } from '../../bridge/photoDeleteTypes';
 import type { DeviceSummary } from '../../bridge/types';
 import { useActions } from '../../app/actions';
 import { useClient } from '../../app/bridgeContext';
 import { keys } from '../../app/queries';
 import type { MessageKey } from '../../i18n';
-import { useUi } from '../../state/ui';
 import { backupKeys } from './backupQueries';
 
 export const photoDeleteKey = (deviceId: string) => ['photos.deleteSupport', deviceId] as const;
@@ -58,18 +57,22 @@ export function useRecheckPhotoDelete(device: DeviceSummary) {
   });
 }
 
-/** The confirmed delete. Resolves with the report (per item), or null after showing the error. */
+/** A delete's copy-first folder until its copy jobs exist (their rows then offer Show in Explorer). */
+export const copyDestinations = new Map<string, string>();
+
+/**
+ * The confirmed delete (v0.4.1: a transfer job). Resolves as soon as the job is queued, or with null after showing
+ * the error (a phone that can't delete, bad input). The Transfers drawer shows the job; it ends with a toast.
+ */
 export function useDeletePhotos(device: DeviceSummary) {
   const client = useClient();
-  const queryClient = useQueryClient();
   const actions = useActions();
-  return async (items: { id: string; size: number }[], copyFirstTo: string | null): Promise<PhotoDeleteReport | null> => {
+  return async (items: { id: string; size: number }[], copyFirstTo: string | null): Promise<PhotoDeleteStarted | null> => {
     try {
       const expectedBytes = items.reduce((n, i) => n + i.size, 0);
-      const report = await client.call('photos.deleteItems', { deviceId: device.id, items, expectedBytes, copyFirstTo });
-      for (const jobId of report.copyJobIds) if (copyFirstTo) useUi.getState().rememberDestination(jobId, copyFirstTo);
-      refreshAfterDelete(queryClient, device.id);
-      return report;
+      const started = await client.call('photos.deleteItems', { deviceId: device.id, items, expectedBytes, copyFirstTo });
+      if (copyFirstTo && started.jobId) copyDestinations.set(started.jobId, copyFirstTo);
+      return started;
     } catch (error) {
       actions.fail(error);
       return null;

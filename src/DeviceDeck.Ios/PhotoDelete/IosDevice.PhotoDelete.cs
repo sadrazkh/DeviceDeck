@@ -31,7 +31,7 @@ public sealed partial class IosDevice : IPhotoDeleter
         return support;
     }
 
-    public Task<IReadOnlyList<PhotoDeleteResult>> DeleteConfirmedAsync(IReadOnlyList<PhotoDeleteItem> items, CancellationToken ct)
+    public Task<IReadOnlyList<PhotoDeleteResult>> DeleteConfirmedAsync(IReadOnlyList<PhotoDeleteItem> items, IPhotoDeleteObserver? observer, CancellationToken ct)
     {
         if (!_photosDeletable)
         {
@@ -39,7 +39,7 @@ public sealed partial class IosDevice : IPhotoDeleter
             throw new DeviceException(DeviceErrorCodes.NotSupported, $"Photos on this iPhone can't be deleted from the PC right now ({current.Reason}). {current.Detail}".Trim());
         }
 
-        return UseAsync(_ => PhotoDeleter.DeleteAsync(items, ct));
+        return UseAsync(_ => PhotoDeleter.DeleteAsync(items, observer, ct));
     }
 
     /// <summary>IPhotoLibrary.DeleteAsync: the ids at the sizes the library lists now; throws at the first one not deleted.</summary>
@@ -47,7 +47,7 @@ public sealed partial class IosDevice : IPhotoDeleter
     {
         if (!_photosDeletable)
         {
-            await DeleteConfirmedAsync([], ct).ConfigureAwait(false); // throws why
+            await DeleteConfirmedAsync([], null, ct).ConfigureAwait(false); // throws why
         }
 
         var photos = (IosPhotoLibrary)Photos;
@@ -68,7 +68,7 @@ public sealed partial class IosDevice : IPhotoDeleter
             return;
         }
 
-        var results = await DeleteConfirmedAsync(items, ct).ConfigureAwait(false);
+        var results = await DeleteConfirmedAsync(items, null, ct).ConfigureAwait(false);
         if (results.FirstOrDefault(r => r.Outcome != PhotoDeleteOutcome.Deleted) is { } first)
         {
             var done = results.Count(r => r.Outcome == PhotoDeleteOutcome.Deleted);

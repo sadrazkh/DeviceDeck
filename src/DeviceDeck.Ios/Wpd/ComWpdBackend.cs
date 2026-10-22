@@ -90,6 +90,8 @@ public sealed class ComWpdBackend : IWpdBackend
         private readonly IPortableDeviceContent _content;
         private readonly IPortableDeviceProperties _properties;
         private readonly IPortableDeviceKeyCollection _objectKeys;
+        private IPortableDeviceKeyCollection? _bulkKeys;
+        private bool _bulkUnsupported;
         private bool _disposed;
 
         public Connection(IPortableDevice device)
@@ -181,27 +183,133 @@ public sealed class ComWpdBackend : IWpdBackend
 
             try
             {
-                var contentType = Read(values, WpdKeys.ObjectContentType) as Guid?;
-                var kind = contentType == WpdKeys.ContentTypeFolder ? WpdObjectKind.Folder
-                    : contentType == WpdKeys.ContentTypeFunctionalObject ? WpdObjectKind.Functional
-                    : WpdObjectKind.File;
-                var original = Read(values, WpdKeys.ObjectOriginalFileName) as string;
-                var name = Read(values, WpdKeys.ObjectName) as string;
-                return new WpdObject(
-                    objectId,
-                    Read(values, WpdKeys.ObjectParentId) as string,
-                    string.IsNullOrEmpty(original) ? name : original,
-                    kind,
-                    Read(values, WpdKeys.ObjectSize) is long size ? size : null,
-                    Read(values, WpdKeys.ObjectCanDelete) as bool?,
-                    Read(values, WpdKeys.ObjectDateCreated) is DateTimeOffset created ? created : null,
-                    Read(values, WpdKeys.ObjectPersistentUniqueId) as string);
+                return ObjectFrom(objectId, values);
             }
             finally
             {
                 Marshal.ReleaseComObject(values);
             }
         }, "read an object on the iPhone");
+
+        public IReadOnlyList<WpdObject>? GetMany(IReadOnlyList<string> objectIds, Action<int>? progress, CancellationToken ct)
+        {
+            if (_bulkUnsupported)
+            {
+                return null;
+            }
+
+            if (objectIds.Count == 0)
+            {
+                return [];
+            }
+
+            IPortableDevicePropertiesBulk bulk;
+            try
+            {
+                bulk = (IPortableDevicePropertiesBulk)_properties;
+            }
+            catch (InvalidCastException)
+            {
+                // The driver's properties object doesn't do bulk (E_NOINTERFACE).
+                _bulkUnsupported = true;
+                return null;
+            }
+
+            return Guard(() =>
+            {
+                _bulkKeys ??= Keys(WpdKeys.ObjectId, WpdKeys.ObjectParentId, WpdKeys.ObjectName, WpdKeys.ObjectOriginalFileName,
+                    WpdKeys.ObjectContentType, WpdKeys.ObjectSize, WpdKeys.ObjectCanDelete, WpdKeys.ObjectDateCreated, WpdKeys.ObjectPersistentUniqueId);
+                var ids = Create<IPortableDevicePropVariantCollection>(WpdClsids.PortableDevicePropVariantCollection);
+                try
+                {
+                    foreach (var id in objectIds)
+                    {
+                        var value = new PropVariant { Vt = PropVariant.VtLpwstr, Pointer = Marshal.StringToCoTaskMemUni(id) };
+                        try
+                        {
+                            ids.Add(ref value);
+                        }
+                        finally
+                        {
+                            WpdNative.PropVariantClear(ref value);
+                        }
+                    }
+
+                    using var callback = new BulkCallback(progress);
+                    Guid context;
+                    try
+                    {
+                        bulk.QueueGetValuesByObjectList(ids, _bulkKeys, callback, out context);
+                    }
+                    catch (COMException ex) when (ex.HResult is WpdErrors.NotImplemented or WpdErrors.NotSupported)
+                    {
+                        _bulkUnsupported = true;
+                        return null;
+                    }
+
+                    bulk.Start(ref context);
+                    var quiet = System.Diagnostics.Stopwatch.StartNew();
+                    var seen = 0;
+                    while (!callback.Ended.Wait(TimeSpan.FromMilliseconds(100)))
+                    {
+                        if (callback.Count != seen)
+                        {
+                            seen = callback.Count;
+                            quiet.Restart();
+                        }
+
+                        // A driver that stops answering: given up, and the objects are read one by one.
+                        if (quiet.Elapsed > BulkStall)
+                        {
+                            try
+                            {
+                                bulk.Cancel(ref context);
+                            }
+                            catch (COMException)
+                            {
+                            }
+
+                            callback.Ended.Wait(TimeSpan.FromSeconds(5));
+                            throw new WpdException("Windows stopped answering a bulk read of the iPhone's objects.", WpdErrors.Timeout);
+                        }
+
+                        if (ct.IsCancellationRequested)
+                        {
+                            try
+                            {
+                                bulk.Cancel(ref context);
+                            }
+                            catch (COMException)
+                            {
+                                // It ended meanwhile.
+                            }
+
+                            callback.Ended.Wait(TimeSpan.FromSeconds(10));
+                            ct.ThrowIfCancellationRequested();
+                        }
+                    }
+
+                    var objects = callback.Objects;
+                    if (callback.Status is WpdErrors.NotImplemented or WpdErrors.NotSupported && objects.Count == 0)
+                    {
+                        _bulkUnsupported = true;
+                        return null;
+                    }
+
+                    // An answer that stopped part-way still counts for what came back; the caller reads the rest one by one.
+                    if (callback.Status < 0 && objects.Count == 0)
+                    {
+                        throw new WpdException($"Windows couldn't read the iPhone's objects: {WpdErrors.Describe(callback.Status)}.", callback.Status);
+                    }
+
+                    return (IReadOnlyList<WpdObject>?)objects;
+                }
+                finally
+                {
+                    Marshal.ReleaseComObject(ids);
+                }
+            }, "read the iPhone's objects");
+        }
 
         public IReadOnlyList<(Guid Category, uint Id)> SupportedCommands() => Guard<IReadOnlyList<(Guid, uint)>>(() =>
         {
@@ -357,9 +465,202 @@ public sealed class ComWpdBackend : IWpdBackend
             }
 
             Marshal.ReleaseComObject(_objectKeys);
+            if (_bulkKeys is not null)
+            {
+                Marshal.ReleaseComObject(_bulkKeys);
+            }
+
             Marshal.ReleaseComObject(_properties);
             Marshal.ReleaseComObject(_content);
             Marshal.ReleaseComObject(_device);
+        }
+    }
+
+    /// <summary>How long a bulk read may go without an answer before it is given up (then read one by one).</summary>
+    internal static readonly TimeSpan BulkStall = TimeSpan.FromSeconds(30);
+
+    /// <summary>One object's properties as read back (a plain read or one entry of a bulk answer).</summary>
+    private static WpdObject ObjectFrom(string objectId, IPortableDeviceValues values)
+    {
+        var contentType = Read(values, WpdKeys.ObjectContentType) as Guid?;
+        var kind = contentType == WpdKeys.ContentTypeFolder ? WpdObjectKind.Folder
+            : contentType == WpdKeys.ContentTypeFunctionalObject ? WpdObjectKind.Functional
+            : WpdObjectKind.File;
+        var original = Read(values, WpdKeys.ObjectOriginalFileName) as string;
+        var name = Read(values, WpdKeys.ObjectName) as string;
+        return new WpdObject(
+            objectId,
+            Read(values, WpdKeys.ObjectParentId) as string,
+            string.IsNullOrEmpty(original) ? name : original,
+            kind,
+            Read(values, WpdKeys.ObjectSize) is long size ? size : null,
+            Read(values, WpdKeys.ObjectCanDelete) as bool?,
+            Read(values, WpdKeys.ObjectDateCreated) is DateTimeOffset created ? created : null,
+            Read(values, WpdKeys.ObjectPersistentUniqueId) as string);
+    }
+
+    /// <summary>
+    /// Collects a bulk read's answers as Windows reports them (on its own thread): each entry carries WPD_OBJECT_ID and the
+    /// properties asked for. An entry without an id can't be placed and is dropped (the caller reads that object again).
+    /// </summary>
+    [ComVisible(true)]
+    [ClassInterface(ClassInterfaceType.None)]
+    internal sealed class BulkCallback(Action<int>? progress) : IPortableDevicePropertiesBulkCallback, IDisposable
+    {
+        private readonly Lock _gate = new();
+        private readonly List<WpdObject> _objects = [];
+
+        public int Count
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _objects.Count;
+                }
+            }
+        }
+
+        public ManualResetEventSlim Ended { get; } = new(false);
+
+        public int Status { get; private set; }
+
+        public List<WpdObject> Objects
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return [.. _objects];
+                }
+            }
+        }
+
+        public int OnStart(ref Guid context) => 0;
+
+        public int OnProgress(ref Guid context, IPortableDeviceValuesCollection results)
+        {
+            try
+            {
+                results.GetCount(out var count);
+                var read = new List<WpdObject>((int)count);
+                for (uint i = 0; i < count; i++)
+                {
+                    results.GetAt(i, out var values);
+                    try
+                    {
+                        if (Read(values, WpdKeys.ObjectId) is string { Length: > 0 } id)
+                        {
+                            read.Add(ObjectFrom(id, values));
+                        }
+                    }
+                    finally
+                    {
+                        Marshal.ReleaseComObject(values);
+                    }
+                }
+
+                int total;
+                lock (_gate)
+                {
+                    _objects.AddRange(read);
+                    total = _objects.Count;
+                }
+
+                progress?.Invoke(total);
+                return 0;
+            }
+            catch (Exception ex)
+            {
+                // Never let an exception cross back into Windows' thread; the objects not collected are read again.
+                return ex.HResult < 0 ? ex.HResult : WpdErrors.GenFailure;
+            }
+            finally
+            {
+                Marshal.ReleaseComObject(results);
+            }
+        }
+
+        public int OnEnd(ref Guid context, int status)
+        {
+            Status = status;
+            Ended.Set();
+            return 0;
+        }
+
+        public void Dispose() => Ended.Dispose();
+    }
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int ProgressSlot(IntPtr self, ref Guid context, IntPtr results);
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int EndSlot(IntPtr self, ref Guid context, int status);
+
+    /// <summary>
+    /// Feeds a bulk answer built from WPD's in-process objects (no device needed) through <see cref="BulkCallback"/> the
+    /// way Windows calls it back: from native code, through the callback's COM interface (QueryInterface on the object
+    /// Windows is handed, then OnProgress and OnEnd from its vtable). One entry with an id, a name and a size, one without
+    /// an id. Returns the QueryInterface result and what the callback collected.
+    /// </summary>
+    internal static (int QueryInterface, IReadOnlyList<WpdObject> Objects, int Status, int Progress) BulkSelfTest()
+    {
+        var results = Create<IPortableDeviceValuesCollection>(WpdClsids.PortableDeviceValuesCollection);
+        var withId = Create<IPortableDeviceValues>(WpdClsids.PortableDeviceValues);
+        var withoutId = Create<IPortableDeviceValues>(WpdClsids.PortableDeviceValues);
+        var key = WpdKeys.ObjectId;
+        withId.SetStringValue(ref key, "o2A");
+        key = WpdKeys.ObjectOriginalFileName;
+        withId.SetStringValue(ref key, "IMG_0002.MOV");
+        withoutId.SetStringValue(ref key, "IMG_0003.MOV");
+        key = WpdKeys.ObjectSize;
+        withId.SetUnsignedIntegerValue(ref key, 123_456);
+        results.Add(withId);
+        results.Add(withoutId);
+        Marshal.ReleaseComObject(withId);
+        Marshal.ReleaseComObject(withoutId);
+
+        var seen = 0;
+        using var callback = new BulkCallback(n => seen = n);
+        var context = Guid.NewGuid();
+        var unknown = Marshal.GetIUnknownForObject(callback);
+        var resultsPointer = Marshal.GetComInterfaceForObject(results, typeof(IPortableDeviceValuesCollection));
+        try
+        {
+            var iid = typeof(IPortableDevicePropertiesBulkCallback).GUID;
+            var hr = Marshal.QueryInterface(unknown, in iid, out var itf);
+            if (hr < 0)
+            {
+                return (hr, [], 0, 0);
+            }
+
+            try
+            {
+                // IUnknown's three slots, then OnStart (3), OnProgress (4), OnEnd (5).
+                var vtable = Marshal.ReadIntPtr(itf);
+                var progress = Marshal.GetDelegateForFunctionPointer<ProgressSlot>(Marshal.ReadIntPtr(vtable, 4 * IntPtr.Size));
+                var end = Marshal.GetDelegateForFunctionPointer<EndSlot>(Marshal.ReadIntPtr(vtable, 5 * IntPtr.Size));
+                var progressHr = progress(itf, ref context, resultsPointer);
+                end(itf, ref context, 0);
+                return (progressHr, callback.Objects, callback.Status, seen);
+            }
+            finally
+            {
+                Marshal.Release(itf);
+            }
+        }
+        finally
+        {
+            Marshal.Release(resultsPointer);
+            Marshal.Release(unknown);
+            try
+            {
+                Marshal.ReleaseComObject(results);
+            }
+            catch (InvalidComObjectException)
+            {
+                // The callback released the same object already (it releases what Windows hands it).
+            }
         }
     }
 

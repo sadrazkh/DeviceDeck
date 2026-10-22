@@ -63,7 +63,7 @@ import type {
 import type { LocalSendDiscovery, LocalSendJobStatus, LocalSendTarget, PhotosToAppStarted } from './localSend';
 import type { ReleaseNotes } from './releaseNotes';
 import type { WhatsAppAndroidInfo, WhatsAppChat, WhatsAppMessage, WhatsAppStatus } from './whatsApp';
-import type { PhotoDeleteItem, PhotoDeleteReport, PhotoDeleteSupport } from './photoDeleteTypes';
+import type { PhotoDeleteItem, PhotoDeleteJobStatus, PhotoDeleteStarted, PhotoDeleteSupport } from './photoDeleteTypes';
 
 type DeviceParams = { deviceId: string };
 
@@ -167,9 +167,10 @@ export interface BridgeMethods {
   'cleanup.status': { params: DeviceParams; result: CleanupStatus };
   'cleanup.analyze': { params: DeviceParams; result: CleanupStatus };
   'cleanup.cancel': { params: DeviceParams; result: Empty };
+  // v0.4.1: starts a photosDelete job (the Transfers drawer shows it).
   'cleanup.deleteMedia': {
     params: DeviceParams & { items: CleanupItem[]; expectedBytes: number; copyFirstTo?: string | null };
-    result: CleanupResult;
+    result: PhotoDeleteStarted;
   };
   'cleanup.deleteFiles': {
     params: DeviceParams & { items: CleanupFileItem[]; expectedBytes: number; copyFirstTo?: string | null };
@@ -286,10 +287,12 @@ export interface BridgeMethods {
   'whatsapp.backupAndroid': { params: DeviceParams & { destination: string }; result: { jobId: string; folder: string } };
   // Deleting photos, iPhone included (round 4, photodelete)
   'photos.deleteSupport': { params: DeviceParams & { recheck?: boolean }; result: PhotoDeleteSupport };
+  // v0.4.1: starts a photosDelete job at once; photos.deleteJob gives its results.
   'photos.deleteItems': {
     params: DeviceParams & { items: PhotoDeleteItem[]; expectedBytes: number; copyFirstTo?: string | null };
-    result: PhotoDeleteReport;
+    result: PhotoDeleteStarted;
   };
+  'photos.deleteJob': { params: { jobId: string }; result: PhotoDeleteJobStatus };
 }
 
 export type MethodName = keyof BridgeMethods;
@@ -446,6 +449,7 @@ const methodTable = {
   // Deleting photos, iPhone included (round 4, photodelete)
   'photos.deleteSupport': true,
   'photos.deleteItems': true,
+  'photos.deleteJob': true,
 } as const satisfies Record<MethodName, true>;
 
 export const METHOD_NAMES = Object.keys(methodTable) as MethodName[];

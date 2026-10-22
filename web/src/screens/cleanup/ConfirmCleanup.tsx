@@ -8,7 +8,6 @@ import { Switch } from '../../components/ui';
 import { useI18n, type MessageKey } from '../../i18n';
 import styles from './Cleanup.module.css';
 import type { CleanupKind, CleanupRequest } from './useCleanup';
-import { PhotoDeleteResults } from '../photos/PhotoDeleteResults';
 
 export interface PlanRow {
   key: string;
@@ -37,7 +36,8 @@ export interface CleanupPlan {
 
 /**
  * The one door to every delete: lists what goes and what it frees, offers a copy to the PC first,
- * and only then runs. While it runs it can't be dismissed, so the result always lands here.
+ * and only then runs. While it runs it can't be dismissed. Photos and videos (v0.4.1) go to the Transfers drawer
+ * as a delete job: the dialog closes as soon as it is queued, and the drawer shows each result.
  */
 export function ConfirmCleanup({
   plan,
@@ -48,23 +48,20 @@ export function ConfirmCleanup({
   plan: CleanupPlan | null;
   device: DeviceSummary;
   onClose(): void;
-  /** The result, or null after an error (already shown). */
-  run(request: CleanupRequest): Promise<CleanupResult | null>;
+  /** The result, "started" for a delete job in the drawer, or null after an error (already shown). */
+  run(request: CleanupRequest): Promise<CleanupResult | 'started' | null>;
 }) {
   const { t, bytes } = useI18n();
   const actions = useActions();
   const [copy, setCopy] = useState(true);
   const [folder, setFolder] = useState('');
   const [busy, setBusy] = useState(false);
-  // Round 4: photos and videos come back item by item; shown when one wasn't deleted, and always for an iPhone.
-  const [results, setResults] = useState<CleanupResult | null>(null);
 
   useEffect(() => {
     if (plan) {
       setCopy(plan.copy !== null);
       setFolder(plan.copy?.folder ?? '');
       setBusy(false);
-      setResults(null);
     }
   }, [plan]);
 
@@ -76,35 +73,8 @@ export function ConfirmCleanup({
     setBusy(true);
     const result = await run(plan.request(copying ? folder : null));
     setBusy(false);
-    if (!result) return;
-    const items = result.items ?? [];
-    if (items.length > 0 && (device.platform === 'ios' || items.some((i) => i.outcome !== 'deleted'))) setResults(result);
-    else onClose();
+    if (result) onClose();
   };
-
-  if (results?.items) {
-    return (
-      <Dialog
-        open
-        wide
-        onOpenChange={(open) => (open ? undefined : onClose())}
-        title={t('photoDelete.result.title')}
-        footer={
-          <Button variant="accent" onClick={onClose} autoFocus data-testid="cleanup-results-done">
-            {t('photoDelete.done')}
-          </Button>
-        }
-      >
-        <PhotoDeleteResults
-          items={results.items}
-          deleted={results.deleted}
-          freedBytes={results.freedBytes}
-          goesTo={results.goesTo ?? 'unknown'}
-          copyIncomplete={results.copyIncomplete}
-        />
-      </Dialog>
-    );
-  }
 
   return (
     <Dialog

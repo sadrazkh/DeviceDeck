@@ -2,6 +2,7 @@ using System.Text.Json.Nodes;
 using DeviceDeck.Bridge.Tests.Support;
 using DeviceDeck.Core.Abstractions;
 using DeviceDeck.Core.Cleanup;
+using DeviceDeck.Core.PhotoDelete;
 using DeviceDeck.Core.Fake;
 using DeviceDeck.Core.Transfers;
 
@@ -137,12 +138,16 @@ public sealed class CleanupTests
         var report = await AnalyzeAsync(host, id);
         var extras = report.Duplicates!.Groups.SelectMany(g => g.Assets.Skip(1)).ToList();
 
-        var result = await host.Cleanup.DeleteMediaAsync(id, extras.Select(Item).ToList(), extras.Sum(a => a.Size), null, None);
+        var started = await host.Cleanup.DeleteMediaAsync(id, extras.Select(Item).ToList(), extras.Sum(a => a.Size), null, None);
+        Assert.Equal(0, started.Skipped);
+        Assert.Equal(TransferKind.PhotosDelete, host.Queue.Get(started.JobId!)!.Kind); // a job in the Transfers drawer
+        var result = await DeleteJobs.FinishedAsync(host, started);
 
         Assert.Equal(4, result.Deleted);
-        Assert.Equal(0, result.Skipped);
         Assert.Equal(2_000_000 + 600_000 + 800, result.FreedBytes);
         Assert.False(result.CopyIncomplete);
+        Assert.Equal(PhotoDeleteSource.Cleanup, result.Source);
+        Assert.Equal(TransferState.Done, result.State);
         var left = (await host.Hub.GetDevice(id).Photos.GetAssetsAsync(null, 0, 100, None)).Items.Select(a => a.Id).ToHashSet();
         Assert.Equal(7, left.Count);
         Assert.All(report.Duplicates.Groups, g => Assert.Contains(g.Assets[0].Id, left)); // the oldest copy of each stays
@@ -165,7 +170,9 @@ public sealed class CleanupTests
 
         // Gone from the phone meanwhile (deleted in the gallery app, say).
         await host.Hub.GetDevice(id).Photos.DeleteAsync([other.Id], None);
-        var result = await host.Cleanup.DeleteMediaAsync(id, [Item(big), Item(other)], big.Size + other.Size, null, None);
+        var started = await host.Cleanup.DeleteMediaAsync(id, [Item(big), Item(other)], big.Size + other.Size, null, None);
+        Assert.Equal(1, started.Skipped);
+        var result = await DeleteJobs.FinishedAsync(host, started);
         Assert.Equal(1, result.Deleted);
         Assert.Equal(1, result.Skipped);
         Assert.Equal(big.Size, result.FreedBytes);
@@ -195,14 +202,16 @@ public sealed class CleanupTests
         // A file where the folder should be: the copy can't land, so the video must stay.
         var blocked = Path.Combine(host.PcFolder("blocked"), "not-a-folder");
         await File.WriteAllTextAsync(blocked, "x");
-        var failed = await host.Cleanup.DeleteMediaAsync(id, [Item(video)], video.Size, blocked, None);
+        var failed = await DeleteJobs.FinishedAsync(host, await host.Cleanup.DeleteMediaAsync(id, [Item(video)], video.Size, blocked, None));
         Assert.True(failed.CopyIncomplete);
+        Assert.Equal(TransferState.Failed, failed.State);
+        Assert.Equal("copy_incomplete", failed.Error?.Code);
         Assert.Equal(0, failed.Deleted);
         Assert.Single(failed.CopyJobIds);
         Assert.Contains(video.Id, (await host.Hub.GetDevice(id).Photos.GetAssetsAsync(null, 0, 100, None)).Items.Select(a => a.Id));
 
         var folder = host.PcFolder("backup");
-        var done = await host.Cleanup.DeleteMediaAsync(id, [Item(video)], video.Size, folder, None);
+        var done = await DeleteJobs.FinishedAsync(host, await host.Cleanup.DeleteMediaAsync(id, [Item(video)], video.Size, folder, None));
         Assert.False(done.CopyIncomplete);
         Assert.Equal(1, done.Deleted);
         Assert.Equal(TransferState.Done, host.Queue.Get(done.CopyJobIds[0])!.State);

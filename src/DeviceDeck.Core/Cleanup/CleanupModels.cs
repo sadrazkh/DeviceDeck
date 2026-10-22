@@ -90,13 +90,5 @@ public sealed record CleanupFileItem(string Root, string Path, long Size);
 /// <param name="Skipped">Items left alone because they changed or disappeared since the analysis.</param>
 /// <param name="CopyJobIds">The copy-to-PC jobs that ran first.</param>
 /// <param name="CopyIncomplete">The copy didn't finish, so nothing was deleted.</param>
-public sealed record CleanupResult(int Deleted, int Skipped, long FreedBytes, IReadOnlyList<string> CopyJobIds, bool CopyIncomplete)
-{
-    // Round 4 (photodelete): photos and videos only.
-
-    /// <summary>One result per photo or video that was tried, in order; null for files, apps and caches.</summary>
-    public IReadOnlyList<PhotoDeleteResult>? Items { get; init; }
-
-    /// <summary>Where the deleted photos went (Recently Deleted or gone for good); null for files, apps and caches.</summary>
-    public PhotoDeleteDestination? GoesTo { get; init; }
-}
+/// <remarks>Photos and videos (v0.4.1) are deleted by a transfer job instead: cleanup.deleteMedia answers PhotoDeleteStarted.</remarks>
+public sealed record CleanupResult(int Deleted, int Skipped, long FreedBytes, IReadOnlyList<string> CopyJobIds, bool CopyIncomplete);

@@ -68,7 +68,7 @@ public sealed class ContractShapeTests
         var json = ToJson(job);
 
         Assert.Equal(["id", "deviceId", "kind", "title", "state", "totalItems", "doneItems", "failedItems", "totalBytes", "doneBytes",
-            "bytesPerSecond", "etaSeconds", "conflict", "error", "createdAt", "finishedAt"], Keys(json));
+            "bytesPerSecond", "etaSeconds", "conflict", "error", "createdAt", "finishedAt", "stage"], Keys(json));
         Assert.Equal("photosExport", (string?)json["kind"]);
         Assert.Equal("needsDecision", (string?)json["state"]);
         Assert.Equal(["itemName", "existingSize", "newSize"], Keys(json["conflict"]!.AsObject()));

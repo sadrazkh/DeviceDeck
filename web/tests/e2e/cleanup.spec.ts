@@ -64,10 +64,16 @@ test('Android: deleting the largest videos lists them with their total, copies f
   await expect(dialog.getByRole('switch')).toBeChecked(); // copy to this PC first, on by default
   await expect(dialog).toContainText('Nothing is deleted unless every copy finishes.');
   await shot(page, 'cleanup-confirm-android-light');
+  // Gigabytes to copy at the mock's speed: this one deletes without the copy (photo-delete.spec.ts copies first).
+  await dialog.getByRole('switch').click();
   await dialog.getByTestId('cleanup-confirm').click();
 
-  await expect(page.getByRole('dialog')).toHaveCount(0);
-  await expect(page.getByText(/2 photos and videos deleted/)).toBeVisible();
+  // v0.4.1: the dialog closes at once; the delete runs in the Transfers drawer, then the card drops what went.
+  await expect(page.getByTestId('cleanup-confirm-dialog')).toHaveCount(0);
+  const row = page.getByTestId('transfer-drawer').locator('[data-kind=photosDelete]');
+  await expect(row).toBeVisible();
+  await expect(row).toHaveAttribute('data-state', 'done', { timeout: 30_000 });
+  await expect(page.getByText(/^2 deleted · .* freed$/).first()).toBeVisible();
   for (const name of names) await expect(videos.getByText(name, { exact: true })).toHaveCount(0);
   consoleWatch.assertClean();
 });

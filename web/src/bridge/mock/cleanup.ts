@@ -16,10 +16,9 @@ import type {
   DuplicateGroup,
 } from '../cleanupTypes';
 import type { AppInfo, DeviceCapability, DeviceSummary, PhotoAsset, StorageInfo, TransferJob, TransferKind } from '../types';
-import type { PhotoDeleteDestination, PhotoDeleteResult } from '../photoDeleteTypes';
 import type { MockFileSystem } from './files';
 import { MB } from './mock-data';
-import { assetsInAlbum, toContractAsset, type MockAsset, type MockLibrary } from './photos';
+import { toContractAsset, type MockAsset, type MockLibrary } from './photos';
 import { createRandom, hashString } from './random';
 import type { JobItem } from './transfers';
 
@@ -38,8 +37,12 @@ export interface MockCleanupContext {
   now(): number;
   fault(code: string, message?: string): Error;
   badParams(message: string): Error;
-  /** Round 4: deletes photos item by item, iPhone included (./photoDelete.ts). */
-  photoDeletes?(deviceId: string, items: readonly CleanupItem[]): { results: PhotoDeleteResult[]; goesTo: PhotoDeleteDestination };
+  /** v0.4.1: queues a photo delete job, iPhone included (./photoDelete.ts); `onFinished` hears what went. */
+  startPhotoDelete?(
+    deviceId: string,
+    items: readonly CleanupItem[],
+    options: { copyFirstTo?: string | null; source: 'cleanup'; skipped: number; onFinished(gone: Set<string>, freedBytes: number): void },
+  ): string;
 }
 
 const TOP_APPS = 30;
@@ -167,23 +170,20 @@ export function cleanupHandlers(ctx: MockCleanupContext): { [M in CleanupMethodN
       for (const item of items) {
         if (listed.get(item.id)?.size !== item.size) throw ctx.badParams(`'${item.id}' isn't a photo or video the analysis listed at that size.`);
       }
+      // Still on the phone at that size: otherwise it changed since the analysis, and is left out (counted).
       const library = ctx.library(deviceId);
-      const present = items.filter((i) => library.byId.has(i.id));
-      const jobs = copyJob(deviceId, 'photosExport', copyFirstTo, present.map((i) => ({ name: listed.get(i.id)!.fileName, size: i.size })), `${present.length} photos and videos`);
-      if (ctx.photoDeletes) {
-        const { results, goesTo } = ctx.photoDeletes(deviceId, present);
-        const deleted = results.filter((r) => r.outcome === 'deleted');
-        const freedBytes = deleted.reduce((n, r) => n + r.size, 0);
-        mutate(deviceId, (r) => withoutMedia(r, new Set(deleted.map((d) => d.id)), freedBytes));
-        return { ...result(deleted.length, items.length - deleted.length, freedBytes, jobs), items: results, goesTo };
-      }
-      const gone = new Set(present.map((i) => i.id));
-      library.assets = library.assets.filter((a) => !gone.has(a.id));
-      for (const id of gone) library.byId.delete(id);
-      library.albums = library.albums.map((album) => ({ ...album, count: assetsInAlbum(library, album.id).length }));
-      const freed = present.reduce((n, i) => n + i.size, 0);
-      mutate(deviceId, (r) => withoutMedia(r, gone, freed));
-      return result(present.length, items.length - present.length, freed, jobs);
+      const present = items.filter((i) => library.byId.get(i.id)?.size === i.size);
+      const skipped = items.length - present.length;
+      if (present.length === 0) return { jobId: null, skipped };
+      if (!ctx.startPhotoDelete) throw ctx.fault('not_supported');
+      // v0.4.1: a photosDelete job in the Transfers drawer; what went leaves the report when it ends.
+      const jobId = ctx.startPhotoDelete(deviceId, present, {
+        copyFirstTo,
+        source: 'cleanup',
+        skipped,
+        onFinished: (gone, freed) => mutate(deviceId, (r) => withoutMedia(r, gone, freed)),
+      });
+      return { jobId, skipped };
     },
 
     'cleanup.deleteFiles': ({ deviceId, items, expectedBytes, copyFirstTo }) => {

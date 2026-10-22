@@ -1,7 +1,6 @@
 // Shapes of docs/bridge-contract.md, "Clean-up (round 2)" and "Battery history (round 2)",
 // hand-written from src/DeviceDeck.Core/Cleanup/CleanupModels.cs and Battery/BatteryModels.cs.
 
-import type { PhotoDeleteDestination, PhotoDeleteResult } from './photoDeleteTypes';
 import type { AppInfo, DevicePlatform, PhotoAsset } from './types';
 
 export type CleanupSection = 'storage' | 'apps' | 'media' | 'caches' | 'appFiles' | 'duplicates';
@@ -135,10 +134,6 @@ export interface CleanupResult {
   copyJobIds: string[];
   /** The copy to the PC didn't finish, so nothing was deleted. */
   copyIncomplete: boolean;
-  /** Photos and videos (round 4): one result per item tried; null for files, apps and caches. */
-  items?: PhotoDeleteResult[] | null;
-  /** Photos and videos (round 4): where they went; null for files, apps and caches. */
-  goesTo?: PhotoDeleteDestination | null;
 }
 
 export interface BatterySnapshot {

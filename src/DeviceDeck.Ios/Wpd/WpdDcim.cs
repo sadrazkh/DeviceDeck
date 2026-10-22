@@ -146,15 +146,23 @@ public sealed class WpdDcimMap
 
     /// <param name="phoneFiles">Every media file in the phone's DCIM (AFC), as "DCIM/&lt;folder&gt;/&lt;name&gt;".</param>
     /// <param name="phoneAssets">The library's assets with known sizes, for the renamed match; null turns it off.</param>
-    public WpdDcimMap(WpdDcim dcim, IReadOnlyCollection<string> phoneFiles, IReadOnlyCollection<WpdPhoneAsset>? phoneAssets = null)
+    /// <param name="folderNames">Every folder Windows lists, when <paramref name="dcim"/> holds only some of them (a narrowed walk).</param>
+    public WpdDcimMap(WpdDcim dcim, IReadOnlyCollection<string> phoneFiles, IReadOnlyCollection<WpdPhoneAsset>? phoneAssets = null,
+        IReadOnlyCollection<string>? folderNames = null)
     {
         _dcim = dcim;
         _phoneAssets = phoneAssets;
         _phoneNames = phoneFiles
             .GroupBy(f => f[(f.LastIndexOf('/') + 1)..], StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
+        ByFolder = ShowsPhoneFolders(folderNames ?? dcim.Folders.Select(f => f.Name).ToList(), phoneFiles);
+    }
+
+    /// <summary>Windows lists at least one of the phone's own DCIM folder names (100APPLE), so folders take part in the match.</summary>
+    public static bool ShowsPhoneFolders(IReadOnlyCollection<string> windowsFolders, IReadOnlyCollection<string> phoneFiles)
+    {
         var phoneFolders = phoneFiles.Select(FolderOf).Where(f => f is not null).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        ByFolder = dcim.Folders.Any(f => phoneFolders.Contains(f.Name));
+        return windowsFolders.Any(phoneFolders.Contains);
     }
 
     /// <summary>Windows shows the phone's own folder names, so folders take part in the match.</summary>

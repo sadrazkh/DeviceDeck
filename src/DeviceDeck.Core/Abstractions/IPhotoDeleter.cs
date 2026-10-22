@@ -16,8 +16,12 @@ public interface IPhotoDeleter
     /// Deletes exactly these assets, each at the size the user confirmed. Every item is matched first and nothing is
     /// deleted unless all of them match; then they go in small batches, stopping at the first mismatch or error.
     /// Returns one result per item, in order.
+    /// <para>
+    /// <paramref name="ct"/> cancels outright (OperationCanceledException) until the first batch is sent; after that it
+    /// stops before the next batch, the rest say not tried, and what went is still checked and returned.
+    /// </para>
     /// </summary>
-    Task<IReadOnlyList<PhotoDeleteResult>> DeleteConfirmedAsync(IReadOnlyList<PhotoDeleteItem> items, CancellationToken ct);
+    Task<IReadOnlyList<PhotoDeleteResult>> DeleteConfirmedAsync(IReadOnlyList<PhotoDeleteItem> items, IPhotoDeleteObserver? observer, CancellationToken ct);
 }
 
 /// <summary>Why photos can't be deleted from the PC right now.</summary>

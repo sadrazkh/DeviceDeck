@@ -494,7 +494,7 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
           assets={deleting}
           support={deleteSupport.data}
           onClose={() => setDeleting(null)}
-          onDeleted={() => {
+          onStarted={() => {
             setViewer(null);
             setSelection(emptySelection);
           }}

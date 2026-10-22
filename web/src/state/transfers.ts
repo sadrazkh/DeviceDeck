@@ -36,6 +36,8 @@ export function groupTransfers(jobs: readonly TransferJob[]): Record<TransferGro
 
 export function jobFraction(job: TransferJob): number {
   if (job.state === 'done') return 1;
+  // v0.4.1: a job in stages (a delete) shows its stage's progress.
+  if (job.stage) return job.stage.total > 0 ? Math.min(1, job.stage.done / job.stage.total) : 0;
   if (job.totalBytes > 0) return Math.min(1, job.doneBytes / job.totalBytes);
   if (job.totalItems > 0) return Math.min(1, job.doneItems / job.totalItems);
   return 0;
@@ -52,10 +54,17 @@ export function overallProgress(jobs: readonly TransferJob[]): { active: number;
     if (group === 'failed') failed++;
     if (group !== 'active' && group !== 'queued') continue;
     active++;
+    // A delete (v0.4.1) moves in stages, not bytes: it counts as active without a share of the bytes.
+    if (job.kind === 'photosDelete') continue;
     total += job.totalBytes;
     done += job.doneBytes;
   }
-  return { active, fraction: active === 0 ? null : total > 0 ? done / total : 0, failed };
+  return { active, fraction: active === 0 ? null : total > 0 ? done / total : active > 0 && jobs.some(isByteJob) ? 0 : null, failed };
+}
+
+function isByteJob(job: TransferJob): boolean {
+  const group = groupOf(job.state);
+  return job.kind !== 'photosDelete' && (group === 'active' || group === 'queued');
 }
 
 export function isFinished(state: TransferState): boolean {

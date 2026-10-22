@@ -9,6 +9,7 @@ import { photoBackupFa } from '../screens/photos/backupStrings';
 import { updatesFa } from '../shell/updateStrings';
 import { whatsAppFa } from '../screens/contacts/whatsAppStrings';
 import { photoDeleteFa } from '../screens/photos/deleteStrings';
+import { deleteJobFa } from '../shell/deleteJobStrings';
 import type { MessageKey } from './en';
 
 export const fa: Record<MessageKey, string> = {
@@ -622,4 +623,6 @@ export const fa: Record<MessageKey, string> = {
   ...whatsAppFa,
   // Deleting photos, iPhone included (round 4, photodelete)
   ...photoDeleteFa,
+  // Deleting photos as a transfer (v0.4.1, deletejob)
+  ...deleteJobFa,
 };

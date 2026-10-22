@@ -1,8 +1,9 @@
 // The Photos screen's delete (round 4, photodelete), in the style of Clean-up's confirmation: what goes and what it
-// frees, "Copy to this PC first" (on by default for more than 20), where they go, then a result for each photo.
+// frees, "Copy to this PC first" (on by default for more than 20) and where they go. Since v0.4.1 the confirmed
+// delete runs as a job in the Transfers drawer: the dialog closes at once; the drawer shows each result at the end.
 
 import { useEffect, useMemo, useState } from 'react';
-import type { PhotoDeleteReport, PhotoDeleteSupport } from '../../bridge/photoDeleteTypes';
+import type { PhotoDeleteSupport } from '../../bridge/photoDeleteTypes';
 import type { DeviceSummary, PhotoAsset } from '../../bridge/types';
 import { useActions } from '../../app/actions';
 import { useSettings } from '../../app/queries';
@@ -10,9 +11,8 @@ import { Button } from '../../components/Button';
 import { Dialog } from '../../components/Dialog';
 import { Switch } from '../../components/ui';
 import { useI18n, type I18n } from '../../i18n';
-import { toast } from '../../state/toasts';
+import { announceDeleteStarted } from '../../shell/DeleteJobRow';
 import styles from './PhotoDelete.module.css';
-import { PhotoDeleteResults } from './PhotoDeleteResults';
 import { COPY_FIRST_ABOVE, useDeletePhotos } from './photoDelete';
 
 /** Rows listed in the confirmation; the rest are counted. */
@@ -48,16 +48,17 @@ export function PhotoDeleteDialog({
   assets,
   support,
   onClose,
-  onDeleted,
+  onStarted,
 }: {
   device: DeviceSummary;
   assets: PhotoAsset[];
   support: PhotoDeleteSupport | undefined;
   onClose(): void;
-  /** Called once with the ids that went. */
-  onDeleted(ids: string[]): void;
+  /** Called once the delete is queued (the selection it was made from is done with). */
+  onStarted(): void;
 }) {
-  const { t, bytes, date } = useI18n();
+  const i18n = useI18n();
+  const { t, bytes, date } = i18n;
   const actions = useActions();
   const settings = useSettings().data;
   const deletePhotos = useDeletePhotos(device);
@@ -67,7 +68,6 @@ export function PhotoDeleteDialog({
   const [copy, setCopy] = useState(items.length > COPY_FIRST_ABOVE);
   const [folder, setFolder] = useState('');
   const [busy, setBusy] = useState(false);
-  const [report, setReport] = useState<PhotoDeleteReport | null>(null);
 
   useEffect(() => {
     if (!folder && settings?.photoExportFolder) setFolder(settings.photoExportFolder);
@@ -78,45 +78,19 @@ export function PhotoDeleteDialog({
   const copying = copy && folder.length > 0;
   const permanent = (support?.goesTo ?? 'permanent') !== 'recentlyDeleted';
 
+  // The delete goes to the Transfers drawer: the dialog closes as soon as the job is queued.
   const run = async () => {
     setBusy(true);
-    const result = await deletePhotos(
+    const started = await deletePhotos(
       items.map((a) => ({ id: a.id, size: a.size })),
       copying ? folder : null,
     );
     setBusy(false);
-    if (!result) return;
-    setReport(result);
-    const gone = result.items.filter((r) => r.outcome === 'deleted').map((r) => r.id);
-    if (gone.length > 0) {
-      onDeleted(gone);
-      toast({ tone: 'success', title: t('photoDelete.toast', { count: gone.length, size: bytes(result.freedBytes) }), duration: 4000 });
-    }
+    if (!started) return;
+    onStarted();
+    announceDeleteStarted(i18n, started);
+    onClose();
   };
-
-  if (report) {
-    return (
-      <Dialog
-        open
-        wide
-        onOpenChange={(open) => (open ? undefined : onClose())}
-        title={t('photoDelete.result.title')}
-        footer={
-          <Button variant="accent" onClick={onClose} autoFocus data-testid="photo-delete-done">
-            {t('photoDelete.done')}
-          </Button>
-        }
-      >
-        <PhotoDeleteResults
-          items={report.items}
-          deleted={report.deleted}
-          freedBytes={report.freedBytes}
-          goesTo={report.goesTo}
-          copyIncomplete={report.copyIncomplete}
-        />
-      </Dialog>
-    );
-  }
 
   return (
     <Dialog

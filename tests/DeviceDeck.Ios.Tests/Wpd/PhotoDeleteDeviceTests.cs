@@ -86,7 +86,7 @@ public sealed class PhotoDeleteDeviceTests : IAsyncLifetime
         var page = await device.Photos.GetAssetsAsync(null, 0, 100, Ct);
         Assert.Equal(3, page.Total);
         var live = page.Items.Single(a => a.Id == "DCIM/100APPLE/IMG_0003.HEIC");
-        var results = await device.DeleteConfirmedAsync([new("DCIM/100APPLE/IMG_0001.HEIC", 1001), new(live.Id, live.Size)], Ct);
+        var results = await device.DeleteConfirmedAsync([new("DCIM/100APPLE/IMG_0001.HEIC", 1001), new(live.Id, live.Size)], null, Ct);
 
         Assert.All(results, r => Assert.Equal(PhotoDeleteOutcome.Deleted, r.Outcome));
         Assert.Equal(["IMG_0003.MOV"], results[1].Also);
@@ -128,7 +128,7 @@ public sealed class PhotoDeleteDeviceTests : IAsyncLifetime
         await WaitUntil(() => device.PhotoDeleter.Current.Reason == PhotoDeleteBlock.NotCamera, "the check");
 
         Assert.False(device.Summary.Capabilities.HasFlag(DeviceCapability.PhotosDelete));
-        var refused = await Assert.ThrowsAsync<DeviceException>(() => device.DeleteConfirmedAsync([new("DCIM/100APPLE/IMG_0001.HEIC", 1001)], Ct));
+        var refused = await Assert.ThrowsAsync<DeviceException>(() => device.DeleteConfirmedAsync([new("DCIM/100APPLE/IMG_0001.HEIC", 1001)], null, Ct));
         Assert.Equal(DeviceErrorCodes.NotSupported, refused.Code);
         Assert.Equal(DeviceErrorCodes.NotSupported,
             (await Assert.ThrowsAsync<DeviceException>(() => device.Photos.DeleteAsync(["DCIM/100APPLE/IMG_0001.HEIC"], Ct))).Code);

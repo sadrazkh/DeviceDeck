@@ -44,6 +44,7 @@ internal static class WpdKeys
     private static readonly Guid DeviceProperties = new("26D4979A-E643-4626-9E2B-736DC0C92FDC");
     private static readonly Guid ClientInformation = new("204D9F0C-2292-4080-9F42-40664E70F859");
 
+    public static readonly PropertyKey ObjectId = new(ObjectProperties, 2);
     public static readonly PropertyKey ObjectParentId = new(ObjectProperties, 3);
     public static readonly PropertyKey ObjectName = new(ObjectProperties, 4);
     public static readonly PropertyKey ObjectPersistentUniqueId = new(ObjectProperties, 5);
@@ -87,6 +88,7 @@ internal static class WpdClsids
     public static readonly Guid PortableDeviceValues = new("0C15D503-D017-47CE-9016-7B3F978721CC");
     public static readonly Guid PortableDeviceKeyCollection = new("DE2D022D-2480-43BE-97F0-D1FA2CF98F4F");
     public static readonly Guid PortableDevicePropVariantCollection = new("08A99E2F-6D6D-4B80-AF5A-BAF2BCBE4CB9");
+    public static readonly Guid PortableDeviceValuesCollection = new("3882134D-14CF-4220-9CB4-435F86D83F60");
 }
 
 [ComImport, Guid("a1567595-4c2f-4574-a6fa-ecef917b9a40"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -148,6 +150,39 @@ internal interface IPortableDeviceProperties
     void GetSupportedProperties([MarshalAs(UnmanagedType.LPWStr)] string objectId, out IPortableDeviceKeyCollection keys);
     void GetPropertyAttributes([MarshalAs(UnmanagedType.LPWStr)] string objectId, ref PropertyKey key, out IPortableDeviceValues attributes);
     [PreserveSig] int GetValues([MarshalAs(UnmanagedType.LPWStr)] string objectId, IPortableDeviceKeyCollection? keys, out IPortableDeviceValues? values);
+}
+
+// Bulk reads (v0.4.1). Not in the type libraries: the IIDs are the ones registered under HKCR\Interface on Windows 11
+// (IPortableDevicePropertiesBulk, IPortableDevicePropertiesBulkCallback), the method order PortableDeviceApi.idl's.
+// IPortableDeviceValuesCollection's order is in PortableDeviceApi.dll's type library.
+
+[ComImport, Guid("482b05c0-4056-44ed-9e0f-5e23b009da93"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IPortableDevicePropertiesBulk
+{
+    void QueueGetValuesByObjectList(IPortableDevicePropVariantCollection objectIds, IPortableDeviceKeyCollection keys,
+        IPortableDevicePropertiesBulkCallback callback, out Guid context);
+    void QueueGetValuesByObjectFormat(ref Guid objectFormat, [MarshalAs(UnmanagedType.LPWStr)] string parentObjectId, uint depth,
+        IPortableDeviceKeyCollection keys, IPortableDevicePropertiesBulkCallback callback, out Guid context);
+    void QueueSetValuesByObjectList(IntPtr objectValues, IPortableDevicePropertiesBulkCallback callback, out Guid context);
+    void Start(ref Guid context);
+    void Cancel(ref Guid context);
+}
+
+[ComImport, Guid("9deacb80-11e8-40e3-a9f3-f557986a7845"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IPortableDevicePropertiesBulkCallback
+{
+    [PreserveSig] int OnStart(ref Guid context);
+    [PreserveSig] int OnProgress(ref Guid context, IPortableDeviceValuesCollection results);
+    [PreserveSig] int OnEnd(ref Guid context, int status);
+}
+
+[ComImport, Guid("6e3f2d79-4e07-48c4-8208-d8c2e5af4a99"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IPortableDeviceValuesCollection
+{
+    void GetCount(out uint count);
+    void GetAt(uint index, out IPortableDeviceValues values);
+    void Add(IPortableDeviceValues values);
+    void Clear();
 }
 
 [ComImport, Guid("6848f6f2-3155-4f86-b6f5-263eeeab3143"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]

@@ -38,6 +38,12 @@ public sealed class TransferQueue : IAsyncDisposable
         public StoredJob Data { get; } = data;
         public ITransferHandler Handler { get; } = handler;
         public IBatchingTransferHandler? Batching { get; } = handler as IBatchingTransferHandler;
+
+        /// <summary>v0.4.1: a job that runs as one piece, in stages (deleting photos).</summary>
+        public IWholeJobTransferHandler? Whole { get; } = handler as IWholeJobTransferHandler;
+
+        /// <summary>A whole job's stage while it runs.</summary>
+        public TransferStage? Stage { get; set; }
         public SpeedMeter Speed { get; } = new(speedWindow);
         public CancellationTokenSource? Cts { get; set; }
         public Task? Worker { get; set; }
@@ -132,14 +138,28 @@ public sealed class TransferQueue : IAsyncDisposable
                     continue;
                 }
 
-                if (stored.State == TransferState.Running)
+                if (handler is IWholeJobTransferHandler whole)
                 {
-                    stored.State = TransferState.Queued;
+                    // Never run again by itself (a delete would start out of the blue): the handler says how it ended.
+                    if (stored.State is not (TransferState.Done or TransferState.Failed or TransferState.Cancelled))
+                    {
+                        whole.Restarted(stored);
+                        stored.FinishedAt ??= _time.GetLocalNow();
+                        _store.UpsertJob(stored);
+                        _store.UpdateItems(stored.Id, stored.Items);
+                    }
                 }
-
-                foreach (var item in stored.Items.Where(i => i.State == TransferItemState.Running))
+                else
                 {
-                    item.State = TransferItemState.Queued;
+                    if (stored.State == TransferState.Running)
+                    {
+                        stored.State = TransferState.Queued;
+                    }
+
+                    foreach (var item in stored.Items.Where(i => i.State == TransferItemState.Running))
+                    {
+                        item.State = TransferItemState.Queued;
+                    }
                 }
 
                 var job = new Job(stored, handler, _options.SpeedWindow);
@@ -171,6 +191,35 @@ public sealed class TransferQueue : IAsyncDisposable
         }
     }
 
+    /// <summary>The handler registered for these jobs, if any (a feature's service finds its own handler this way).</summary>
+    public T? HandlerOf<T>() where T : class, ITransferHandler => _handlers.Values.OfType<T>().FirstOrDefault();
+
+    /// <summary>A copy of a job's items and its request as saved; null when there is no such job.</summary>
+    public (IReadOnlyList<TransferItem> Items, string RequestJson)? Details(string jobId)
+    {
+        lock (_gate)
+        {
+            if (!_jobs.TryGetValue(jobId, out var job))
+            {
+                return null;
+            }
+
+            var items = job.Data.Items.Select(i => new TransferItem
+            {
+                Index = i.Index,
+                Source = i.Source,
+                Destination = i.Destination,
+                Name = i.Name,
+                Size = i.Size,
+                State = i.State,
+                ErrorCode = i.ErrorCode,
+                ErrorMessage = i.ErrorMessage,
+                Decision = i.Decision,
+            }).ToList();
+            return (items, job.Data.RequestJson);
+        }
+    }
+
     /// <summary>Validates the request with its handler, stores the job and returns at once; the copy runs in the background.</summary>
     public async Task<TransferJob> EnqueueAsync(string deviceId, TransferKind kind, object request, ConflictRule rule, CancellationToken ct)
     {
@@ -182,6 +231,15 @@ public sealed class TransferQueue : IAsyncDisposable
         var device = _hub.GetUsableDevice(deviceId);
         var json = JsonSerializer.SerializeToElement(request, request.GetType(), DeviceDeckJson.Options);
         var title = await handler.DescribeAsync(device, json, ct).ConfigureAwait(false);
+        var id = Guid.CreateVersion7().ToString("N");
+
+        // A whole job (a delete) is planned at once: the drawer shows how many items it holds while it waits its turn.
+        IReadOnlyList<TransferItemPlan>? plans = null;
+        if (handler is IWholeJobTransferHandler)
+        {
+            await using var context = new TransferWorkContext(id, device, json, rule, this);
+            plans = await handler.PlanAsync(context, ct).ConfigureAwait(false);
+        }
 
         lock (_gate)
         {
@@ -193,7 +251,7 @@ public sealed class TransferQueue : IAsyncDisposable
 
             var stored = new StoredJob
             {
-                Id = Guid.CreateVersion7().ToString("N"),
+                Id = id,
                 Seq = ++_seq,
                 DeviceId = deviceId,
                 Kind = kind,
@@ -203,8 +261,20 @@ public sealed class TransferQueue : IAsyncDisposable
                 Rule = rule,
                 CreatedAt = _time.GetLocalNow(),
             };
+            if (plans is not null)
+            {
+                stored.Items = plans.Select((p, i) => TransferItem.FromPlan(i, p)).ToList();
+                stored.Planned = true;
+            }
+
             _store.UpsertJob(stored);
+            if (plans is not null)
+            {
+                _store.ReplaceItems(stored.Id, stored.Items);
+            }
+
             var job = new Job(stored, handler, _options.SpeedWindow);
+            Recount(job);
             _jobs.Add(stored.Id, job);
             Emit(job);
             Pump();
@@ -219,6 +289,11 @@ public sealed class TransferQueue : IAsyncDisposable
         lock (_gate)
         {
             var job = Find(jobId);
+            if (job.Whole is not null)
+            {
+                throw new InvalidOperationException("This transfer can't be paused. Cancel it instead.");
+            }
+
             switch (job.Data.State)
             {
                 case TransferState.Running when job.Stop is StopReason.None or StopReason.DeviceGone:
@@ -240,6 +315,7 @@ public sealed class TransferQueue : IAsyncDisposable
         lock (_gate)
         {
             var job = Find(jobId);
+            RequireRunsAgain(job);
             switch (job.Data.State)
             {
                 case TransferState.Paused:
@@ -265,6 +341,7 @@ public sealed class TransferQueue : IAsyncDisposable
         lock (_gate)
         {
             var job = Find(jobId);
+            RequireRunsAgain(job);
             switch (job.Data.State)
             {
                 case TransferState.Failed:
@@ -300,6 +377,15 @@ public sealed class TransferQueue : IAsyncDisposable
             }
 
             return finished.Count;
+        }
+    }
+
+    /// <summary>A whole job (a delete) never runs again: what is left needs a new confirmation.</summary>
+    private static void RequireRunsAgain(Job job)
+    {
+        if (job.Whole is not null)
+        {
+            throw new InvalidOperationException("This can't run again by itself. Select what is left and start it again.");
         }
     }
 
@@ -397,12 +483,32 @@ public sealed class TransferQueue : IAsyncDisposable
         foreach (var group in _jobs.Values.Where(j => j.Data.State is TransferState.Queued or TransferState.Running).GroupBy(j => j.Data.DeviceId).ToList())
         {
             var usable = IsUsable(group.Key);
-            var running = group.Count(j => j.Data.State == TransferState.Running);
+            // Whole jobs (deletes) take turns in a lane of their own: they may wait for copies that need the workers.
+            var running = group.Count(j => j.Data.State == TransferState.Running && j.Whole is null);
+            var wholeRunning = group.Any(j => (j.Data.State == TransferState.Running || j.Worker is not null) && j.Whole is not null);
             foreach (var job in group.Where(j => j.Data.State == TransferState.Queued).OrderBy(j => j.Data.Seq).ToList())
             {
                 if (job.Worker is not null)
                 {
                     // Retried or resumed while its last run is still closing; that run's finally pumps again.
+                    continue;
+                }
+
+                if (job.Whole is not null)
+                {
+                    if (!usable)
+                    {
+                        // Never waits for its phone: it would start by itself when the phone is back.
+                        job.Data.Error = new TransferError(DeviceErrorCodes.Disconnected, "The phone wasn't connected when its turn came, so nothing was done.");
+                        job.Data.FinishedAt = _time.GetLocalNow();
+                        SetState(job, TransferState.Failed);
+                    }
+                    else if (!wholeRunning)
+                    {
+                        StartWorker(job);
+                        wholeRunning = true;
+                    }
+
                     continue;
                 }
 
@@ -434,6 +540,7 @@ public sealed class TransferQueue : IAsyncDisposable
         Recount(job);
         job.CompletedBytes = job.DoneBytes;
         job.Speed.Reset();
+        job.Stage = null;
         SetState(job, TransferState.Running);
         var ct = job.Cts.Token;
         job.Worker = Task.Run(() => RunAsync(job, ct));
@@ -457,7 +564,7 @@ public sealed class TransferQueue : IAsyncDisposable
 
             using (var request = JsonDocument.Parse(job.Data.RequestJson))
             {
-                context = new TransferWorkContext(job.Data.Id, device, request.RootElement.Clone(), rule);
+                context = new TransferWorkContext(job.Data.Id, device, request.RootElement.Clone(), rule, this);
             }
 
             if (!planned)
@@ -474,7 +581,14 @@ public sealed class TransferQueue : IAsyncDisposable
                 }
             }
 
-            await RunItemsAsync(job, context, ct).ConfigureAwait(false);
+            if (job.Whole is { } whole)
+            {
+                await whole.RunJobAsync(context, new WholeJobReporter(this, job), ct).ConfigureAwait(false);
+            }
+            else
+            {
+                await RunItemsAsync(job, context, ct).ConfigureAwait(false);
+            }
         }
         catch (Exception ex)
         {
@@ -528,6 +642,12 @@ public sealed class TransferQueue : IAsyncDisposable
     /// <summary>The state a run ends in: done or failed by its items, needsDecision, or what stopped it. Caller holds _gate.</summary>
     private void Conclude(Job job, Exception? stopped, CancellationToken ct)
     {
+        if (job.Whole is not null)
+        {
+            ConcludeWhole(job, stopped, ct);
+            return;
+        }
+
         if (stopped is null && job.Decision is { } decision)
         {
             job.Data.Conflict = decision.Conflict;
@@ -579,6 +699,131 @@ public sealed class TransferQueue : IAsyncDisposable
             job.Data.FinishedAt = _time.GetLocalNow();
             SetState(job, TransferState.Failed);
             Prune();
+        }
+    }
+
+    /// <summary>
+    /// How a whole job's run ends: done (failed when nothing worked and something failed or the handler said why),
+    /// cancelled by the user, left as running at shutdown (the next start ends it), or failed for anything else, a phone
+    /// that went away included: it never waits to run again. Caller holds _gate.
+    /// </summary>
+    private void ConcludeWhole(Job job, Exception? stopped, CancellationToken ct)
+    {
+        job.Stage = null;
+        if (stopped is null)
+        {
+            job.Data.FinishedAt = _time.GetLocalNow();
+            if (job.DoneCount == 0 && (job.FailedCount > 0 || job.Data.Error is not null))
+            {
+                var failed = job.Data.Items.FirstOrDefault(i => i.State == TransferItemState.Failed);
+                job.Data.Error ??= new TransferError(failed?.ErrorCode ?? "internal", failed?.ErrorMessage ?? "Nothing was done.");
+                SetState(job, TransferState.Failed);
+            }
+            else
+            {
+                SetState(job, TransferState.Done);
+            }
+        }
+        else if (job.Stop == StopReason.Shutdown && ct.IsCancellationRequested)
+        {
+            // Left as running on disk: the next start ends it (IWholeJobTransferHandler.Restarted).
+            return;
+        }
+        else if (job.Stop == StopReason.Cancel && ct.IsCancellationRequested)
+        {
+            job.Data.FinishedAt = _time.GetLocalNow();
+            SetState(job, TransferState.Cancelled);
+        }
+        else
+        {
+            job.Data.Error ??= job.Stop == StopReason.DeviceGone || IsDeviceUnavailable(stopped)
+                ? new TransferError(DeviceErrorCodes.Disconnected, "The phone went away before it finished.")
+                : Describe(stopped);
+            job.Data.FinishedAt = _time.GetLocalNow();
+            SetState(job, TransferState.Failed);
+        }
+
+        Prune();
+    }
+
+    /// <summary>A whole job's stage changed or moved on: a new stage goes out at once, progress at most once per interval.</summary>
+    private void OnStage(Job job, TransferStage stage)
+    {
+        lock (_gate)
+        {
+            if (job.Data.State != TransferState.Running || job.Stage == stage)
+            {
+                return;
+            }
+
+            var newStage = job.Stage?.Name != stage.Name;
+            job.Stage = stage;
+            if (newStage)
+            {
+                Emit(job);
+            }
+            else
+            {
+                EmitThrottled(job);
+            }
+        }
+    }
+
+    /// <summary>One item of a whole job changed: counted, saved at once, sent out.</summary>
+    private void OnWholeItem(Job job, int index, TransferItemState state, string? code, string? message, long? size)
+    {
+        lock (_gate)
+        {
+            if (index < 0 || index >= job.Data.Items.Count)
+            {
+                throw new ArgumentOutOfRangeException(nameof(index));
+            }
+
+            var item = job.Data.Items[index];
+            Count(job, item, -1);
+            if (size is { } bytes && bytes >= 0 && bytes != item.Size)
+            {
+                job.TotalBytes += bytes - item.Size;
+                item.Size = bytes;
+            }
+
+            item.State = state;
+            item.ErrorCode = code;
+            item.ErrorMessage = message;
+            Count(job, item, +1);
+            _store.UpdateItems(job.Data.Id, [item]);
+            EmitThrottled(job);
+        }
+    }
+
+    /// <summary>Adds (or, with -1, takes away) one item's share of the running totals. Caller holds _gate.</summary>
+    private static void Count(Job job, TransferItem item, int sign)
+    {
+        switch (item.State)
+        {
+            case TransferItemState.Done or TransferItemState.Skipped:
+                job.DoneCount += sign;
+                job.DoneBytes += sign * item.Size;
+                break;
+            case TransferItemState.Failed:
+                job.FailedCount += sign;
+                break;
+        }
+    }
+
+    private sealed class WholeJobReporter(TransferQueue queue, Job job) : ITransferJobReporter
+    {
+        public void Stage(string name, int done, int total) => queue.OnStage(job, new TransferStage(name, Math.Max(0, done), Math.Max(0, total)));
+
+        public void Item(int index, TransferItemState state, string? code = null, string? message = null, long? size = null) =>
+            queue.OnWholeItem(job, index, state, code, message, size);
+
+        public void Error(TransferError? error)
+        {
+            lock (queue._gate)
+            {
+                job.Data.Error = error;
+            }
         }
     }
 
@@ -845,6 +1090,14 @@ public sealed class TransferQueue : IAsyncDisposable
                         job.Stop = StopReason.DeviceGone;
                         cancel.Add(job.Cts);
                     }
+                    else if (job.Data.State == TransferState.Queued && job.Whole is not null)
+                    {
+                        // A delete never waits for its phone (it would start by itself when the phone is back).
+                        job.Data.Error = new TransferError(DeviceErrorCodes.Disconnected, "The phone went away before its turn came, so nothing was done.");
+                        job.Data.FinishedAt = _time.GetLocalNow();
+                        SetState(job, TransferState.Failed);
+                        Prune();
+                    }
                     else if (job.Data.State == TransferState.Queued)
                     {
                         SetState(job, TransferState.WaitingForDevice);
@@ -968,7 +1221,8 @@ public sealed class TransferQueue : IAsyncDisposable
             data.Conflict,
             data.Error,
             data.CreatedAt,
-            data.FinishedAt);
+            data.FinishedAt,
+            running ? job.Stage : null);
     }
 
     private void Prune()

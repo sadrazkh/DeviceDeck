@@ -50,6 +50,11 @@ internal sealed class Cli
           wpd-devices                         the portable devices Windows lists (no phone needed), Apple ones opened read-only
           wpd                                 the app's verdict, then the camera roll as Windows shows it: folders, files,
                                               the can-delete flag, how paths map (read-only)
+          wpd-timing [--items 39] [--count 200] [--full]
+                                              how long a delete's reading of Windows' view takes (read-only): the
+                                              N largest videos' folders read as a delete reads them now (bulk where the
+                                              driver can), the kept-listing case, and one object at a time vs in bulk;
+                                              --full also times every folder
           photodelete [--find <folder>]       find the pictures in <folder> (default E:\DeviceDeck-test\localsend) on the phone
                                               by content (SHA-256), else by name/size/date, and how each maps in Windows (read-only)
           photodelete --delete --yes [--find <folder>] [--allow-fallback]
@@ -101,7 +106,7 @@ internal sealed class Cli
     public IReadOnlyList<string> Positional { get; }
     public IReadOnlyDictionary<string, string?> Options { get; }
 
-    private static readonly HashSet<string> Flags = ["reveal", "system", "yes", "recursive", "browse", "names", "wifi", "delete", "allow-fallback"];
+    private static readonly HashSet<string> Flags = ["reveal", "system", "yes", "recursive", "browse", "names", "wifi", "delete", "allow-fallback", "full"];
 
     public static Cli Parse(string[] args)
     {

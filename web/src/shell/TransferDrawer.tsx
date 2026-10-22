@@ -6,6 +6,7 @@ import {
   ArrowUploadRegular,
   BroomRegular,
   CheckmarkRegular,
+  DeleteRegular,
   DismissRegular,
   ErrorCircleRegular,
   FolderOpenRegular,
@@ -28,6 +29,7 @@ import { GROUP_ORDER, groupTransfers, jobFraction, type TransferGroup } from '..
 import { useUi } from '../state/ui';
 import styles from './Drawer.module.css';
 import { useConflictQueue } from './ConflictDialog';
+import { DeleteJobRow, DeleteResultsDialog } from './DeleteJobRow';
 
 const KIND_ICON: Record<TransferKind, typeof ArrowDownloadRegular> = {
   photosExport: ImageMultipleRegular,
@@ -41,6 +43,7 @@ const KIND_ICON: Record<TransferKind, typeof ArrowDownloadRegular> = {
   photosToApp: ArrowUploadRegular,
   localSend: ImageMultipleRegular,
   whatsAppMedia: ArrowDownloadRegular, // round 4, whatsapp session
+  photosDelete: DeleteRegular, // v0.4.1: its own row (DeleteJobRow)
 };
 
 const GROUP_LABEL: Record<TransferGroup, 'transfers.group.active' | 'transfers.group.queued' | 'transfers.group.done' | 'transfers.group.failed'> = {
@@ -86,6 +89,7 @@ function JobRow({ job, device, showDevice }: { job: TransferJob; device: DeviceS
   const Icon = job.state === 'failed' ? ErrorCircleRegular : job.state === 'done' ? CheckmarkRegular : KIND_ICON[job.kind];
   const tone = job.state === 'failed' ? 'danger' : job.state === 'done' ? 'success' : job.state === 'cancelled' ? 'neutral' : undefined;
   const fraction = jobFraction(job);
+  const line = progressLine(job, i18n, device);
   const unfinished = !['done', 'failed', 'cancelled'].includes(job.state);
 
   return (
@@ -140,7 +144,8 @@ function JobRow({ job, device, showDevice }: { job: TransferJob; device: DeviceS
         <span
           className={`${styles.rowLine} ${job.state === 'failed' ? styles.rowLineError : job.state === 'waitingForDevice' || job.state === 'needsDecision' ? styles.rowLineWarning : ''}`}
         >
-          <span>{progressLine(job, i18n, device)}</span>
+          {/* Cut short in a narrow drawer (Persian runs longer): the whole line on hover. */}
+          <span title={line}>{line}</span>
         </span>
         {showDevice && device ? (
           <span className={styles.rowLine}>
@@ -186,6 +191,8 @@ export function TransferDrawer() {
   }, [open, setOpen]);
 
   return (
+    <>
+    <DeleteResultsDialog />
     <AnimatePresence>
       {open ? (
         <>
@@ -227,9 +234,13 @@ export function TransferDrawer() {
                         {t(GROUP_LABEL[group])} <span className={`${styles.count} num`}>{n(groups[group].length)}</span>
                       </h3>
                       <ul className={styles.jobs}>
-                        {groups[group].map((job) => (
-                          <JobRow key={job.id} job={job} device={devices.find((d) => d.id === job.deviceId)} showDevice={multiDevice} />
-                        ))}
+                        {groups[group].map((job) =>
+                          job.kind === 'photosDelete' ? (
+                            <DeleteJobRow key={job.id} job={job} device={devices.find((d) => d.id === job.deviceId)} showDevice={multiDevice} />
+                          ) : (
+                            <JobRow key={job.id} job={job} device={devices.find((d) => d.id === job.deviceId)} showDevice={multiDevice} />
+                          ),
+                        )}
                       </ul>
                     </section>
                   ))
@@ -240,5 +251,6 @@ export function TransferDrawer() {
         </>
       ) : null}
     </AnimatePresence>
+    </>
   );
 }

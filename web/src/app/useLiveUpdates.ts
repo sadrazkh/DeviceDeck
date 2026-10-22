@@ -3,6 +3,9 @@ import { useEffect, useRef } from 'react';
 import type { TransferJob } from '../bridge/types';
 import { useI18n } from '../i18n';
 import { usePhotoBackupEvents } from '../screens/photos/backupQueries';
+import { copyDestinations, refreshAfterDelete } from '../screens/photos/photoDelete';
+import { announceDeleteFinished, deleteJobKey } from '../shell/DeleteJobRow';
+import type { DeviceSummary } from '../bridge/types';
 import { toast } from '../state/toasts';
 import { useUi } from '../state/ui';
 import { useActions } from './actions';
@@ -59,8 +62,27 @@ export function useLiveUpdates() {
         onTransfer: ({ job, previous }) => {
           // A backup the host started by itself (the phone connected, a notification): the panel shows it at once.
           if (!previous && job.kind === 'photosBackup') void queryClient.invalidateQueries({ queryKey: ['photos.backupStatus', job.deviceId] });
+          // A delete that copies first (v0.4.1): once its copy jobs exist, their rows can show the folder.
+          const copyFolder = job.kind === 'photosDelete' && job.stage?.name === 'copying' ? copyDestinations.get(job.id) : undefined;
+          if (copyFolder) {
+            copyDestinations.delete(job.id);
+            void client.call('photos.deleteJob', { jobId: job.id }).then(
+              (status) => status.copyJobIds.forEach((id) => useUi.getState().rememberDestination(id, copyFolder)),
+              () => undefined,
+            );
+          }
           if (!previous || previous.state === job.state) return;
           const { t } = latest.current.i18n;
+          if (job.kind === 'photosDelete') {
+            // v0.4.1: a delete ended: the photo lists, albums, storage and its results are read again.
+            if (job.state === 'done' || job.state === 'failed' || job.state === 'cancelled') {
+              refreshAfterDelete(queryClient, job.deviceId);
+              void queryClient.invalidateQueries({ queryKey: deleteJobKey(job.id) });
+              const device = queryClient.getQueryData<DeviceSummary[]>(keys.devices)?.find((d) => d.id === job.deviceId);
+              announceDeleteFinished(latest.current.i18n, job, device);
+            }
+            return;
+          }
           if (job.state === 'done') {
             invalidateAfter(queryClient, job);
             const destination = useUi.getState().jobDestinations[job.id];

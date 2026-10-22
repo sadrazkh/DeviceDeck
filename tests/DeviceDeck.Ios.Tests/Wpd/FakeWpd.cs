@@ -12,6 +12,18 @@ internal sealed class FakeWpd : IWpdBackend
     public int ReadOnlyOpens { get; private set; }
     public int ReadWriteOpens { get; private set; }
 
+    /// <summary>What each call costs, on a simulated clock (nothing sleeps); all zero unless a test sets them.</summary>
+    public WpdLatency Latency { get; } = new();
+
+    /// <summary>The driver reads many objects in one request (IPortableDevicePropertiesBulk); false: GetMany answers null.</summary>
+    public bool BulkReads { get; set; } = true;
+
+    /// <summary>Objects a bulk answer leaves out (by id), as a driver might; the reader then asks for them one by one.</summary>
+    public Func<string, bool>? BulkLeavesOut { get; set; }
+
+    /// <summary>A bulk read fails with this HRESULT (a driver that breaks or stalls on it).</summary>
+    public int? BulkFails { get; set; }
+
     /// <summary>An iPhone the way Windows lists it: Apple's VID, the UDID (no dash) as the USB serial, Internal Storage.</summary>
     public FakeWpdDevice AddIphone(string udid, string? usbSerial = "", string? wpdSerial = null)
     {
@@ -25,6 +37,7 @@ internal sealed class FakeWpd : IWpdBackend
 
     public IReadOnlyList<WpdDeviceInfo> ListDevices()
     {
+        Latency.Charge(Latency.ListDevices);
         lock (_gate)
         {
             return Devices.Select(d => new WpdDeviceInfo(d.PnpId, "Apple iPhone", "Apple Inc.", "Apple iPhone", d.UsbSerial)).ToList();
@@ -33,6 +46,7 @@ internal sealed class FakeWpd : IWpdBackend
 
     public IWpdConnection Open(string pnpDeviceId, bool readOnly)
     {
+        Latency.Charge(Latency.Open);
         lock (_gate)
         {
             var device = Devices.FirstOrDefault(d => d.PnpId == pnpDeviceId)
@@ -46,17 +60,46 @@ internal sealed class FakeWpd : IWpdBackend
                 ReadWriteOpens++;
             }
 
-            return new Connection(device, readOnly);
+            return new Connection(this, device, readOnly, Latency);
         }
     }
 
-    private sealed class Connection(FakeWpdDevice device, bool readOnly) : IWpdConnection
+    private sealed class Connection(FakeWpd owner, FakeWpdDevice device, bool readOnly, WpdLatency latency) : IWpdConnection
     {
+        public IReadOnlyList<WpdObject>? GetMany(IReadOnlyList<string> objectIds, Action<int>? progress, CancellationToken ct)
+        {
+            if (!owner.BulkReads)
+            {
+                return null;
+            }
+
+            if (owner.BulkFails is { } hr)
+            {
+                latency.Bulk(objectIds.Count);
+                throw new WpdException("Windows stopped answering a bulk read of the iPhone's objects.", hr);
+            }
+
+            ct.ThrowIfCancellationRequested();
+            latency.Bulk(objectIds.Count);
+            var found = objectIds.Where(id => owner.BulkLeavesOut?.Invoke(id) != true).Select(device.Peek).Where(o => o is not null).Select(o => o!).ToList();
+            progress?.Invoke(found.Count);
+            return found;
+        }
+
         public WpdDeviceProperties Device => device.Properties;
 
-        public IReadOnlyList<string> ChildIds(string parentId, CancellationToken ct) => device.Children(parentId);
+        public IReadOnlyList<string> ChildIds(string parentId, CancellationToken ct)
+        {
+            var ids = device.Children(parentId);
+            latency.ChildIds(ids.Count);
+            return ids;
+        }
 
-        public WpdObject? Get(string objectId) => device.Get(objectId);
+        public WpdObject? Get(string objectId)
+        {
+            latency.Get();
+            return device.Get(objectId);
+        }
 
         public IReadOnlyList<int> Delete(IReadOnlyList<string> objectIds) => device.Delete(objectIds, readOnly);
 
@@ -179,6 +222,15 @@ internal sealed class FakeWpdDevice(string pnpId, string? usbSerial, WpdDevicePr
         }
     }
 
+    /// <summary>An object as it is now, without the stale or error behaviours of <see cref="Get"/> (bulk reads).</summary>
+    public WpdObject? Peek(string id)
+    {
+        lock (_gate)
+        {
+            return _objects.GetValueOrDefault(id);
+        }
+    }
+
     public WpdObject? Get(string id)
     {
         lock (_gate)
@@ -268,5 +320,85 @@ internal sealed class FakeWpdDevice(string pnpId, string? usbSerial, WpdDevicePr
             _children[parentId].Add(id);
             return id;
         }
+    }
+}
+
+/// <summary>
+/// How slow Windows Portable Devices is with a real iPhone, on a simulated clock: each call adds its cost to
+/// <see cref="Elapsed"/> and nothing sleeps. The defaults are zero; <see cref="LikeTheOwnersIphone"/> sets what his
+/// v0.4.0 log showed (about 160 s to read 3,258 objects one by one: ~50 ms per object).
+/// </summary>
+internal sealed class WpdLatency
+{
+    private long _ticks;
+    private int _gets;
+    private int _childCalls;
+    private int _bulkCalls;
+    private int _bulkObjects;
+
+    public TimeSpan ListDevices { get; set; }
+    public TimeSpan Open { get; set; }
+
+    /// <summary>One IPortableDeviceProperties::GetValues (one object).</summary>
+    public TimeSpan PerGet { get; set; }
+
+    /// <summary>One EnumObjects of a folder, plus a little per id it returns.</summary>
+    public TimeSpan PerChildIdsCall { get; set; }
+    public TimeSpan PerChildId { get; set; }
+
+    /// <summary>
+    /// One bulk request (IPortableDevicePropertiesBulk): a fixed cost per request plus a cost per object in it.
+    /// Unknown on a real iPhone: the probe's `wpd-timing` measures it.
+    /// </summary>
+    public TimeSpan PerBulkCall { get; set; }
+    public TimeSpan PerBulkObject { get; set; }
+
+    public TimeSpan Elapsed => TimeSpan.FromTicks(Interlocked.Read(ref _ticks));
+    public int Gets => Volatile.Read(ref _gets);
+    public int ChildIdsCalls => Volatile.Read(ref _childCalls);
+    public int BulkCalls => Volatile.Read(ref _bulkCalls);
+    public int BulkObjects => Volatile.Read(ref _bulkObjects);
+
+    /// <summary>The owner's iPhone 16 on iOS 27 as his log showed it; bulk at <paramref name="perBulkObject"/> per object (an assumption).</summary>
+    public WpdLatency LikeTheOwnersIphone(TimeSpan? perBulkObject = null)
+    {
+        ListDevices = TimeSpan.FromMilliseconds(30);
+        Open = TimeSpan.FromMilliseconds(150);
+        PerGet = TimeSpan.FromMilliseconds(50);
+        PerChildIdsCall = TimeSpan.FromMilliseconds(50);
+        PerChildId = TimeSpan.FromMilliseconds(0.05);
+        PerBulkCall = TimeSpan.FromMilliseconds(50);
+        PerBulkObject = perBulkObject ?? TimeSpan.FromMilliseconds(2);
+        return this;
+    }
+
+    public void Charge(TimeSpan cost) => Interlocked.Add(ref _ticks, cost.Ticks);
+
+    public void Get()
+    {
+        Interlocked.Increment(ref _gets);
+        Charge(PerGet);
+    }
+
+    public void ChildIds(int count)
+    {
+        Interlocked.Increment(ref _childCalls);
+        Charge(PerChildIdsCall + PerChildId * count);
+    }
+
+    public void Bulk(int objects)
+    {
+        Interlocked.Increment(ref _bulkCalls);
+        Interlocked.Add(ref _bulkObjects, objects);
+        Charge(PerBulkCall + PerBulkObject * objects);
+    }
+
+    public void Reset()
+    {
+        Interlocked.Exchange(ref _ticks, 0);
+        Interlocked.Exchange(ref _gets, 0);
+        Interlocked.Exchange(ref _childCalls, 0);
+        Interlocked.Exchange(ref _bulkCalls, 0);
+        Interlocked.Exchange(ref _bulkObjects, 0);
     }
 }
