@@ -23,9 +23,22 @@ async function selectPhotos(page: Page, count: number, persian = false) {
 
 /** Confirms the open delete dialog: it closes at once, a toast says where the delete went, the drawer shows it. */
 async function confirmAndHandOff(page: Page, confirm = 'photo-delete-confirm', persian = false): Promise<Locator> {
+  // The toast stays 4 s; on a slow runner it can come and go before a visibility check runs, so it is recorded the moment
+  // it appears (after the dialog's own text, which never says this) instead of being looked for afterwards.
+  const toast = persian ? 'حذف در پس‌زمینه ادامه دارد' : 'Deleting in the background';
+  await page.evaluate((text) => {
+    const w = window as unknown as { __sawToast?: boolean };
+    w.__sawToast = false;
+    new MutationObserver((records, observer) => {
+      if (records.some((r) => Array.from(r.addedNodes).some((n) => n.textContent?.includes(text)) || r.target.textContent?.includes(text))) {
+        w.__sawToast = true;
+        observer.disconnect();
+      }
+    }).observe(document.body, { subtree: true, childList: true, characterData: true });
+  }, toast);
   await page.getByTestId(confirm).click();
   await expect(dialogs(page)).toHaveCount(0);
-  await expect(page.getByText(persian ? 'حذف در پس‌زمینه ادامه دارد' : 'Deleting in the background').last()).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __sawToast?: boolean }).__sawToast)).toBe(true);
   await expect(page.getByTestId('transfer-drawer')).toBeVisible();
   const row = deleteRow(page);
   await expect(row).toBeVisible();
