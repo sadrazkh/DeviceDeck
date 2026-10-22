@@ -43,7 +43,7 @@ import styles from './Photos.module.css';
 import deleteStyles from './PhotoDelete.module.css';
 import { PhotoDeleteDialog } from './PhotoDeleteDialog';
 import { PhotoDeleteWhyDialog, reasonOf } from './PhotoDeleteNotice';
-import { SHORT_REASON, usePhotoDeleteSupport } from './photoDelete';
+import { SHORT_REASON, usePhotoDeleteSupport, usePrepareDelete } from './photoDelete';
 
 type Filter = 'all' | 'photos' | 'videos' | 'live' | 'favorites';
 
@@ -175,6 +175,12 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
   const [deleting, setDeleting] = useState<PhotoAsset[] | null>(null);
   const [whyOpen, setWhyOpen] = useState(false);
   const deleteSupport = usePhotoDeleteSupport(device);
+  // Selecting is the first sign of a delete: an iPhone reads its camera roll's view ahead (v0.4.2).
+  const prepareDelete = usePrepareDelete(device);
+  const selecting = selection.ids.size > 0;
+  useEffect(() => {
+    if (selecting) prepareDelete('Photos: selection');
+  }, [selecting, prepareDelete]);
   const [visibleGroup, setVisibleGroup] = useState(0);
   const grid = useRef<PhotoGridHandle>(null);
   const importInput = useRef<HTMLInputElement>(null);

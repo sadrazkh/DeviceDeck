@@ -160,6 +160,16 @@ test('Photos: Stop while it reads the camera roll deletes nothing', async ({ pag
   await expect(page.getByText('12,481 photos · 732 videos')).toBeVisible(); // the library read again: all still there
 });
 
+test('Photos: selecting reads the camera roll ahead, so the delete’s reading starts well along', async ({ page }) => {
+  await page.goto(query('light', { screen: 'photos', queue: '0', deletespeed: 'slow' }));
+  await selectPhotos(page, 1); // selecting asks the iPhone to read ahead (about 220 objects a second here)
+  await page.waitForTimeout(5000); // the user looks at what they picked
+  await page.getByTestId('delete-selected').click();
+  const row = await confirmAndHandOff(page);
+  // Without the read ahead it would show a few hundred of 3,258 at this point.
+  await expect(row.getByTestId('delete-job-line')).toContainText(/: [1-3],\d{3} of 3,258 items/, { timeout: 1500 });
+});
+
 test('Photos: Stop while it deletes stops after the batch on its way, and the results say which went', async ({ page }) => {
   test.setTimeout(120_000);
   await page.goto(query('light', { screen: 'photos', queue: '0', deletespeed: 'slow' }));

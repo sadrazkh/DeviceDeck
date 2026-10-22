@@ -1202,3 +1202,32 @@ type PhotoBackupHiddenLayout = "separate" | "together";
   Hidden album is revealed on the Photos screen. Settings › Photo backup has the same choices as the defaults.
 - **PhotoBench**: `--hidden exclude|separate|together|only`, `--hidden-layout separate|together` (for `only`),
   `--hidden-folder <name>`; it prints where the files went.
+
+### Reading ahead (v0.4.2, deletejob2)
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `photos.deletePrepare` | `{ deviceId, reason? }` | `{}` at once, always (also for a phone that can't delete, or an unknown id) |
+
+An iPhone that can delete reads Windows' view of its whole camera roll ahead, in the background: read-only, on a
+low-priority thread, cancelable, into the per-phone listing a delete uses. It starts when Clean-up's analysis finishes,
+and when the page calls `photos.deletePrepare`: Photos calls it as soon as something is selected and when the delete
+dialog opens. It doesn't start while a delete runs, while one runs already, or while the kept listing is complete and
+less than 2½ minutes old. A delete stops it and carries on from what it read (its "reading" count starts there).
+Locking or unplugging the phone stops it and drops what it read. It is no transfer (nothing in the drawer).
+
+Measured on the owner's iPhone 16 (iOS 27, read-only probes `wpd-dates`, `wpd-dryrun`):
+- The first read of an object takes ~27-47 ms. Bulk reads are no faster: 48 ms an object in bulk, 47 ms one by one.
+  Windows' driver then keeps what it read until the phone is unplugged, and that holds across connections and
+  processes: every object again in 0.1 s. Whole roll: 3,217 objects in 86 s the first time.
+- Delete → Deleting for 39 items: about 0.3 s once the roll was read ahead. Without a read ahead, at that speed:
+  ~95 s for 39 items spread over 11 months, or ~150 s when a still is missing and every folder is read.
+- The month folders (`YYYYMM_a`, and `_b` beside some) follow the date taken. All 3,217 objects' own creation dates
+  are in their folder's month, and so are all 245 sampled objects matched to a phone file by name. Photos.sqlite's
+  ZDATECREATED and ZADDEDDATE agreed for every one of those. ZMODIFICATIONDATE agreed for only 87%.
+  `_b` held two items of a month that also has `_a`; its meaning isn't known, so every folder of the month is read.
+- Windows lists only 2,015 of the phone's 4,376 DCIM files by name. Nothing added before August 2025 (1,509 assets,
+  moved over from an earlier iPhone) is in its view, and that includes 38 of the 39 largest videos. Those can't be
+  deleted from a PC. The delete now says so once it has read every folder: "Windows doesn't list … anywhere in the
+  iPhone's camera roll, so this PC can't delete it. Delete it in the Photos app on the iPhone."
+

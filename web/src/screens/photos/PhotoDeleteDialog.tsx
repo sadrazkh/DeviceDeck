@@ -13,7 +13,7 @@ import { Switch } from '../../components/ui';
 import { useI18n, type I18n } from '../../i18n';
 import { announceDeleteStarted } from '../../shell/DeleteJobRow';
 import styles from './PhotoDelete.module.css';
-import { COPY_FIRST_ABOVE, useDeletePhotos } from './photoDelete';
+import { COPY_FIRST_ABOVE, useDeletePhotos, usePrepareDelete } from './photoDelete';
 
 /** Rows listed in the confirmation; the rest are counted. */
 const LISTED = 200;
@@ -62,6 +62,9 @@ export function PhotoDeleteDialog({
   const actions = useActions();
   const settings = useSettings().data;
   const deletePhotos = useDeletePhotos(device);
+  const prepare = usePrepareDelete(device);
+  // While the user reads the dialog, an iPhone reads its camera roll's view ahead (v0.4.2).
+  useEffect(() => prepare('Photos: delete dialog'), [prepare]);
   // Originals in iCloud only aren't on the phone: nothing of theirs to delete, so they stay out.
   const cloudOnly = assets.filter((a) => a.inCloudOnly);
   const items = useMemo(() => assets.filter((a) => !a.inCloudOnly), [assets]);

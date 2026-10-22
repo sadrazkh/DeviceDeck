@@ -298,6 +298,8 @@ export interface BridgeMethods {
     result: PhotoDeleteStarted;
   };
   'photos.deleteJob': { params: { jobId: string }; result: PhotoDeleteJobStatus };
+  // v0.4.2: a delete is likely (selection mode, the delete dialog): an iPhone reads its camera roll's view ahead.
+  'photos.deletePrepare': { params: DeviceParams & { reason?: string }; result: Empty };
 }
 
 export type MethodName = keyof BridgeMethods;
@@ -455,6 +457,7 @@ const methodTable = {
   'photos.deleteSupport': true,
   'photos.deleteItems': true,
   'photos.deleteJob': true,
+  'photos.deletePrepare': true,
 } as const satisfies Record<MethodName, true>;
 
 export const METHOD_NAMES = Object.keys(methodTable) as MethodName[];

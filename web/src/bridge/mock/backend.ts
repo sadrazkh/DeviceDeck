@@ -194,6 +194,7 @@ export class MockBackend {
     const device = this.devices.get(deviceId);
     if (!device || device.state === 'disconnected') return;
     this.engine.deviceOffline(deviceId);
+    this.photoDelete.forget(deviceId);
     this.setDevice({ ...device, state: 'disconnected' });
   }
 
@@ -262,6 +263,7 @@ export class MockBackend {
     }
     this.engine.tick(ms);
     this.backups.tick(ms);
+    this.photoDelete.tick(ms);
   }
 
   // ---------- Images (the mock's stand-in for https://device.local/) ----------
@@ -668,6 +670,7 @@ export class MockBackend {
       fault: (code, message) => fault(code, message),
       badParams,
       startPhotoDelete: (deviceId, items, options) => this.photoDelete.start(deviceId, items, options),
+      analysed: (deviceId) => this.photoDelete.prefetch(deviceId),
     }),
     ...batteryHandlers({
       requireReady: (deviceId, capability) => this.requireReady(deviceId, capability),

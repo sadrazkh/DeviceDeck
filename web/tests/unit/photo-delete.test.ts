@@ -64,6 +64,7 @@ describe('mock photo delete', () => {
     expect(METHOD_NAMES).toContain('photos.deleteSupport');
     expect(METHOD_NAMES).toContain('photos.deleteItems');
     expect(METHOD_NAMES).toContain('photos.deleteJob');
+    expect(METHOD_NAMES).toContain('photos.deletePrepare');
     expect(IPHONE_LIMITED_CAPABILITIES).not.toContain('photosDelete');
   });
 
@@ -198,6 +199,29 @@ describe('mock photo delete', () => {
     expect(failed).toMatchObject({ state: 'failed', error: { code: 'device_disconnected' } });
     expect((await rejection(client.call('transfers.retry', { jobId }))).code).toBe('internal');
     expect((await rejection(client.call('transfers.resume', { jobId }))).code).toBe('internal');
+  });
+
+  it('reads an iPhone’s camera roll ahead when asked (Photos, or a Clean-up analysis), and a delete carries on from it', async () => {
+    const { client, backend, updates } = setup('ok', 'slow');
+    const [a, b] = await firstPhotos(client, IPHONE_ID, 2);
+    expect(await client.call('photos.deletePrepare', { deviceId: IPHONE_ID, reason: 'Photos: selection' })).toEqual({});
+    for (let t = 0; t < 6_000; t += 250) backend.tick(250); // part of it
+    const first = await deleteItems(client, IPHONE_ID, [{ id: a!.id, size: a!.size }]);
+    const reading = updates.find((u) => u.id === first && u.stage?.name === 'reading')!;
+    expect(reading.stage!.done).toBeGreaterThanOrEqual(1300); // carried on from about 6 s of reading ahead
+    await finish(client, backend, first);
+
+    // A Clean-up analysis starts it too; read to the end, the next delete reads nothing.
+    await client.call('cleanup.analyze', { deviceId: IPHONE_ID });
+    for (let t = 0; t < 20_000; t += 250) backend.tick(250);
+    const second = await deleteItems(client, IPHONE_ID, [{ id: b!.id, size: b!.size }]);
+    expect(updates.find((u) => u.id === second && u.stage?.name === 'reading')!.stage).toEqual({ name: 'reading', done: 3258, total: 3258 });
+  });
+
+  it('a phone without photosDelete, or an Android phone, reads nothing ahead', async () => {
+    const { client } = setup('iCloudPhotos');
+    expect(await client.call('photos.deletePrepare', { deviceId: IPHONE_ID })).toEqual({});
+    expect(await client.call('photos.deletePrepare', { deviceId: ANDROID_ID })).toEqual({});
   });
 
   it('shows a stage’s progress, and keeps a delete out of the title bar’s bytes', () => {

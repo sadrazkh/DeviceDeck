@@ -2,6 +2,7 @@
 // confirmed delete with its per-item results. Used by Photos and Clean-up.
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { useCallback } from 'react';
 import type { PhotoDeleteBlock, PhotoDeleteStarted, PhotoDeleteSupport } from '../../bridge/photoDeleteTypes';
 import type { DeviceSummary } from '../../bridge/types';
 import { useActions } from '../../app/actions';
@@ -78,6 +79,21 @@ export function useDeletePhotos(device: DeviceSummary) {
       return null;
     }
   };
+}
+
+/**
+ * v0.4.2: a delete is likely (the user started selecting, or opened the delete dialog): an iPhone that can delete reads
+ * Windows' view of its camera roll ahead, so the delete's "Reading" takes moments, not minutes. Fire and forget.
+ */
+export function usePrepareDelete(device: DeviceSummary) {
+  const client = useClient();
+  const can = device.platform === 'ios' && device.state === 'ready' && device.capabilities.includes('photosDelete');
+  return useCallback(
+    (reason: string) => {
+      if (can) client.call('photos.deletePrepare', { deviceId: device.id, reason }).catch(() => undefined);
+    },
+    [client, can, device.id],
+  );
 }
 
 /** After a delete the host rebuilt its photo index; the page reads the library, albums and storage again. */

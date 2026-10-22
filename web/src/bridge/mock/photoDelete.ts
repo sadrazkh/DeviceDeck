@@ -68,8 +68,41 @@ export class MockPhotoDelete {
   /** Where deletes went on each phone this session (what a real iPhone shows after its first delete). */
   private readonly observed = new Map<string, PhotoDeleteDestination>();
   private readonly runs = new Map<string, DeleteRun>();
+  /** v0.4.2: each iPhone's read ahead of its camera roll's view: objects read, and whether it still runs. */
+  private readonly ahead = new Map<string, { read: number; running: boolean }>();
 
   constructor(private readonly ctx: PhotoDeleteContext) {}
+
+  /** Starts reading an iPhone's camera roll ahead (when it can delete and isn't read or being read). */
+  prefetch(deviceId: string): void {
+    const device = this.ctx.device(deviceId);
+    if (!device || device.platform !== 'ios' || device.state !== 'ready' || !device.capabilities.includes('photosDelete')) return;
+    const current = this.ahead.get(deviceId);
+    if (current?.running || current?.read === ROLL_OBJECTS) return;
+    this.ahead.set(deviceId, { read: current?.read ?? 0, running: true });
+  }
+
+  /** Simulated time passes for the reads ahead. */
+  tick(ms: number): void {
+    for (const state of this.ahead.values()) {
+      if (!state.running) continue;
+      state.read = Math.min(ROLL_OBJECTS, state.read + Math.round((ms / 1000) * SPEED[this.speed].objectsPerSecond));
+      if (state.read === ROLL_OBJECTS) state.running = false;
+    }
+  }
+
+  /** A delete stops the read ahead and carries on from what it read. */
+  takeReadAhead(deviceId: string): number {
+    const state = this.ahead.get(deviceId);
+    if (!state) return 0;
+    state.running = false;
+    return state.read;
+  }
+
+  /** The phone went away or locked: what was read ahead is gone. */
+  forget(deviceId: string): void {
+    this.ahead.delete(deviceId);
+  }
 
   /** The reason the iPhone can't delete in this scenario, or null when it can. */
   get blocked(): PhotoDeleteBlock | null {
@@ -202,6 +235,7 @@ export class MockPhotoDelete {
     'photos.deleteSupport': Handler<'photos.deleteSupport'>;
     'photos.deleteItems': Handler<'photos.deleteItems'>;
     'photos.deleteJob': Handler<'photos.deleteJob'>;
+    'photos.deletePrepare': Handler<'photos.deletePrepare'>;
   } = {
     'photos.deleteSupport': ({ deviceId, recheck }) => {
       const device = this.ctx.requireReady(deviceId, 'photosRead');
@@ -225,6 +259,11 @@ export class MockPhotoDelete {
     },
 
     'photos.deleteJob': ({ jobId }) => this.status(jobId),
+
+    'photos.deletePrepare': ({ deviceId }) => {
+      this.prefetch(deviceId);
+      return {};
+    },
   };
 }
 
@@ -235,6 +274,8 @@ class DeleteRun implements StagedRun {
   jobId = '';
   private phase: Phase;
   private clock = 0;
+  /** Objects a read ahead had read when this delete started reading (v0.4.2). */
+  private readFrom = 0;
   private batch = 0;
   private readonly results: (PhotoDeleteResult | null)[];
   private planned: { results: PhotoDeleteResult[]; goesTo: PhotoDeleteDestination; matched: boolean } | null = null;
@@ -262,7 +303,9 @@ class DeleteRun implements StagedRun {
   }
 
   started(): Partial<TransferJob> {
-    return { stage: this.phase === 'copying' ? { name: 'copying', done: 0, total: this.items.length } : { name: 'reading', done: 0, total: this.readTotal } };
+    if (this.phase === 'copying') return { stage: { name: 'copying', done: 0, total: this.items.length } };
+    this.readFrom = this.ios ? this.owner.takeReadAhead(this.deviceId) : 0;
+    return { stage: { name: 'reading', done: this.readFrom, total: this.readTotal } };
   }
 
   advance(seconds: number): Partial<TransferJob> {
@@ -280,12 +323,14 @@ class DeleteRun implements StagedRun {
         if (copies.every((j) => j!.state === 'done')) {
           this.phase = 'reading';
           this.clock = 0;
-          return { stage: { name: 'reading', done: 0, total: this.readTotal } };
+          this.readFrom = this.ios ? this.owner.takeReadAhead(this.deviceId) : 0;
+          return { stage: { name: 'reading', done: this.readFrom, total: this.readTotal } };
         }
         return { stage: { name: 'copying', done, total } };
       }
       case 'reading': {
-        const read = Math.min(this.readTotal, Math.round(this.clock * this.speed.objectsPerSecond));
+        // It carries on from what a read ahead read (v0.4.2).
+        const read = Math.min(this.readTotal, this.readFrom + Math.round(this.clock * this.speed.objectsPerSecond));
         if (read < this.readTotal) return { stage: { name: 'reading', done: read, total: this.readTotal } };
         this.planned = this.owner.plan(this.deviceId, this.items);
         this.goesTo = this.planned.goesTo;
