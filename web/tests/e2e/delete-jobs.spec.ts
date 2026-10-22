@@ -83,7 +83,8 @@ test('Files: Delete closes at once, the drawer deletes them, and Results lists e
 
 test('a slow delete shows its stage and a bar; Stop leaves what it hadn’t reached', async ({ page }) => {
   const consoleWatch = watchConsole(page);
-  await openVlc(page, 'light', { deletespeed: 'slow' });
+  // 30 s an item: still on the first one when Stop comes, however slow the runner.
+  await openVlc(page, 'light', { deletespeed: 'crawl' });
   await fileRow(page, 'Persepolis.mkv').click();
   await fileRow(page, 'The Grand Budapest Hotel.mp4').click({ modifiers: ['Control'] });
   await fileRow(page, 'Subtitles').click({ modifiers: ['Control'] });
@@ -109,24 +110,47 @@ test('a slow delete shows its stage and a bar; Stop leaves what it hadn’t reac
 
 test('several deletes on one phone wait their turn, then each runs', async ({ page }) => {
   await openVlc(page, 'light', { deletespeed: 'slow' });
-  await fileRow(page, 'Persepolis.mkv').click();
-  await page.getByTestId('delete-button').click();
-  await page.getByTestId('delete-confirm').click();
-  await expect(dialogs(page)).toHaveCount(0);
-  await page.keyboard.press('Escape');
+  await page.getByTestId('transfer-pill').click();
+  await expect(page.getByTestId('transfer-drawer')).toBeVisible();
+  // The drawer's waiting row is recorded the moment it shows (on a slow runner it may be gone before a check looks).
+  await page.evaluate(() => {
+    const w = window as unknown as { __sawWaiting?: boolean };
+    w.__sawWaiting = false;
+    const look = () => {
+      if (document.querySelector('[data-kind=filesDelete][data-state=queued]')?.textContent?.includes('Waiting for the delete before it')) w.__sawWaiting = true;
+    };
+    new MutationObserver(look).observe(document.body, { subtree: true, childList: true, characterData: true, attributes: true, attributeFilter: ['data-state'] });
+  });
 
-  await fileRow(page, 'The Grand Budapest Hotel.mp4').click();
-  await page.getByTestId('delete-button').click();
-  await page.getByTestId('delete-confirm').click();
-  await expect(dialogs(page)).toHaveCount(0);
+  // Two deletes confirmed one right after the other (queued in one go here, so a slow runner can't let the first end
+  // before the second exists): one delete at a time per phone, so the second waits for the first.
+  const states = await page.evaluate(() => {
+    type Handler = (params: Record<string, unknown>) => unknown;
+    const m = (window as unknown as { deviceDeckMock: { handlers: Record<string, Handler> } }).deviceDeckMock;
+    const deviceId = '00008150-001A2C3E0E91002E';
+    const root = 'app:org.videolan.vlc-ios';
+    const entries = m.handlers['files.list']!({ deviceId, root, path: '/' }) as { path: string; name: string; size: number; isDirectory: boolean }[];
+    const item = (name: string) => {
+      const e = entries.find((x) => x.name === name)!;
+      return { root, path: e.path, size: e.isDirectory ? 0 : e.size, isDirectory: e.isDirectory };
+    };
+    const first = [item('Persepolis.mkv'), item('Subtitles')];
+    const second = [item('The Grand Budapest Hotel.mp4')];
+    const total = (items: { size: number }[]) => items.reduce((n, i) => n + i.size, 0);
+    const a = m.handlers['files.deleteItems']!({ deviceId, items: first, expectedBytes: total(first) }) as { jobId: string };
+    const b = m.handlers['files.deleteItems']!({ deviceId, items: second, expectedBytes: total(second) }) as { jobId: string };
+    const jobs = m.handlers['transfers.list']!({}) as { id: string; state: string }[];
+    return [a.jobId, b.jobId].map((id) => jobs.find((j) => j.id === id)!.state);
+  });
+  expect(states[1]).toBe('queued');
 
   const rows = jobRows(page, 'filesDelete');
   await expect(rows).toHaveCount(2);
-  // The second one waits for the first (one delete at a time per phone), and says so.
-  await expect(page.getByTestId('transfer-drawer').getByText('Waiting for the delete before it')).toBeVisible();
+  await expect.poll(() => page.evaluate(() => (window as unknown as { __sawWaiting?: boolean }).__sawWaiting)).toBe(true);
   await expect(rows.nth(0)).toHaveAttribute('data-state', 'done', { timeout: 30_000 });
   await expect(rows.nth(1)).toHaveAttribute('data-state', 'done', { timeout: 30_000 });
-  await expect(page.getByTestId('file-table')).not.toContainText('Grand Budapest Hotel.mp4');
+  // All three went: the folder is empty now.
+  await expect(page.getByText('VLC has no files yet')).toBeVisible();
 });
 
 test('Apps: uninstalling two apps is one job in the drawer, and the list drops them', async ({ page }) => {
@@ -199,17 +223,17 @@ test('Clean-up: app files and apps go to the drawer too, and the cards drop what
 for (const variant of ['dark', 'rtl'] as const) {
   test(`delete rows read cleanly (${variant})`, async ({ page }) => {
     const consoleWatch = watchConsole(page);
-    await openVlc(page, variant, { deletespeed: 'slow' });
+    await openVlc(page, variant);
     await fileRow(page, 'Persepolis.mkv').click();
     await page.getByTestId('delete-button').click();
     await page.getByTestId('delete-confirm').click();
     await expect(dialogs(page)).toHaveCount(0);
     const row = jobRows(page, 'filesDelete').first();
-    await expect(row).toHaveAttribute('data-state', 'running');
+    await expect(row).toHaveAttribute('data-state', 'done', { timeout: 30_000 });
     if (variant === 'rtl') {
       await expect(row.getByTestId('delete-job-title')).toHaveText(/^حذف ۱ مورد از /);
+      await expect(row.getByTestId('delete-job-line')).toContainText('حذف شد');
     }
-    await expect(row).toHaveAttribute('data-state', 'done', { timeout: 30_000 });
     await settle(page);
     await shot(page, `delete-jobs-drawer-${variant}`);
     if (variant === 'dark') expect(await contrastProblems(page)).toEqual([]);

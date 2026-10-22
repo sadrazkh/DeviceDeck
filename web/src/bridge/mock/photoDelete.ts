@@ -4,7 +4,8 @@
 // asked), reading the iPhone's camera roll (N of M objects), deleting (N of the items), checking on the iPhone.
 // ?photodelete=iCloudPhotos|readOnly|locked|notCamera|converted (the iPhone can't delete, for that reason),
 // recentlyDeleted (deletes go to Recently Deleted), fails (the third photo of a delete is refused).
-// ?deletespeed=slow: a slow camera roll (reading takes about 15 s, a batch 4 s), for watching the stages.
+// ?deletespeed=slow: a slow camera roll (reading takes about 15 s, a batch 4 s), for watching the stages; crawl (v0.6):
+// slower still, for tests that must catch a delete while it runs even on a slow runner.
 
 import type { DeviceCapability, DeviceSummary, TransferJob } from '../types';
 import type { PhotoDeleteBlock, PhotoDeleteDestination, PhotoDeleteJobStatus, PhotoDeleteReach, PhotoDeleteResult, PhotoDeleteSupport } from '../photoDeleteTypes';
@@ -15,7 +16,7 @@ import type { JobItem, NewJob, StagedRun } from './transfers';
 export const MOCK_PHOTODELETE_SCENARIOS = ['ok', 'iCloudPhotos', 'readOnly', 'locked', 'notCamera', 'converted', 'recentlyDeleted', 'fails'] as const;
 export type MockPhotoDeleteScenario = (typeof MOCK_PHOTODELETE_SCENARIOS)[number];
 
-export const MOCK_DELETE_SPEEDS = ['normal', 'slow'] as const;
+export const MOCK_DELETE_SPEEDS = ['normal', 'slow', 'crawl'] as const;
 
 /** v0.4.2, ?reach=some: every fourth iPhone item (4th, 8th, …, newest first) is one Windows doesn't list. */
 export const MOCK_REACH_SCENARIOS = ['all', 'some'] as const;
@@ -30,6 +31,7 @@ const ROLL_OBJECTS = 3258;
 const SPEED: Record<MockDeleteSpeed, { objectsPerSecond: number; batchSeconds: number; checkSeconds: number }> = {
   normal: { objectsPerSecond: 1600, batchSeconds: 0.35, checkSeconds: 1 },
   slow: { objectsPerSecond: 220, batchSeconds: 4, checkSeconds: 2 },
+  crawl: { objectsPerSecond: 50, batchSeconds: 30, checkSeconds: 5 },
 };
 
 const STOPPED = 'Not tried: the delete was stopped.';

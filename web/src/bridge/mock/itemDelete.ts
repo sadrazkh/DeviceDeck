@@ -39,7 +39,11 @@ type Check = 'same' | 'changed' | 'missing';
 
 const STOPPED = 'Not tried: the delete was stopped.';
 const COPY_INCOMPLETE = 'The copy to the PC didn’t finish, so nothing was deleted.';
-const SECONDS: Record<MockDeleteSpeed, { reading: number; item: number }> = { normal: { reading: 0.3, item: 0.25 }, slow: { reading: 2, item: 2 } };
+const SECONDS: Record<MockDeleteSpeed, { reading: number; item: number }> = {
+  normal: { reading: 0.3, item: 0.25 },
+  slow: { reading: 2, item: 2 },
+  crawl: { reading: 5, item: 30 },
+};
 
 /** One item of a delete: how to tell whether it changed, and how to delete it. */
 interface Target {
