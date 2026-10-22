@@ -7,6 +7,7 @@ import { useI18n } from '../../i18n';
 import screen from '../Screen.module.css';
 import { PATTERN_PRESETS, exampleFolder, useBackupSpace } from './backupQueries';
 import styles from './Backup.module.css';
+import { HiddenBackupSettingsRows } from './HiddenBackupOptions';
 
 /** Settings › Photo backup: the defaults a phone uses until it has options of its own. */
 export function PhotosBackupSettings() {
@@ -68,6 +69,19 @@ export function PhotosBackupSettings() {
           label={t('photos.backup.convertHeic')}
         />
       </div>
+      <HiddenBackupSettingsRows
+        value={{ hidden: settings.photoBackupHidden, hiddenLayout: settings.photoBackupHiddenLayout, hiddenFolder: settings.photoBackupHiddenFolder }}
+        onChange={(patch) =>
+          update.mutate({
+            ...(patch.hidden !== undefined ? { photoBackupHidden: patch.hidden } : {}),
+            ...(patch.hiddenLayout !== undefined ? { photoBackupHiddenLayout: patch.hiddenLayout } : {}),
+            ...(patch.hiddenFolder !== undefined ? { photoBackupHiddenFolder: patch.hiddenFolder } : {}),
+          })
+        }
+        destination={`${settings.photoBackupFolder}\\iPhone`}
+        pattern={pattern}
+        convertHeic={settings.photoBackupConvertHeic}
+      />
       <p className={styles.fine}>{t('settings.photoBackup.note')}</p>
     </Card>
   );

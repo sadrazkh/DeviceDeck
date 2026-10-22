@@ -31,6 +31,7 @@ import {
   type ConfigurePatch,
 } from './backupQueries';
 import styles from './Backup.module.css';
+import { HiddenBackupSection } from './HiddenBackupOptions';
 
 function runSummary(run: PhotoBackupRun, i18n: I18n): string {
   const { t } = i18n;
@@ -235,6 +236,8 @@ function Body({
               <span className={styles.heroTitle}>{t('photos.backup.new')}</span>
               <span className="t-caption t-secondary num">
                 {t('photos.backup.newDetail', { photos: count.newPhotos, videos: count.newVideos })}
+                {/* How many are hidden stays private until the Hidden album is revealed on the Photos screen. */}
+                {count.newHidden > 0 && hiddenRevealed ? ` · ${t('photos.backup.hidden.newHidden', { count: count.newHidden })}` : ''}
                 {count.newEdits > 0 ? ` · ${t('photos.backup.newEdits', { count: count.newEdits })}` : ''}
                 {count.newBytes > 0 ? ` · ${t('photos.backup.about', { size: bytes(count.newBytes) })}` : ''}
               </span>
@@ -276,6 +279,11 @@ function Body({
         <Banner icon={<LockClosedRegular />}>
           {hiddenRevealed ? t('photos.backup.hiddenLeftOut', { count: count.hiddenLeftOut }) : t('photos.backup.hiddenLeftOutLocked')}
         </Banner>
+      ) : null}
+      {count.normalLeftOut > 0 ? (
+        <div data-testid="backup-normal-left-out">
+          <Banner icon={<LockClosedRegular />}>{t('photos.backup.hidden.normalLeftOut', { count: count.normalLeftOut })}</Banner>
+        </div>
       ) : null}
 
       <SpaceBanner data={data} onPick={onPick} disabled={!!running} />
@@ -349,10 +357,15 @@ function Body({
       </div>
 
       {device.platform === 'ios' ? (
-        <div className={styles.section}>
-          <Switch checked={options.includeHidden} onChange={(includeHidden) => configure({ includeHidden })} label={t('photos.backup.includeHidden')} />
-          <span className={styles.hint}>{t('photos.backup.includeHiddenHint')}</span>
-        </div>
+        <HiddenBackupSection
+          value={options}
+          onChange={configure}
+          destination={options.destination}
+          pattern={options.folderPattern}
+          convertHeic={options.convertHeic && data.heicConversion !== 'missingCodec'}
+          disabled={!!running}
+          movesNote={data.backedUp > 0}
+        />
       ) : null}
 
       {device.platform === 'ios' ? (

@@ -129,10 +129,12 @@ export async function layoutProblems(page: Page, scope = '[data-testid=content]'
         if (a.left < b.left - 1 || a.right > b.right + 1) problems.push(`outside: ${describe(button)} leaves its card`);
       }
     }
+    // Only the part of a button its scrolling boxes show counts: one scrolled under a dialog's footer isn't drawn there (round 4).
+    const seen = buttons.map((button) => visibleRect(button, button.getBoundingClientRect(), root));
     for (let i = 0; i < buttons.length; i++) {
       for (let j = i + 1; j < buttons.length; j++) {
-        const a = buttons[i].getBoundingClientRect();
-        const b = buttons[j].getBoundingClientRect();
+        const a = seen[i];
+        const b = seen[j];
         const x = Math.min(a.right, b.right) - Math.max(a.left, b.left);
         const y = Math.min(a.bottom, b.bottom) - Math.max(a.top, b.top);
         if (x > 1 && y > 1 && !buttons[i].contains(buttons[j]) && !buttons[j].contains(buttons[i])) {

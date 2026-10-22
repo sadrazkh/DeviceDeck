@@ -393,4 +393,28 @@ internal sealed class PhotosTestLibrary(PhotosTestPhone phone) : IPhotoLibrary, 
 
     public Task ImportAsync(string fileName, Stream source, long length, IProgress<long>? progress, CancellationToken ct) =>
         throw new DeviceException(DeviceErrorCodes.NotSupported, "n/a");
+
+    // Hidden photos in the backup (round 4, hiddenbackup).
+
+    /// <summary>Hides a photo in Photos, or unhides it (it moves in or out of the Hidden album; its key stays).</summary>
+    public PhotoBackupAsset SetHidden(PhotoBackupAsset asset, bool hidden)
+    {
+        lock (_gate)
+        {
+            var i = _assets.FindIndex(a => a.AssetId == asset.AssetId);
+            _assets[i] = _assets[i] with { Hidden = hidden };
+            return _assets[i];
+        }
+    }
+
+    /// <summary>A photo the phone keeps no date for (it goes into "Undated").</summary>
+    public PhotoBackupAsset MakeUndated(PhotoBackupAsset asset)
+    {
+        lock (_gate)
+        {
+            var i = _assets.FindIndex(a => a.AssetId == asset.AssetId);
+            _assets[i] = _assets[i] with { TakenAt = null };
+            return _assets[i];
+        }
+    }
 }

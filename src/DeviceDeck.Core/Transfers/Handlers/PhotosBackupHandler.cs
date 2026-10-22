@@ -67,6 +67,11 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
             throw new ArgumentException("folderPattern must be \"\" or yyyy, MM and dd joined by / - _ . or a space.");
         }
 
+        if (request.HiddenFolder is not null && request.HiddenRoot() is not null)
+        {
+            PhotoBackupHiddenRules.ValidateFolder(request.HiddenFolder);
+        }
+
         if ((device.Summary.Capabilities & DeviceCapability.PhotosRead) == 0)
         {
             throw new DeviceException(DeviceErrorCodes.NotSupported, $"{device.Summary.Name} can't show its photos.");
@@ -83,7 +88,8 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
         var all = await source.GetBackupAssetsAsync(ct).ConfigureAwait(false);
         var known = ledger.LoadKnown(deviceId);
         var cutoff = (request.Range ?? PhotoBackupRange.Everything).Cutoff(_time.GetLocalNow(), _time.LocalTimeZone);
-        bool Eligible(PhotoBackupAsset a) => !a.InCloudOnly && (request.IncludeHidden || !a.Hidden) && PhotoBackupRange.Includes(cutoff, a.TakenAt);
+        var hidden = request.HiddenMode();
+        bool Eligible(PhotoBackupAsset a) => !a.InCloudOnly && PhotoBackupHiddenRules.Wants(hidden, a.Hidden) && PhotoBackupRange.Includes(cutoff, a.TakenAt);
         var wanted = all.Where(a => Eligible(a) && !known.Contains(a)).Select(a => request.SaveEdited ? a : a with { Edited = null }).ToList();
 
         // Photos copied before whose edit the PC doesn't have yet (edited since, or never looked for).
@@ -99,7 +105,9 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
         var photos = complete.Where(a => !editKeys.Contains(a.Key)).ToList();
         var convert = request.ConvertHeic && transcoder is not null;
 
-        var paths = PhotoBackupNaming.Plan(photos, request.Destination, request.FolderPattern, convert);
+        // A hidden photo goes under the hidden folder (dated inside the same way) when the options keep them apart; its
+        // Live Photo video and its edited version follow it there. An edit of a photo copied before goes next to that copy.
+        var paths = PhotoBackupNaming.Plan(photos, request.Destination, request.FolderPattern, convert, request.HiddenRoot());
         var plans = new List<TransferItemPlan>(complete.Count);
         for (var i = 0; i < photos.Count; i++)
         {
@@ -140,13 +148,15 @@ public sealed class PhotosBackupHandler(PhotoBackupLedger ledger, IImageTranscod
         var photos = context.Device.Photos;
         var planned = item.Destination;
         var folder = Path.GetDirectoryName(planned)!;
-        run.EnsureFolder(folder);
         var convert = request.ConvertHeic && transcoder is not null && ImageFormats.IsHeic(info.FileName);
         if (await AlreadyThereAsync(context, run, info, asset, convert, ct).ConfigureAwait(false))
         {
             item.Size = info.Size + info.MotionSize;
             return TransferItemState.Skipped;
         }
+
+        // Made only for a photo that is downloaded: one found elsewhere in the destination (the other tree, say) leaves no empty folder.
+        run.EnsureFolder(folder);
 
         var temps = new List<string>();
         try

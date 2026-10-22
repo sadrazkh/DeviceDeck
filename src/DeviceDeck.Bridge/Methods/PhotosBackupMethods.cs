@@ -7,6 +7,7 @@ namespace DeviceDeck.Bridge.Methods;
 
 // docs/bridge-contract.md, "Photos backup and adding photos (round 2)".
 
+/// <param name="IncludeHidden">The old switch, still taken (on: hidden photos with the others); <paramref name="Hidden"/> replaces it.</param>
 public sealed record PhotosBackupConfigureParams(
     string DeviceId,
     string? Destination = null,
@@ -16,7 +17,10 @@ public sealed record PhotosBackupConfigureParams(
     bool UseDefaults = false,
     PhotoBackupRange? Range = null,
     PhotoBackupOnConnect? OnConnect = null,
-    bool? SaveEdited = null);
+    bool? SaveEdited = null,
+    PhotoBackupHidden? Hidden = null,
+    PhotoBackupHiddenLayout? HiddenLayout = null,
+    string? HiddenFolder = null);
 
 public sealed record PhotosImportToAppParams(string DeviceId, string AppId, IReadOnlyList<string> Files);
 
@@ -34,7 +38,8 @@ public static class PhotosBackupMethods
         rpc.Register<PhotosBackupConfigureParams, PhotoBackupStatus>("photos.backupConfigure", (p, ct) =>
         {
             var backup = Backup(s);
-            backup.Configure(p.DeviceId, p.Destination, p.FolderPattern, p.ConvertHeic, p.IncludeHidden, p.UseDefaults, p.Range, p.OnConnect, p.SaveEdited);
+            backup.Configure(p.DeviceId, p.Destination, p.FolderPattern, p.ConvertHeic, p.IncludeHidden, p.UseDefaults, p.Range, p.OnConnect, p.SaveEdited,
+                p.Hidden, p.HiddenLayout, p.HiddenFolder);
             return backup.GetStatusAsync(p.DeviceId, ct);
         });
         rpc.Register<DeviceParams, JobIdResult>("photos.backup", async (p, ct) =>

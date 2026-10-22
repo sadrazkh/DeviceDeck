@@ -10,6 +10,7 @@ import { updatesEn } from '../shell/updateStrings';
 import { whatsAppEn } from '../screens/contacts/whatsAppStrings';
 import { photoDeleteEn } from '../screens/photos/deleteStrings';
 import { deleteJobEn } from '../shell/deleteJobStrings';
+import { hiddenBackupEn } from '../screens/photos/hiddenBackupStrings';
 
 export const en = {
   'app.name': 'DeviceDeck',
@@ -570,8 +571,6 @@ export const en = {
   'photos.backup.convertHeicHint': 'JPG opens everywhere and keeps the date, camera and place; files are about 60% larger. Videos and JPGs are copied as they are.',
   'photos.backup.codecMissing.title': 'This PC can’t convert HEIC yet',
   'photos.backup.codecMissing.body': 'Install “HEIF Image Extensions” and “HEVC Video Extensions” from the Microsoft Store. Until then HEIC photos are kept as HEIC.',
-  'photos.backup.includeHidden': 'Include the Hidden album',
-  'photos.backup.includeHiddenHint': 'Off by default: hidden photos are locked on the iPhone, but a backup folder isn’t.',
   'photos.backup.how': 'Photos already in the folder (same size and content) aren’t copied twice. A Live Photo keeps its photo and video together under one name. Pause or unplug any time: it carries on where it stopped.',
   'photos.backup.useDefaults': 'Use the Settings defaults',
   'photos.backup.fromSettings': 'These are the defaults from Settings.',
@@ -641,6 +640,8 @@ export const en = {
   ...photoDeleteEn,
   // Deleting photos as a transfer (v0.4.1, deletejob)
   ...deleteJobEn,
+  // Hidden photos in the photo backup (round 4, hiddenbackup)
+  ...hiddenBackupEn,
 } as const;
 
 export type MessageKey = keyof typeof en;

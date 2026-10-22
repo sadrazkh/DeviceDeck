@@ -39,9 +39,11 @@ describe('photo backup (mock)', () => {
       destination: 'D:\\Phone backups\\Nima’s iPhone',
       folderPattern: 'yyyy/MM',
       convertHeic: false,
-      includeHidden: false,
       range: { kind: 'all', days: null, since: null },
       saveEdited: false,
+      hidden: 'exclude',
+      hiddenLayout: 'separate',
+      hiddenFolder: 'Hidden',
     });
     expect(status.count.outOfRange).toBe(0);
     expect(status.lastRun?.state).toBe('done');
@@ -68,10 +70,11 @@ describe('photo backup (mock)', () => {
 
   it('keeps options per phone, checks them and goes back to the defaults', async () => {
     const { client } = setup();
-    const changed = await client.call('photos.backupConfigure', { deviceId: IPHONE_ID, folderPattern: '', includeHidden: true });
+    const changed = await client.call('photos.backupConfigure', { deviceId: IPHONE_ID, folderPattern: '', hidden: 'include' });
     expect(changed.customized).toBe(true);
     expect(changed.options.folderPattern).toBe('');
     expect(changed.count.hiddenLeftOut).toBe(0);
+    expect(changed.count.newHidden).toBeGreaterThan(0);
     await expect(client.call('photos.backupConfigure', { deviceId: IPHONE_ID, folderPattern: 'MMMM' })).rejects.toMatchObject({ rpcCode: -32602 });
     await expect(client.call('photos.backupConfigure', { deviceId: IPHONE_ID, destination: 'backups' })).rejects.toMatchObject({ rpcCode: -32602 });
 
