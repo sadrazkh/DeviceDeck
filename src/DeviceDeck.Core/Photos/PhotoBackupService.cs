@@ -217,9 +217,31 @@ public sealed class PhotoBackupService : IDisposable
     /// Saves the phone's own options; a null value keeps what it had. <paramref name="useDefaults"/> drops them all
     /// first, so the phone follows Settings again (its destination too, and the range goes back to everything).
     /// </summary>
+    /// <param name="includeHidden">The old switch, still taken: on is <paramref name="hidden"/> Include with the others, off is Exclude.
+    /// <paramref name="hidden"/> wins when both are given.</param>
+    /// <param name="hiddenFolder">One folder name (<see cref="PhotoBackupHiddenRules.ValidateFolder"/>); trimmed.</param>
     public void Configure(string deviceId, string? destination, string? folderPattern, bool? convertHeic, bool? includeHidden, bool useDefaults = false,
-        PhotoBackupRange? range = null, PhotoBackupOnConnect? onConnect = null, bool? saveEdited = null)
+        PhotoBackupRange? range = null, PhotoBackupOnConnect? onConnect = null, bool? saveEdited = null,
+        PhotoBackupHidden? hidden = null, PhotoBackupHiddenLayout? hiddenLayout = null, string? hiddenFolder = null)
     {
+        if (hidden is { } h && !Enum.IsDefined(h))
+        {
+            throw new ArgumentException("hidden must be \"exclude\", \"include\" or \"only\".");
+        }
+
+        if (hiddenLayout is { } l && !Enum.IsDefined(l))
+        {
+            throw new ArgumentException("hiddenLayout must be \"separate\" or \"together\".");
+        }
+
+        hiddenFolder = hiddenFolder is null ? null : PhotoBackupHiddenRules.ValidateFolder(hiddenFolder);
+        if (hidden is null && includeHidden is { } legacy)
+        {
+            var (legacyMode, legacyLayout) = PhotoBackupHiddenRules.FromIncludeHidden(legacy);
+            hidden = legacyMode;
+            hiddenLayout ??= legacyLayout;
+        }
+
         if (onConnect is { } mode)
         {
             if (!Enum.IsDefined(mode))
@@ -250,9 +272,11 @@ public sealed class PhotoBackupService : IDisposable
             destination ?? saved.Destination,
             folderPattern ?? saved.Pattern,
             convertHeic ?? saved.ConvertHeic,
-            includeHidden ?? saved.IncludeHidden,
             range ?? saved.Range,
-            saveEdited ?? saved.SaveEdited));
+            saveEdited ?? saved.SaveEdited,
+            hidden ?? saved.Hidden,
+            hiddenLayout ?? saved.HiddenLayout,
+            hiddenFolder ?? saved.HiddenFolder));
     }
 
     /// <summary>
@@ -283,8 +307,8 @@ public sealed class PhotoBackupService : IDisposable
             Configure(deviceId, options.Destination, null, null, null);
         }
 
-        var request = new PhotoBackupRequest(options.Destination, options.FolderPattern, options.ConvertHeic, options.IncludeHidden, options.Range, trigger,
-            options.SaveEdited);
+        var request = new PhotoBackupRequest(options.Destination, options.FolderPattern, options.ConvertHeic, options.Hidden != PhotoBackupHidden.Exclude,
+            options.Range, trigger, options.SaveEdited, options.Hidden, options.HiddenLayout, options.HiddenFolder);
         var job = await queue.EnqueueAsync(deviceId, TransferKind.PhotosBackup, request, ConflictRule.KeepBoth, ct).ConfigureAwait(false);
         Ledger.StartRun(job.Id, deviceId, options.Destination, job.CreatedAt, trigger);
 
@@ -300,19 +324,26 @@ public sealed class PhotoBackupService : IDisposable
     /// <summary>Forgets which photos were backed up from the phone; the files on the PC are not touched.</summary>
     public int Forget(string deviceId) => Ledger.Forget(deviceId);
 
-    /// <summary>The options for this phone: its own where it has them, else Settings (destination: the Settings folder plus the phone's name).</summary>
+    /// <summary>
+    /// The options for this phone: its own where it has them, else Settings (destination: the Settings folder plus the
+    /// phone's name). Only an iPhone has a Hidden album: any other phone backs up as <see cref="PhotoBackupHidden.Exclude"/>.
+    /// </summary>
     public (PhotoBackupOptions Options, bool Customized) EffectiveOptions(IDevice device)
     {
         var settings = _settings.Current;
         var own = Ledger.GetOptions(device.Summary.Id);
+        var iphone = device.Summary.Platform == DevicePlatform.Ios;
         var options = new PhotoBackupOptions(
             own.Destination ?? Path.Combine(settings.PhotoBackupFolder, PhotoBackupNaming.SafeName(device.Summary.Name)),
             own.Pattern ?? settings.PhotoBackupPattern,
             own.ConvertHeic ?? settings.PhotoBackupConvertHeic,
-            own.IncludeHidden ?? false,
             own.Range ?? PhotoBackupRange.Everything,
-            own.SaveEdited ?? false);
-        var customized = own.Pattern is not null || own.ConvertHeic is not null || own.IncludeHidden is not null || own.Range is not null || own.SaveEdited is not null
+            own.SaveEdited ?? false,
+            iphone ? own.Hidden ?? settings.PhotoBackupHidden : PhotoBackupHidden.Exclude,
+            own.HiddenLayout ?? settings.PhotoBackupHiddenLayout,
+            own.HiddenFolder ?? settings.PhotoBackupHiddenFolder);
+        var customized = own.Pattern is not null || own.ConvertHeic is not null || own.Range is not null || own.SaveEdited is not null
+            || (iphone && (own.Hidden is not null || own.HiddenLayout is not null || own.HiddenFolder is not null))
             || (own.Destination is not null && !string.Equals(own.Destination, Path.Combine(settings.PhotoBackupFolder, PhotoBackupNaming.SafeName(device.Summary.Name)), StringComparison.OrdinalIgnoreCase));
         return (options, customized);
     }
@@ -323,13 +354,15 @@ public sealed class PhotoBackupService : IDisposable
         var assets = await PhotoBackupSources.For(device.Photos).GetBackupAssetsAsync(ct).ConfigureAwait(false);
         var known = Ledger.LoadKnown(device.Summary.Id);
         var cutoff = options.Range.Cutoff(_time.GetLocalNow(), _time.LocalTimeZone);
-        int photos = 0, videos = 0, cloud = 0, hidden = 0, outOfRange = 0, edits = 0;
+        int photos = 0, videos = 0, cloud = 0, hidden = 0, outOfRange = 0, edits = 0, newHidden = 0, normalLeftOut = 0;
         long bytes = 0;
         var copy = new CopyEstimate(options.ConvertHeic && _heic != HeicConversion.MissingCodec);
         foreach (var asset in assets)
         {
+            // Whether a photo is hidden is read from the phone now: one hidden or unhidden since its backup is known
+            // (below) and stays where it was copied; only its new edits follow the options.
             if (options.SaveEdited && PhotoBackupEdits.Wanted(asset, known) && PhotoBackupRange.Includes(cutoff, asset.TakenAt)
-                && !asset.InCloudOnly && (options.IncludeHidden || !asset.Hidden))
+                && !asset.InCloudOnly && PhotoBackupHiddenRules.Wants(options.Hidden, asset.Hidden))
             {
                 edits++;
                 copy.AddEdit();
@@ -344,9 +377,16 @@ public sealed class PhotoBackupService : IDisposable
             {
                 outOfRange++;
             }
-            else if (asset.Hidden && !options.IncludeHidden)
+            else if (!PhotoBackupHiddenRules.Wants(options.Hidden, asset.Hidden))
             {
-                hidden++;
+                if (asset.Hidden)
+                {
+                    hidden++;
+                }
+                else
+                {
+                    normalLeftOut++;
+                }
             }
             else if (asset.InCloudOnly)
             {
@@ -363,12 +403,18 @@ public sealed class PhotoBackupService : IDisposable
                     photos++;
                 }
 
+                if (asset.Hidden)
+                {
+                    newHidden++;
+                }
+
                 bytes += asset.Size + (asset.Motion?.Size ?? 0);
                 copy.Add(asset);
             }
         }
 
-        return (new PhotoBackupCount(device.Summary.Id, photos + videos, photos, videos, bytes, cloud, hidden, outOfRange, edits), copy.Total);
+        return (new PhotoBackupCount(device.Summary.Id, photos + videos, photos, videos, bytes, cloud, hidden, outOfRange, edits, newHidden, normalLeftOut),
+            copy.Total);
     }
 
     /// <summary>What new photos take on the PC, with averages standing in for sizes the phone hasn't said yet.</summary>

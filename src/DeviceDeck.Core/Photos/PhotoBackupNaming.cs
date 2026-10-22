@@ -65,15 +65,17 @@ public static partial class PhotoBackupNaming
 
     /// <summary>
     /// Destinations for a batch, before anything is written: two photos with one name in one folder (IMG_0001 comes
-    /// round again) get "IMG_0001 (1)", and both files of a Live Photo take the same stem.
+    /// round again) get "IMG_0001 (1)", and both files of a Live Photo take the same stem. With <paramref name="hiddenRoot"/>,
+    /// photos in the iPhone's Hidden album go under it instead, in the same date folders ("Hidden\2026\10", "Hidden\Undated").
     /// </summary>
-    public static IReadOnlyList<(string Still, string? Motion)> Plan(IReadOnlyList<PhotoBackupAsset> assets, string root, string pattern, bool convertHeic)
+    public static IReadOnlyList<(string Still, string? Motion)> Plan(IReadOnlyList<PhotoBackupAsset> assets, string root, string pattern, bool convertHeic,
+        string? hiddenRoot = null)
     {
         var taken = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var plans = new List<(string, string?)>(assets.Count);
         foreach (var asset in assets)
         {
-            var folder = Folder(root, pattern, asset.TakenAt);
+            var folder = Folder(asset.Hidden && hiddenRoot is not null ? hiddenRoot : root, pattern, asset.TakenAt);
             var name = StillName(asset.FileName, convertHeic);
             var (still, motion) = FreeStem(folder, name, asset.Motion?.FileName, path => !taken.Contains(path));
             taken.Add(still);

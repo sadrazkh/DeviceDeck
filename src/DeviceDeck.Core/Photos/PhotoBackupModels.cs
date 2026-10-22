@@ -7,8 +7,12 @@ namespace DeviceDeck.Core.Photos;
 /// <summary>How one phone is backed up. Each value falls back to Settings when the phone has none of its own.</summary>
 /// <param name="Range">Which photos, by the date they were taken. The phone's own only (Settings has none): everything by default.</param>
 /// <param name="SaveEdited">An iPhone photo edited in Photos also gets its edited version, "IMG_1234 (edited).jpg", kept up to date. Off by default.</param>
-public sealed record PhotoBackupOptions(string Destination, string FolderPattern, bool ConvertHeic, bool IncludeHidden, PhotoBackupRange Range,
-    bool SaveEdited = false);
+/// <param name="Hidden">The iPhone's Hidden album: left out (the default), backed up too, or backed up alone. Always left out on Android.</param>
+/// <param name="HiddenLayout">Where hidden photos go when backed up: <see cref="HiddenFolder"/> under the destination, or with the others.</param>
+/// <param name="HiddenFolder">The hidden photos' own folder, one folder name ("Hidden" by default).</param>
+public sealed record PhotoBackupOptions(string Destination, string FolderPattern, bool ConvertHeic, PhotoBackupRange Range,
+    bool SaveEdited = false, PhotoBackupHidden Hidden = PhotoBackupHidden.Exclude, PhotoBackupHiddenLayout HiddenLayout = PhotoBackupHiddenLayout.Separate,
+    string HiddenFolder = PhotoBackupHiddenRules.DefaultFolder);
 
 public enum PhotoBackupRangeKind { All, LastDays, Since }
 
@@ -71,8 +75,10 @@ public enum HeicConversion { Available, MissingCodec, Unknown }
 /// <param name="HiddenLeftOut">New ones in the iPhone's Hidden album, left out unless the options include it.</param>
 /// <param name="OutOfRange">New ones taken before the options' date range: left out, in no other count.</param>
 /// <param name="NewEdits">Edited versions to copy (new photos' and new edits of photos already copied), when the options save them.</param>
+/// <param name="NewHidden">How many of <paramref name="NewCount"/> are in the Hidden album (0 unless the options include it).</param>
+/// <param name="NormalLeftOut">New ones not in the Hidden album, left out because the options back up hidden photos only.</param>
 public sealed record PhotoBackupCount(string DeviceId, int NewCount, int NewPhotos, int NewVideos, long NewBytes, int CloudOnly, int HiddenLeftOut,
-    int OutOfRange = 0, int NewEdits = 0);
+    int OutOfRange = 0, int NewEdits = 0, int NewHidden = 0, int NormalLeftOut = 0);
 
 public enum PhotoBackupRunState { Running, Done, Failed, Cancelled }
 
@@ -120,9 +126,20 @@ public sealed record PhotoBackupStatus(
     PhotoBackupOnConnect OnConnect = PhotoBackupOnConnect.Notify);
 
 /// <summary>The transfer request of a photosBackup job: the options as they were when it started.</summary>
+/// <param name="IncludeHidden">What jobs queued before the hidden options existed say; newer ones say <paramref name="Hidden"/> as well.</param>
 /// <param name="Range">Null in jobs queued before ranges existed: everything.</param>
+/// <param name="Hidden">Null in jobs queued before the hidden options existed: <paramref name="IncludeHidden"/> decides, hidden ones mixed in.</param>
 public sealed record PhotoBackupRequest(string Destination, string FolderPattern, bool ConvertHeic, bool IncludeHidden, PhotoBackupRange? Range = null,
-    PhotoBackupTrigger Trigger = PhotoBackupTrigger.Manual, bool SaveEdited = false);
+    PhotoBackupTrigger Trigger = PhotoBackupTrigger.Manual, bool SaveEdited = false, PhotoBackupHidden? Hidden = null,
+    PhotoBackupHiddenLayout? HiddenLayout = null, string? HiddenFolder = null)
+{
+    /// <summary>Which photos of the Hidden album the job takes.</summary>
+    public PhotoBackupHidden HiddenMode() => Hidden ?? PhotoBackupHiddenRules.FromIncludeHidden(IncludeHidden).Mode;
+
+    /// <summary>The folder the job's hidden photos go under, or null when they go with the others.</summary>
+    public string? HiddenRoot() =>
+        PhotoBackupHiddenRules.HiddenRoot(Destination, HiddenMode(), HiddenLayout ?? PhotoBackupHiddenLayout.Together, HiddenFolder);
+}
 
 /// <summary>The transfer request of a photosToApp job: PC pictures and videos into an iPhone app's Documents.</summary>
 public sealed record PhotosToAppRequest(string AppId, IReadOnlyList<string> Files);

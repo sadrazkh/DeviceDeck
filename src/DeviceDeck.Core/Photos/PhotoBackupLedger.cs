@@ -56,13 +56,16 @@ public sealed class PhotoBackupLedgerBatch
 }
 
 /// <summary>A phone's own backup options; a null field falls back to Settings (the range: to everything).</summary>
+/// <param name="Hidden">Read from the old include_hidden column too: on is <see cref="PhotoBackupHidden.Include"/> with the others.</param>
 public sealed record PhotoBackupOwnOptions(
     string? Destination = null,
     string? Pattern = null,
     bool? ConvertHeic = null,
-    bool? IncludeHidden = null,
     PhotoBackupRange? Range = null,
-    bool? SaveEdited = null);
+    bool? SaveEdited = null,
+    PhotoBackupHidden? Hidden = null,
+    PhotoBackupHiddenLayout? HiddenLayout = null,
+    string? HiddenFolder = null);
 
 /// <summary>
 /// What a phone's backups already hold, for telling new photos from old ones without touching the PC's disk. A photo is
@@ -120,7 +123,7 @@ public sealed class PhotoBackupKnownSet
 /// </summary>
 public sealed class PhotoBackupLedger : IDisposable
 {
-    private const int SchemaVersion = 2;
+    private const int SchemaVersion = 3;
 
     private readonly SqliteConnection _db;
     private readonly Lock _gate = new();
@@ -148,7 +151,8 @@ public sealed class PhotoBackupLedger : IDisposable
     {
         using var check = _db.CreateCommand();
         check.CommandText = "PRAGMA user_version;";
-        if (Convert.ToInt32(check.ExecuteScalar(), CultureInfo.InvariantCulture) < 1)
+        var version = Convert.ToInt32(check.ExecuteScalar(), CultureInfo.InvariantCulture);
+        if (version < 1)
         {
             CreateVersion1();
         }
@@ -162,6 +166,20 @@ public sealed class PhotoBackupLedger : IDisposable
         AddMissingColumns(tx, "devices", ("save_edited", "INTEGER NULL"));
         AddMissingColumns(tx, "pc_hashes", ("origin_size", "INTEGER NULL"), ("origin_sample", "BLOB NULL"));
         Execute("CREATE INDEX IF NOT EXISTS pc_hashes_origin ON pc_hashes (origin_size) WHERE origin_size IS NOT NULL;", tx);
+
+        // Round 4 (hiddenbackup): what to do with the Hidden album replaces the include_hidden switch. A phone that had
+        // it on keeps its behaviour (hidden photos mixed in with the others); one that had it off keeps them out.
+        AddMissingColumns(tx, "devices", ("hidden", "TEXT NULL"), ("hidden_layout", "TEXT NULL"), ("hidden_folder", "TEXT NULL"));
+        if (version < 3)
+        {
+            Execute("""
+                UPDATE devices SET
+                    hidden = CASE include_hidden WHEN 0 THEN 'Exclude' ELSE 'Include' END,
+                    hidden_layout = CASE include_hidden WHEN 0 THEN hidden_layout ELSE 'Together' END
+                WHERE include_hidden IS NOT NULL AND hidden IS NULL;
+                """, tx);
+        }
+
         Execute($"PRAGMA user_version = {SchemaVersion};", tx);
         tx.Commit();
     }
@@ -246,7 +264,8 @@ public sealed class PhotoBackupLedger : IDisposable
         lock (_gate)
         {
             using var cmd = Command("""
-                SELECT destination, pattern, convert_heic, include_hidden, range_kind, range_days, range_since, save_edited FROM devices WHERE device_id = $d;
+                SELECT destination, pattern, convert_heic, include_hidden, range_kind, range_days, range_since, save_edited,
+                    hidden, hidden_layout, hidden_folder FROM devices WHERE device_id = $d;
                 """, ("$d", deviceId));
             using var r = cmd.ExecuteReader();
             if (!r.Read())
@@ -254,13 +273,24 @@ public sealed class PhotoBackupLedger : IDisposable
                 return new PhotoBackupOwnOptions();
             }
 
+            // A row an older copy of the app wrote since (include_hidden only): read as that copy meant it.
+            var hidden = ReadEnum<PhotoBackupHidden>(r, 8);
+            var layout = ReadEnum<PhotoBackupHiddenLayout>(r, 9);
+            if (hidden is null && !r.IsDBNull(3))
+            {
+                (hidden, layout) = PhotoBackupHiddenRules.FromIncludeHidden(r.GetInt64(3) != 0);
+            }
+
+            var folder = r.IsDBNull(10) ? null : r.GetString(10);
             return new PhotoBackupOwnOptions(
                 r.IsDBNull(0) ? null : r.GetString(0),
                 r.IsDBNull(1) ? null : r.GetString(1),
                 r.IsDBNull(2) ? null : r.GetInt64(2) != 0,
-                r.IsDBNull(3) ? null : r.GetInt64(3) != 0,
                 ReadRange(r, 4),
-                r.IsDBNull(7) ? null : r.GetInt64(7) != 0);
+                r.IsDBNull(7) ? null : r.GetInt64(7) != 0,
+                hidden,
+                layout,
+                PhotoBackupHiddenRules.IsValidFolder(folder) ? folder!.Trim() : null);
         }
     }
 
@@ -268,17 +298,22 @@ public sealed class PhotoBackupLedger : IDisposable
     {
         lock (_gate)
         {
+            // include_hidden is still written, for an older copy of the app opening this file: on whenever hidden photos are backed up.
             using var cmd = Command("""
-                INSERT INTO devices (device_id, destination, pattern, convert_heic, include_hidden, range_kind, range_days, range_since, save_edited)
-                VALUES ($d, $dest, $p, $c, $h, $rk, $rd, $rs, $se)
+                INSERT INTO devices (device_id, destination, pattern, convert_heic, include_hidden, range_kind, range_days, range_since, save_edited,
+                    hidden, hidden_layout, hidden_folder)
+                VALUES ($d, $dest, $p, $c, $h, $rk, $rd, $rs, $se, $hm, $hl, $hf)
                 ON CONFLICT(device_id) DO UPDATE SET destination = excluded.destination, pattern = excluded.pattern,
                     convert_heic = excluded.convert_heic, include_hidden = excluded.include_hidden,
                     range_kind = excluded.range_kind, range_days = excluded.range_days, range_since = excluded.range_since,
-                    save_edited = excluded.save_edited;
+                    save_edited = excluded.save_edited, hidden = excluded.hidden, hidden_layout = excluded.hidden_layout,
+                    hidden_folder = excluded.hidden_folder;
                 """,
-                ("$d", deviceId), ("$dest", options.Destination), ("$p", options.Pattern), ("$c", options.ConvertHeic), ("$h", options.IncludeHidden),
+                ("$d", deviceId), ("$dest", options.Destination), ("$p", options.Pattern), ("$c", options.ConvertHeic),
+                ("$h", options.Hidden is { } mode ? mode != PhotoBackupHidden.Exclude : null),
                 ("$rk", options.Range?.Kind.ToString()), ("$rd", options.Range?.Days),
-                ("$rs", options.Range?.Since?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)), ("$se", options.SaveEdited));
+                ("$rs", options.Range?.Since?.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)), ("$se", options.SaveEdited),
+                ("$hm", options.Hidden?.ToString()), ("$hl", options.HiddenLayout?.ToString()), ("$hf", options.HiddenFolder));
             cmd.ExecuteNonQuery();
         }
     }
@@ -320,6 +355,9 @@ public sealed class PhotoBackupLedger : IDisposable
             cmd.ExecuteNonQuery();
         }
     }
+
+    private static T? ReadEnum<T>(SqliteDataReader r, int at) where T : struct, Enum =>
+        !r.IsDBNull(at) && Enum.TryParse<T>(r.GetString(at), out var value) && Enum.IsDefined(value) ? value : null;
 
     private static PhotoBackupRange? ReadRange(SqliteDataReader r, int at)
     {

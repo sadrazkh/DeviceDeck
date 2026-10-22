@@ -110,5 +110,33 @@ public sealed record AppSettings
         {
             throw new ArgumentException("A settings value is out of range.");
         }
+
+        ValidateHiddenBackup();
+    }
+
+    // Hidden photos in the photo backup (round 4, hiddenbackup): the defaults for an iPhone without options of its own.
+
+    /// <summary>The iPhone's Hidden album: left out (the default), backed up too, or backed up alone.</summary>
+    public Photos.PhotoBackupHidden PhotoBackupHidden { get; init; } = Photos.PhotoBackupHidden.Exclude;
+
+    /// <summary>When hidden photos are backed up: in a folder of their own (the default) or with the others.</summary>
+    public Photos.PhotoBackupHiddenLayout PhotoBackupHiddenLayout { get; init; } = Photos.PhotoBackupHiddenLayout.Separate;
+
+    /// <summary>That folder's name, under each phone's backup folder: one folder name, "Hidden" by default.</summary>
+    public string PhotoBackupHiddenFolder { get; init; } = Photos.PhotoBackupHiddenRules.DefaultFolder;
+
+    private void ValidateHiddenBackup()
+    {
+        if (!Enum.IsDefined(PhotoBackupHidden) || !Enum.IsDefined(PhotoBackupHiddenLayout))
+        {
+            throw new ArgumentException("photoBackupHidden or photoBackupHiddenLayout is out of range.");
+        }
+
+        if (!Photos.PhotoBackupHiddenRules.IsValidFolder(PhotoBackupHiddenFolder) || PhotoBackupHiddenFolder != PhotoBackupHiddenFolder.Trim())
+        {
+            throw new ArgumentException(
+                """photoBackupHiddenFolder must be one folder name: no \ / : * ? " < > |, no trailing dot or space, not a device name or a date.""",
+                nameof(PhotoBackupHiddenFolder));
+        }
     }
 }
