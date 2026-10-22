@@ -314,6 +314,23 @@ public sealed class LocalSendTests
     }
 
     [Fact]
+    public async Task LocalSend_with_encryption_off_is_found_even_when_the_TLS_hello_gets_no_answer()
+    {
+        // GitHub's runner: the plain-HTTP side never answered the ClientHello, so the TLS attempt only timed out. Both are
+        // asked at once, so plain HTTP finds it anyway.
+        var (receiver, host) = await StartAsync(https: false);
+        await using var _ = receiver;
+        await using var __ = host;
+        receiver.IgnoreTlsHello = true;
+        var target = await host.FindUsbTargetAsync();
+        Assert.Equal("http", (string?)target["protocol"]);
+
+        var jobId = await host.SendAsync(target, host.PcFile("b.jpg"));
+        await Wait.ForStateAsync(host.Queue, jobId, TransferState.Done);
+        Assert.True(receiver.Received.ContainsKey("b.jpg"));
+    }
+
+    [Fact]
     public async Task On_WiFi_the_sweep_finds_LocalSend_and_the_send_goes_to_its_address()
     {
         await using var receiver = new FakeLocalSendReceiver { Alias = "Test iPhone" };

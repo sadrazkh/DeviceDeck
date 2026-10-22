@@ -65,47 +65,48 @@ public sealed class LocalSendFinder : IAsyncDisposable
             return (LocalSendUsbState.Unavailable, $"{device.Summary.Name} can't be reached over its cable.", null);
         }
 
-        var first = await ProbeAsync(tunnel, https: true, ct).ConfigureAwait(false);
-        if (first.State is LocalSendUsbState.Found or LocalSendUsbState.NotListening or LocalSendUsbState.Unavailable)
+        // TLS (LocalSend's default) and plain HTTP (encryption off) are asked at the same time, and the one that finds it wins.
+        // Each kind of LocalSend answers only its own: a refused handshake may come back at once or only time out (it did
+        // on GitHub's runner), so waiting for TLS to fail first cost a whole timeout or missed LocalSend altogether.
+        using var both = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var tls = ProbeAsync(tunnel, https: true, both.Token);
+        var plain = ProbeAsync(tunnel, https: false, both.Token);
+        var winner = await Task.WhenAny(tls, plain).ConfigureAwait(false);
+        var other = winner == tls ? plain : tls;
+        if (winner.IsCompletedSuccessfully && winner.Result.State == LocalSendUsbState.Found)
         {
-            return (first.State, first.Detail, first.Receiver);
+            await both.CancelAsync().ConfigureAwait(false);
+            await Settle(other).ConfigureAwait(false);
+            return Shape(winner.Result);
         }
 
-        // Something answered, but not with TLS: LocalSend with encryption off speaks plain HTTP. A silent port (LocalSend in
-        // the background) only ran out of time, so it isn't asked twice. Decided by what went wrong, not by how long it
-        // took: on a slow PC a refused handshake can take longer than any fixed limit.
-        if (!first.Silent)
+        await Settle(other).ConfigureAwait(false);
+        if (other.IsCompletedSuccessfully && other.Result.State == LocalSendUsbState.Found)
         {
-            var plain = await ProbeAsync(tunnel, https: false, ct).ConfigureAwait(false);
-            if (plain.State == LocalSendUsbState.Found)
+            return Shape(other.Result);
+        }
+
+        // Neither found it: TLS's answer says the most (not listening, not answering, another certificate).
+        ct.ThrowIfCancellationRequested();
+        return Shape(await tls.ConfigureAwait(false));
+
+        static (LocalSendUsbState, string?, LocalSendReceiver?) Shape((LocalSendUsbState State, string? Detail, LocalSendReceiver? Receiver) r) =>
+            (r.State, r.Detail, r.Receiver);
+
+        // The loser is cancelled or failed; only its end matters here.
+        static async Task Settle(Task task)
+        {
+            try
             {
-                return (plain.State, plain.Detail, plain.Receiver);
+                await task.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
             }
         }
-
-        return (first.State, first.Detail, first.Receiver);
     }
 
-    /// <summary>A failure that is only a timeout: nothing came back at all (no inner error, or a cancellation or timeout inside).</summary>
-    private static bool OnlyTimedOut(Exception ex)
-    {
-        if (ex.InnerException is null)
-        {
-            return true;
-        }
-
-        for (var e = ex.InnerException; e is not null; e = e.InnerException)
-        {
-            if (e is OperationCanceledException or TimeoutException)
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
-    private async Task<(LocalSendUsbState State, string? Detail, LocalSendReceiver? Receiver, bool Silent)> ProbeAsync(IDevicePortTunnel tunnel, bool https, CancellationToken ct)
+    private async Task<(LocalSendUsbState State, string? Detail, LocalSendReceiver? Receiver)> ProbeAsync(IDevicePortTunnel tunnel, bool https, CancellationToken ct)
     {
         var port = _options.Port;
         using var client = new LocalSendClient(
@@ -127,24 +128,24 @@ public sealed class LocalSendFinder : IAsyncDisposable
             var fingerprint = https ? client.PeerFingerprint : info.Fingerprint;
             if (https && !LocalSendProtocol.SameFingerprint(fingerprint, info.Fingerprint))
             {
-                return (LocalSendUsbState.NotAnswering, "The certificate on port 53317 isn't the one LocalSend states.", null, false);
+                return (LocalSendUsbState.NotAnswering, "The certificate on port 53317 isn't the one LocalSend states.", null);
             }
 
             var receiver = new LocalSendReceiver("usb:" + fingerprint, LocalSendRoute.Usb, info.Alias, info.DeviceModel, info.DeviceType,
                 null, port, https ? "https" : "http", fingerprint!, Likely: true);
-            return (LocalSendUsbState.Found, null, receiver, false);
+            return (LocalSendUsbState.Found, null, receiver);
         }
         catch (DeviceException ex) when (ex.Code == LocalSendErrors.NotListening && ex.InnerException is DeviceException { Code: IDevicePortTunnel.PortClosedCode })
         {
-            return (LocalSendUsbState.NotListening, "Nothing listens on the iPhone's port 53317: LocalSend isn't open.", null, false);
+            return (LocalSendUsbState.NotListening, "Nothing listens on the iPhone's port 53317: LocalSend isn't open.", null);
         }
         catch (DeviceException ex) when (ex.Code.StartsWith("localsend_", StringComparison.Ordinal))
         {
-            return (LocalSendUsbState.NotAnswering, ex.Message, null, OnlyTimedOut(ex));
+            return (LocalSendUsbState.NotAnswering, ex.Message, null);
         }
         catch (DeviceException ex) when (!ct.IsCancellationRequested)
         {
-            return (LocalSendUsbState.Unavailable, ex.Message, null, false);
+            return (LocalSendUsbState.Unavailable, ex.Message, null);
         }
     }
 

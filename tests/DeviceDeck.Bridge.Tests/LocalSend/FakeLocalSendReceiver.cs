@@ -82,6 +82,9 @@ internal sealed class FakeLocalSendReceiver : IAsyncDisposable
     /// <summary>Waits this long before answering each new connection, as a slow phone or a busy PC does. None by default.</summary>
     public TimeSpan AnswerDelay { get; set; }
 
+    /// <summary>Plain HTTP only: a TLS ClientHello gets no answer at all, so the sender's handshake only times out.</summary>
+    public bool IgnoreTlsHello { get; set; }
+
     /// <summary>LocalSend (2.2, on iOS) wants the sender's own certificate in the TLS handshake; without one it drops the connection.</summary>
     public bool RequireClientCertificate { get; set; } = true;
 
@@ -173,6 +176,17 @@ internal sealed class FakeLocalSendReceiver : IAsyncDisposable
             if (AnswerDelay > TimeSpan.Zero)
             {
                 await Task.Delay(AnswerDelay, ct);
+            }
+
+            if (_certificate is null && IgnoreTlsHello)
+            {
+                // Plain HTTP that waits for a request line a TLS ClientHello never completes (seen on GitHub's runner).
+                var first = new byte[1];
+                if (await client.Client.ReceiveAsync(first, SocketFlags.Peek, ct) == 1 && first[0] == 0x16)
+                {
+                    await Task.Delay(Timeout.Infinite, ct);
+                    return;
+                }
             }
 
             if (_certificate is not null)
