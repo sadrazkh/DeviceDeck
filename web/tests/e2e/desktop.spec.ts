@@ -72,7 +72,11 @@ test('Transfers: retry a failed copy, then clear what is finished', async ({ pag
   await expect(drawer.locator('[data-testid=transfer-row][data-state=failed]')).toHaveCount(0);
 
   await expect(drawer.getByTestId('transfers-clear')).toBeVisible();
+  // The sample queue keeps working meanwhile: a job may finish just after Clear (seen 1 in 6 runs, on main too).
+  // So check that what was finished when Clear was pressed is gone, not that nothing is finished any more.
+  const done = drawer.locator('[data-testid=transfer-row][data-state=done]');
+  const finished = await done.allTextContents();
   await drawer.getByTestId('transfers-clear').click();
-  await expect(drawer.locator('[data-testid=transfer-row][data-state=done]')).toHaveCount(0);
+  await expect.poll(async () => (await done.allTextContents()).filter((row) => finished.includes(row))).toEqual([]);
   consoleWatch.assertClean();
 });

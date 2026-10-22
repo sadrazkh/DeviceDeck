@@ -4,12 +4,14 @@ import { createMockTransport, type MockTransportOptions } from './mock/transport
 import { MOCK_LOCALSEND_SCENARIOS } from './mock/localSend';
 import { MOCK_NOTES_SCENARIOS, MOCK_UPDATE_SCENARIOS } from './mock/updates';
 import { MOCK_DELETE_SPEEDS, MOCK_PHOTODELETE_SCENARIOS, MOCK_REACH_SCENARIOS } from './mock/photoDelete';
+import { MOCK_DRIVERS_SCENARIOS } from './mock/drivers';
 import { createWebViewTransport, getWebView } from './webview';
 
 export { BridgeClient, type FileSource } from './client';
 export { BridgeError, isBridgeError } from './errors';
 export * from './methods';
 export type * from './types';
+export type * from './drivers';
 
 export interface Bridge {
   client: BridgeClient;
@@ -46,6 +48,10 @@ export function mockOptionsFromUrl(search: string): MockTransportOptions {
     deleteSpeed: MOCK_DELETE_SPEEDS.find((s) => s === query.get('deletespeed')) ?? 'normal',
     // Items Windows doesn't list (v0.4.2): ?reach=some marks every fourth iPhone item "delete on the iPhone".
     reach: MOCK_REACH_SCENARIOS.find((s) => s === query.get('reach')) ?? 'all',
+    // The Drivers card (v0.6): ?drivers=iosMissing|iosStopped|adbMissing|adbDownloading|adbDownloadFails|adbIdle|adbStarting|adbFailed|
+    // androidNoDriver|androidUsbOff|androidUnauthorized|ready, and ?uac=decline for a declined administrator prompt.
+    drivers: MOCK_DRIVERS_SCENARIOS.find((s) => s === query.get('drivers')),
+    uacDeclined: query.get('uac') === 'decline',
     settings: {
       ...(lang === 'fa' || lang === 'en' ? { language: lang } : {}),
       ...(theme === 'light' || theme === 'dark' || theme === 'system' ? { theme } : {}),

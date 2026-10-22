@@ -1,0 +1,162 @@
+/* The Drivers card (v0.6): rows with an icon tile, name + chip, one line, one button. */
+
+.card {
+  gap: var(--space-2);
+}
+
+.rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: var(--space-4);
+  padding: var(--space-4) 0;
+  border-top: 1px solid var(--color-stroke-divider);
+}
+.row:first-child {
+  border-top: 0;
+  padding-top: var(--space-2);
+}
+.row:last-child {
+  padding-bottom: 0;
+}
+
+.tile {
+  width: 44px;
+  height: 44px;
+  border-radius: 12px;
+  display: grid;
+  place-items: center;
+  background: var(--color-surface-subtle);
+  overflow: hidden;
+}
+.row[data-chip='ready'] .tile {
+  background: var(--color-success-subtle);
+}
+.row[data-chip='action'] .tile {
+  background: var(--color-warning-subtle);
+}
+.row[data-chip='problem'] .tile {
+  background: var(--color-danger-subtle);
+}
+
+.main {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+}
+
+.head {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2);
+  min-height: 24px;
+}
+
+.name {
+  font-weight: var(--type-strong-weight);
+}
+
+.version {
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  font-variant-numeric: tabular-nums;
+}
+
+.line {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin: 0;
+  color: var(--color-text-secondary);
+}
+
+.detail {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono, ui-monospace, 'Cascadia Mono', Consolas, monospace);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-align: start;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-3);
+  margin-top: var(--space-2);
+}
+
+.note {
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+.note button {
+  font-size: inherit;
+}
+
+.error {
+  margin: var(--space-1) 0 0;
+  color: var(--color-danger-text);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
+.progress {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  align-items: center;
+  gap: var(--space-3);
+  margin-top: var(--space-2);
+}
+.progressText {
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.help {
+  margin-top: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-radius: var(--radius-control);
+  border: 1px solid var(--color-stroke-card);
+  background: var(--color-surface-subtle);
+}
+.helpTitle {
+  font-weight: var(--type-strong-weight);
+}
+.helpBody {
+  margin: var(--space-1) 0 0;
+  color: var(--color-text-secondary);
+}
+.steps {
+  margin: var(--space-1) 0 0;
+  padding-inline-start: var(--space-5);
+  color: var(--color-text-secondary);
+}
+.steps li + li {
+  margin-top: 2px;
+}
+
+.sim {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-2);
+  color: var(--color-text-tertiary);
+  font-size: var(--type-caption-size);
+}

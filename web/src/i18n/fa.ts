@@ -12,6 +12,7 @@ import { photoDeleteFa } from '../screens/photos/deleteStrings';
 import { deleteJobFa } from '../shell/deleteJobStrings';
 import { reachFa } from '../screens/photos/reachStrings';
 import { hiddenBackupFa } from '../screens/photos/hiddenBackupStrings';
+import { driversFa } from './drivers';
 import type { MessageKey } from './en';
 
 export const fa: Record<MessageKey, string> = {
@@ -179,16 +180,6 @@ export const fa: Record<MessageKey, string> = {
   'welcome.guide.step': 'مرحلهٔ {n}',
   'welcome.guide.next': 'بعدی',
   'welcome.guide.done': 'فهمیدم',
-  'welcome.drivers': 'درایورها',
-  'welcome.driver.ios': 'درایور اپل',
-  'welcome.driver.android': 'ابزار اندروید',
-  'welcome.driver.mtp': 'Windows Portable Devices',
-  'welcome.driver.ready': 'آماده',
-  'welcome.driver.missing': 'نصب‌نشده',
-  'welcome.driver.stopped': 'متوقف',
-  'welcome.driver.error': 'خطا',
-  'welcome.driver.howTo': 'روش نصب',
-  'welcome.driver.iosGuide': 'برنامهٔ Apple Devices را از Microsoft Store (یا iTunes را از apple.com) نصب کنید و آیفون را دوباره وصل کنید. DeviceDeck فایل‌های اپل را همراه خودش نمی‌آورد.',
   'welcome.trust.title': 'روی {device} گزینهٔ Trust را بزنید',
   'welcome.trust.body': 'قفل آیفون را باز کنید. وقتی پرسید «Trust This Computer?»، Trust را بزنید و رمز را وارد کنید.',
   'welcome.trust.waiting': 'در انتظار آیفون…',
@@ -201,9 +192,7 @@ export const fa: Record<MessageKey, string> = {
   'welcome.connecting.body': 'بار اول چند ثانیه طول می‌کشد.',
   'welcome.disconnected.title': '{device} قطع است',
   'welcome.disconnected.body': 'دوباره وصلش کنید. انتقال‌های متوقف بعد از اتصال ادامه پیدا می‌کنند.',
-  'welcome.limited.title': 'حالت محدود: فقط عکس‌ها',
   'welcome.limited.body': 'بدون درایور اپل، ویندوز فقط می‌تواند گالری دوربین را از راه PTP بخواند.',
-  'welcome.limited.unlocks': 'حالت کامل فایل‌ها، اسناد برنامه‌ها، برنامه‌ها، پشتیبان و سلامت باتری را اضافه می‌کند.',
   'welcome.simTrust': 'زدن Trust روی گوشی',
   'welcome.simAllow': 'زدن Allow روی گوشی',
   'welcome.simIphone': 'وصل کردن یک آیفون',
@@ -629,4 +618,6 @@ export const fa: Record<MessageKey, string> = {
   ...hiddenBackupFa,
   // Items this PC can't delete (v0.4.2, deletejob2)
   ...reachFa,
+  // The Drivers card (v0.6, drivers)
+  ...driversFa,
 };

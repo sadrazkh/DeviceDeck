@@ -232,8 +232,12 @@ export function connectBridgeEvents(
       handlers.onDeviceRemoved?.(deviceId);
     }),
     client.on('drivers.changed', (drivers) => {
-      queryClient.setQueryData(keys.drivers, drivers);
+      // Drivers card (v0.6): newer than any drivers.status still on its way, so that one mustn't land after it.
+      void queryClient.cancelQueries({ queryKey: keys.drivers }).then(() => queryClient.setQueryData(keys.drivers, drivers));
     }),
+    // A phone came or went: the Drivers card (when on screen) asks again; the host checks too.
+    client.on('device.added', () => void queryClient.invalidateQueries({ queryKey: keys.drivers })),
+    client.on('device.removed', () => void queryClient.invalidateQueries({ queryKey: keys.drivers })),
     client.on('transfer.updated', (job) => {
       const previous = queryClient.getQueryData<TransferJob[]>(keys.transfers)?.find((j) => j.id === job.id);
       queryClient.setQueryData<TransferJob[]>(keys.transfers, (list) => upsert(list, job));
