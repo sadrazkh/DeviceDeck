@@ -107,6 +107,12 @@ internal static class WpdScan
         }
         var disk = await ((IosPhotoLibrary)device.Photos).StatAsync(paths, ct);
         Console.WriteLine();
+        // Recently Deleted: rows Photos marks trashed. Do their files stay in DCIM?
+        var trashed = rows.Values.Where(r => r.Trashed && r.Path.StartsWith("DCIM/", StringComparison.OrdinalIgnoreCase)).ToList();
+        var trashedOnDisk = trashed.Count == 0 ? 0 : (await ((IosPhotoLibrary)device.Photos).StatAsync(trashed.Select(r => r.Path).ToList(), ct)).Count(s => s.Value is not null);
+        Console.WriteLine($"Photos.sqlite: {rows.Count} DCIM rows; {trashed.Count} marked trashed (Recently Deleted), {trashedOnDisk} of those still have their file in DCIM.");
+        foreach (var p in paths)
+            Console.WriteLine($"  {p}: {(rows.TryGetValue(p, out var r0) ? $"row pk {r0.Pk}, trashed {r0.Trashed}" : "no row in Photos.sqlite")}");
         foreach (var p in paths)
         {
             var asset = index.Assets.FirstOrDefault(a => a.Id.Equals(p, StringComparison.OrdinalIgnoreCase));

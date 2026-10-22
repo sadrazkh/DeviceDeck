@@ -263,6 +263,7 @@ public sealed class WpdPhotoDeleter
         public WpdObject? Still;
         public WpdObject? Pair;
         public IReadOnlyList<WpdObject> Edits = [];
+        public int PairHr;
         public string? Note;
     }
 
@@ -369,7 +370,7 @@ public sealed class WpdPhotoDeleter
         // 4. Where they went: the photo index is rebuilt, and the phone's disk says whether the files stayed.
         if (deleted.Count > 0)
         {
-            await ClassifyAsync(items, plans!, results, deleted, ct).ConfigureAwait(false);
+            await ClassifyAsync(items, plans!, results, deleted, edited, ct).ConfigureAwait(false);
         }
 
         return results.Select((r, i) => r ?? NotTried(items[i], plans[i]?.Asset, "Not tried.")).ToList();
@@ -461,7 +462,7 @@ public sealed class WpdPhotoDeleter
             {
                 ct.ThrowIfCancellationRequested();
                 var batch = Enumerable.Range(start, Math.Min(BatchSize, plans.Length - start)).ToList();
-                if (!DeleteBatch(c, map, plans, results, batch, deleted, edited))
+                if (!DeleteBatch(c, map, plans, results, batch, deleted))
                 {
                     break;
                 }
@@ -485,7 +486,7 @@ public sealed class WpdPhotoDeleter
     }
 
     /// <summary>Re-checks and deletes one batch. False when it stopped (a mismatch or an error).</summary>
-    private bool DeleteBatch(IWpdConnection c, WpdDcimMap map, Plan[] plans, PhotoDeleteResult?[] results, List<int> batch, List<int> deleted, HashSet<string> edited)
+    private bool DeleteBatch(IWpdConnection c, WpdDcimMap map, Plan[] plans, PhotoDeleteResult?[] results, List<int> batch, List<int> deleted)
     {
         // Just before deleting: each object is still the same file in the same DCIM folder.
         foreach (var i in batch)
@@ -524,61 +525,33 @@ public sealed class WpdPhotoDeleter
         foreach (var i in batch)
         {
             var plan = plans[i];
-            var stillAt = owner.FindIndex(o => o.Item == i && o.IsStill);
-            var stillHr = outcome[stillAt];
-            if (stillHr != 0 || StillListed(c, plan.Still!.Id) == true)
+            var stillHr = outcome[owner.FindIndex(o => o.Item == i && o.IsStill)];
+            if (stillHr != 0)
             {
-                var hr = stillHr != 0 ? stillHr : WpdErrors.GenFailure;
-                results[i] = new PhotoDeleteResult(plan.Item.Id, plan.Asset.FileName, plan.Item.Size, PhotoDeleteOutcome.Failed, Code(hr),
-                    stillHr != 0 ? Sentence(WpdErrors.Describe(hr)) : "The iPhone still lists it after the delete.", [], PhotoDeleteDestination.Unknown);
-                Log($"failed {plan.Item.Id} ({Bytes(plan.DiskSize)}): {WpdErrors.Describe(hr)}");
+                results[i] = new PhotoDeleteResult(plan.Item.Id, plan.Asset.FileName, plan.Item.Size, PhotoDeleteOutcome.Failed, Code(stillHr),
+                    Sentence(WpdErrors.Describe(stillHr)), [], PhotoDeleteDestination.Unknown);
+                Log($"failed {plan.Item.Id} ({Bytes(plan.DiskSize)}): {WpdErrors.Describe(stillHr)}");
                 stop = true;
                 continue;
             }
 
-            Log($"deleted {plan.Item.Id} ({Bytes(plan.DiskSize)}) through Windows, object {plan.Still.Id}");
+            // Windows said it's done. Reading the object back on this connection isn't proof either way: on iOS 27 the
+            // driver still answered with the deleted objects' properties. What the phone itself shows decides (ClassifyAsync).
+            Log($"deleted {plan.Item.Id} ({Bytes(plan.DiskSize)}) through Windows, object {plan.Still!.Id} ({plan.Still.FileName})");
             var also = new List<string>();
-            var notes = new List<string>();
             var freed = plan.Item.Size;
             if (plan.Pair is { } pair)
             {
-                var pairAt = owner.FindIndex(o => o.Item == i && !o.IsStill);
-                if (outcome[pairAt] == 0 || StillListed(c, pair.Id) == false)
+                plan.PairHr = outcome[owner.FindIndex(o => o.Item == i && !o.IsStill)];
+                if (plan.PairHr == 0)
                 {
                     also.Add(pair.FileName ?? Path.GetFileName(plan.PairPath!));
                     freed += plan.PairDiskSize ?? 0;
-                    Log($"deleted {plan.PairPath} ({Bytes(plan.PairDiskSize ?? 0)}), the Live Photo's video" + (outcome[pairAt] == 0 ? "" : ", gone with its still"));
-                }
-                else
-                {
-                    notes.Add($"Its Live Photo video ({pair.FileName}) is still on the iPhone: {WpdErrors.Describe(outcome[pairAt])}.");
-                    Log($"kept {plan.PairPath}: {WpdErrors.Describe(outcome[pairAt])}");
+                    Log($"deleted {plan.PairPath} ({Bytes(plan.PairDiskSize ?? 0)}), the Live Photo's video, object {pair.Id}");
                 }
             }
 
-            if (plan.Note is { } note)
-            {
-                notes.Add(note);
-            }
-
-            if (plan.Edits.Count > 0)
-            {
-                // Not deleted by DeviceDeck: the phone makes these for the PC. What happened to them is reported.
-                var kept = plan.Edits.Where(o => StillListed(c, o.Id) == true).Select(o => o.FileName).ToList();
-                var names = string.Join(", ", plan.Edits.Select(o => o.FileName));
-                notes.Add(kept.Count == 0
-                    ? $"Its edit ({names}) went with it."
-                    : $"Windows still lists {string.Join(", ", kept)}, the edit the iPhone made for the PC.");
-                Log($"edit of {plan.Item.Id} ({names}): " + (kept.Count == 0 ? "gone with it" : "still listed: " + string.Join(", ", kept)));
-            }
-            else if (edited.Contains(plan.Item.Id))
-            {
-                notes.Add("It was edited; Windows listed no separate edited version.");
-                Log($"edit of {plan.Item.Id}: Windows listed no separate edited version");
-            }
-
-            results[i] = new PhotoDeleteResult(plan.Item.Id, plan.Asset.FileName, freed, PhotoDeleteOutcome.Deleted, null,
-                notes.Count == 0 ? null : string.Join(" ", notes), also, PhotoDeleteDestination.Unknown);
+            results[i] = new PhotoDeleteResult(plan.Item.Id, plan.Asset.FileName, freed, PhotoDeleteOutcome.Deleted, null, plan.Note, also, PhotoDeleteDestination.Unknown);
             deleted.Add(i);
         }
 
@@ -586,29 +559,19 @@ public sealed class WpdPhotoDeleter
     }
 
     /// <summary>
-    /// Whether Windows still lists an object after a delete; null when it couldn't say (which error it gives for an
-    /// object it no longer has isn't documented). The batch's own per-object result decides then: never throws, so a
-    /// delete that went through is never reported as failed.
+    /// What the phone shows after the delete: the file gone from DCIM (deleted for good), or kept but no longer in the
+    /// library (Recently Deleted). A photo the phone still has and still lists, after a few tries, wasn't deleted.
+    /// Live Photo videos and edits are told from the same view.
     /// </summary>
-    private static bool? StillListed(IWpdConnection c, string id)
+    private async Task ClassifyAsync(IReadOnlyList<PhotoDeleteItem> items, Plan?[] plans, PhotoDeleteResult?[] results, List<int> deleted, HashSet<string> edited, CancellationToken ct)
     {
-        try
-        {
-            return c.Get(id) is not null;
-        }
-        catch (WpdException)
-        {
-            return null;
-        }
-    }
-
-    private async Task ClassifyAsync(IReadOnlyList<PhotoDeleteItem> items, Plan?[] plans, PhotoDeleteResult?[] results, List<int> deleted, CancellationToken ct)
-    {
+        IReadOnlyDictionary<string, long?> disk = new Dictionary<string, long?>();
         for (var attempt = 0; attempt < 3; attempt++)
         {
             var index = await _phone.GetIndexAsync(refresh: true, ct).ConfigureAwait(false);
             var listed = index.Assets.Select(a => a.Id).ToHashSet(StringComparer.Ordinal);
-            var disk = await _phone.StatAsync(deleted.Select(i => items[i].Id).ToList(), ct).ConfigureAwait(false);
+            var paths = deleted.SelectMany(i => plans[i]!.PairPath is { } pair ? new[] { items[i].Id, pair } : [items[i].Id]).ToList();
+            disk = await _phone.StatAsync(paths, ct).ConfigureAwait(false);
             var pending = 0;
             foreach (var i in deleted)
             {
@@ -632,19 +595,62 @@ public sealed class WpdPhotoDeleter
             await _delay(TimeSpan.FromSeconds(2), ct).ConfigureAwait(false);
         }
 
-        foreach (var i in deleted)
+        foreach (var i in deleted.ToList())
         {
             var r = results[i]!;
-            Log($"after the delete, {r.Id}: " + r.WentTo switch
-            {
-                PhotoDeleteDestination.Permanent => "the file is gone from DCIM",
-                PhotoDeleteDestination.RecentlyDeleted => "the file is still in DCIM and the library marks it deleted (Recently Deleted)",
-                _ => "the library still lists it",
-            });
+            var plan = plans[i]!;
             if (r.WentTo == PhotoDeleteDestination.Unknown)
             {
-                results[i] = r with { Message = Join(r.Message, "The iPhone's library still lists it; it may take a moment to update.") };
+                results[i] = r with
+                {
+                    Outcome = PhotoDeleteOutcome.Failed,
+                    Code = DeviceErrorCodes.Protocol,
+                    Message = Join(plan.Note, "Windows said it was deleted, but the iPhone still has it and still lists it."),
+                    Also = [],
+                    Size = plan.Item.Size,
+                };
+                deleted.Remove(i);
+                Log($"not deleted after all, {r.Id}: the phone still has the file and still lists it");
+                continue;
             }
+
+            var notes = new List<string>();
+            if (plan.Note is { } note)
+            {
+                notes.Add(note);
+            }
+
+            var also = r.Also.ToList();
+            var freed = r.Size;
+            if (plan.PairPath is { } pairPath)
+            {
+                var pairName = plan.Pair?.FileName ?? Path.GetFileName(pairPath);
+                var pairGone = disk.GetValueOrDefault(pairPath) is null;
+                if (pairGone && !also.Contains(pairName))
+                {
+                    also.Add(pairName);
+                    freed += plan.PairDiskSize ?? 0;
+                    Log($"deleted {pairPath} ({Bytes(plan.PairDiskSize ?? 0)}), the Live Photo's video, gone with its still");
+                }
+                else if (!pairGone && r.WentTo == PhotoDeleteDestination.Permanent)
+                {
+                    also.Remove(pairName);
+                    notes.Add($"Its Live Photo video ({Path.GetFileName(pairPath)}) is still on the iPhone.");
+                    Log($"kept {pairPath}: still in DCIM");
+                }
+            }
+
+            if (plan.Edits.Count > 0 || edited.Contains(r.Id))
+            {
+                // Not deleted by DeviceDeck: the edit belongs to the photo, which the library no longer lists.
+                var names = plan.Edits.Count > 0 ? $" ({string.Join(", ", plan.Edits.Select(o => o.FileName))})" : "";
+                notes.Add($"Its edit{names} went with it.");
+            }
+
+            results[i] = r with { Also = also, Size = freed, Message = notes.Count == 0 ? null : string.Join(" ", notes) };
+            Log($"after the delete, {r.Id}: " + (r.WentTo == PhotoDeleteDestination.Permanent
+                ? "the file is gone from DCIM"
+                : "the file is still in DCIM and the library no longer lists it (Recently Deleted)"));
         }
 
         var seen = deleted.Select(i => results[i]!.WentTo).Where(d => d != PhotoDeleteDestination.Unknown).Distinct().ToList();

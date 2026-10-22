@@ -91,6 +91,11 @@ internal sealed class FakeWpdDevice(string pnpId, string? usbSerial, WpdDevicePr
     /// <summary>Deleting a Live Photo's still also takes its video, as Photos does for the whole asset.</summary>
     public bool StillTakesItsVideo { get; set; }
 
+    /// <summary>Reading a deleted object back still answers with its old properties, as Windows' driver did on iOS 27.</summary>
+    public bool StaleAfterDelete { get; set; }
+
+    private readonly Dictionary<string, WpdObject> _removed = new(StringComparer.Ordinal);
+
     /// <summary>What reading an object Windows no longer has throws (some drivers answer with an error, not "no such object").</summary>
     public int? GoneObjectError { get; set; }
 
@@ -178,7 +183,12 @@ internal sealed class FakeWpdDevice(string pnpId, string? usbSerial, WpdDevicePr
     {
         lock (_gate)
         {
-            if (!_objects.TryGetValue(id, out var o) && GoneObjectError is { } hr)
+            if (!_objects.TryGetValue(id, out var o) && StaleAfterDelete && _removed.TryGetValue(id, out var stale))
+            {
+                return stale;
+            }
+
+            if (o is null && GoneObjectError is { } hr)
             {
                 throw new WpdException("No such object.", hr);
             }
@@ -243,6 +253,7 @@ internal sealed class FakeWpdDevice(string pnpId, string? usbSerial, WpdDevicePr
     private void RemoveLocked(WpdObject o, List<(WpdObject, string)> gone)
     {
         _objects.Remove(o.Id);
+        _removed[o.Id] = o;
         _children[o.ParentId!].Remove(o.Id);
         gone.Add((o, _paths.GetValueOrDefault(o.Id) ?? ""));
     }
