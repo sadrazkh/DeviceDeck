@@ -151,6 +151,7 @@ internal sealed class HostServices : IAsyncDisposable
         Toolbox = DeviceDeck.Shell.Toolbox.ShellToolbox.Create(this),
         Backups = Backups,
         LocalSend = LocalSend,
+        Links = new ShellLinkOpener(), // Drivers card (v0.6)
     };
 
     /// <summary>Starts the providers once the window is up, so the first paint isn't waiting on USB.</summary>

@@ -34,7 +34,7 @@ public sealed class BridgeHost : IDisposable
         if (services.Backups is { } backups)
             backups.JobUpdated += OnBackupUpdated;
         _featureEvents = [CleanupMethods.PublishEvents(services, Publish), BatteryMethods.PublishEvents(services, Publish),
-            LocalSend.LocalSendMethods.PublishEvents(services, Publish)];
+            LocalSend.LocalSendMethods.PublishEvents(services, Publish), DriversMethods.PublishEvents(services, Publish)];
         _desktopEvents = new DesktopEvents(services, Publish);
         foreach (var summary in services.Hub.ListDevices())
         {

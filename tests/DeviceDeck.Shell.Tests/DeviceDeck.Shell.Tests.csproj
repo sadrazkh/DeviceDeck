@@ -43,6 +43,8 @@
     <Compile Include="..\..\src\DeviceDeck.Shell\Desktop\UpdateFeed.cs" Link="Shell\Updates\UpdateFeed.cs" />
     <Compile Include="..\..\src\DeviceDeck.Shell\Desktop\UpdateHistory.cs" Link="Shell\Updates\UpdateHistory.cs" />
     <Compile Include="..\..\src\DeviceDeck.Shell\Hosting\ShellLog.cs" Link="Shell\ShellLog.cs" />
+    <!-- Drivers card (v0.6): which links the app opens outside itself. -->
+    <Compile Include="..\..\src\DeviceDeck.Shell\Hosting\ShellLinks.cs" Link="Shell\ShellLinks.cs" />
   </ItemGroup>
 
 </Project>
