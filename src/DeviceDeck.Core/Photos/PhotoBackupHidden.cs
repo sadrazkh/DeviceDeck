@@ -104,7 +104,7 @@ public static partial class PhotoBackupHiddenRules
     }
 
     /// <summary>Marks that reorder text (a name could look like another): LRM, RLM, the embeddings and isolates. ZWNJ stays allowed.</summary>
-    private static bool IsDirectionMark(char c) => c is '‎' or '‏' or (>= '‪' and <= '‮') or (>= '⁦' and <= '⁩');
+    private static bool IsDirectionMark(char c) => c is '\u200E' or '\u200F' or (>= '\u202A' and <= '\u202E') or (>= '\u2066' and <= '\u2069');
 
     [GeneratedRegex(@"^(COM|LPT)[0-9¹²³]$", RegexOptions.IgnoreCase)]
     private static partial Regex ReservedDevice();
