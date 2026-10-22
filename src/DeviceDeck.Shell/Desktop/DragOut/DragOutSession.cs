@@ -407,16 +407,34 @@ internal sealed class DragOutSession
         }
 
         _registry.Remove(this);
+        if (!TryDeleteStaging())
+        {
+            // Often only a moment: a virus scanner or the search indexer still reading a file just closed. Tried again off this
+            // thread for a few seconds; a stream File Explorer really keeps open waits for the next start, which clears the root.
+            _ = Task.Run(async () =>
+            {
+                for (var attempt = 0; attempt < 15 && !TryDeleteStaging(); attempt++)
+                {
+                    await Task.Delay(200).ConfigureAwait(false);
+                }
+            });
+        }
+    }
+
+    private bool TryDeleteStaging()
+    {
         try
         {
             if (Directory.Exists(StagingFolder))
             {
                 Directory.Delete(StagingFolder, recursive: true);
             }
+
+            return true;
         }
         catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
         {
-            // A stream still open in File Explorer; the next start clears the staging root.
+            return false;
         }
     }
 

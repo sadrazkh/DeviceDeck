@@ -131,6 +131,7 @@ public sealed class DragOutLifetimeTests
         Assert.Throws<IOException>(() => new FileStream(session.StagingPath(0), FileMode.Open, FileAccess.Read, FileShare.None).Dispose());
 
         session.Close();
-        Assert.False(Directory.Exists(session.StagingFolder));
+        // Gone at once, or within moments when a scanner still held a file Close had just shut.
+        await Wait.UntilAsync(() => !Directory.Exists(session.StagingFolder), "the staging folder to go", 5_000);
     }
 }
