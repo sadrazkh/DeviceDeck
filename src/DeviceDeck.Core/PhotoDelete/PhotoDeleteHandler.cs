@@ -382,7 +382,8 @@ public sealed class PhotoDeleteHandler : TransferHandler<PhotosDeleteRequest>, I
                 PhotoDeleteOutcome.Deleted => TransferItemState.Done,
                 PhotoDeleteOutcome.NotTried => TransferItemState.Queued,
                 _ => TransferItemState.Failed,
-            }, named.Outcome == PhotoDeleteOutcome.Deleted ? null : named.Code, named.Message);
+            }, named.Outcome == PhotoDeleteOutcome.Deleted ? null : named.Code, named.Message,
+                named.Outcome == PhotoDeleteOutcome.Deleted ? named.Size : null);
         }
     }
 }

@@ -749,7 +749,7 @@ public sealed class TransferQueue : IAsyncDisposable
     }
 
     /// <summary>One item of a whole job changed: counted, saved at once, sent out.</summary>
-    private void OnWholeItem(Job job, int index, TransferItemState state, string? code, string? message)
+    private void OnWholeItem(Job job, int index, TransferItemState state, string? code, string? message, long? size)
     {
         lock (_gate)
         {
@@ -760,6 +760,12 @@ public sealed class TransferQueue : IAsyncDisposable
 
             var item = job.Data.Items[index];
             Count(job, item, -1);
+            if (size is { } bytes && bytes >= 0 && bytes != item.Size)
+            {
+                job.TotalBytes += bytes - item.Size;
+                item.Size = bytes;
+            }
+
             item.State = state;
             item.ErrorCode = code;
             item.ErrorMessage = message;
@@ -788,7 +794,8 @@ public sealed class TransferQueue : IAsyncDisposable
     {
         public void Stage(string name, int done, int total) => queue.OnStage(job, new TransferStage(name, Math.Max(0, done), Math.Max(0, total)));
 
-        public void Item(int index, TransferItemState state, string? code = null, string? message = null) => queue.OnWholeItem(job, index, state, code, message);
+        public void Item(int index, TransferItemState state, string? code = null, string? message = null, long? size = null) =>
+            queue.OnWholeItem(job, index, state, code, message, size);
 
         public void Error(TransferError? error)
         {

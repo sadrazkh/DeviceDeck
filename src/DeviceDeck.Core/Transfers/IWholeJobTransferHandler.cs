@@ -32,8 +32,11 @@ public interface ITransferJobReporter
     /// <summary>The stage and how far it got (shown in the Transfers drawer; at most 10 updates a second).</summary>
     void Stage(string name, int done, int total);
 
-    /// <summary>One item's state as known now; <paramref name="code"/> and <paramref name="message"/> say why it failed (or a note).</summary>
-    void Item(int index, TransferItemState state, string? code = null, string? message = null);
+    /// <summary>
+    /// One item's state as known now; <paramref name="code"/> and <paramref name="message"/> say why it failed (or a note);
+    /// <paramref name="size"/> corrects its bytes (a deleted Live Photo freed its video's too).
+    /// </summary>
+    void Item(int index, TransferItemState state, string? code = null, string? message = null, long? size = null);
 
     /// <summary>The error the job ends with (failed when nothing worked); null clears it.</summary>
     void Error(TransferError? error);
