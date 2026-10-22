@@ -123,5 +123,8 @@ public static class TransferHandlers
         new WhatsApp.WhatsAppMediaHandler(),
         // v0.4.1: deleting photos as a job of its own (Photos and Clean-up).
         new PhotoDelete.PhotoDeleteHandler(),
+        // v0.6: every other delete too: files and folders, and apps (Files, App files, Apps and Clean-up).
+        new Deletes.FilesDeleteHandler(),
+        new Deletes.AppsUninstallHandler(),
     ];
 }

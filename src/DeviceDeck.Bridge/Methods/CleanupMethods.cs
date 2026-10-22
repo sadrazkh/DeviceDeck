@@ -30,9 +30,10 @@ public static class CleanupMethods
         });
         rpc.Register<CleanupDeleteMediaParams, Core.PhotoDelete.PhotoDeleteStarted>("cleanup.deleteMedia", (p, ct) =>
             cleanup.DeleteMediaAsync(p.DeviceId, p.Items, p.ExpectedBytes, PcFolder(p.CopyFirstTo), ct));
-        rpc.Register<CleanupDeleteFilesParams, CleanupResult>("cleanup.deleteFiles", (p, ct) =>
+        // v0.6: files and apps go to the Transfers drawer as delete jobs too.
+        rpc.Register<CleanupDeleteFilesParams, Core.Deletes.DeleteStarted>("cleanup.deleteFiles", (p, ct) =>
             cleanup.DeleteFilesAsync(p.DeviceId, p.Items, p.ExpectedBytes, PcFolder(p.CopyFirstTo), ct));
-        rpc.Register<CleanupUninstallParams, CleanupResult>("cleanup.uninstallApps", (p, ct) =>
+        rpc.Register<CleanupUninstallParams, Core.Deletes.DeleteStarted>("cleanup.uninstallApps", (p, ct) =>
             cleanup.UninstallAppsAsync(p.DeviceId, p.Items, p.ExpectedBytes, PcFolder(p.CopyFirstTo), ct));
         rpc.Register<DeviceParams, CleanupResult>("cleanup.trimCaches", (p, ct) => cleanup.TrimCachesAsync(p.DeviceId, ct));
     }

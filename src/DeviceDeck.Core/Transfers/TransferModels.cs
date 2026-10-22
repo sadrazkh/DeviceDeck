@@ -20,6 +20,12 @@ public enum TransferKind
 
     /// <summary>v0.4.1: deleting the photos the user confirmed, from Photos or Clean-up, in stages (PhotoDelete/PhotoDeleteHandler).</summary>
     PhotosDelete,
+
+    /// <summary>v0.6: deleting the files and folders the user confirmed, from Files, App files or Clean-up (Deletes/FilesDeleteHandler).</summary>
+    FilesDelete,
+
+    /// <summary>v0.6: removing the apps the user confirmed, from Apps or Clean-up (Deletes/AppsUninstallHandler).</summary>
+    AppsUninstall,
 }
 
 public enum TransferState { Queued, Running, Paused, WaitingForDevice, NeedsDecision, Done, Failed, Cancelled }
@@ -35,6 +41,7 @@ public sealed record TransferConflict(string ItemName, long ExistingSize, long N
 public sealed record TransferError(string Code, string Message);
 
 /// <summary>A snapshot of one job as the page sees it.</summary>
+/// <param name="SkippedItems">v0.6, a delete: items left alone because they changed since the user chose them (not in DoneItems).</param>
 public sealed record TransferJob(
     string Id,
     string DeviceId,
@@ -52,7 +59,8 @@ public sealed record TransferJob(
     TransferError? Error,
     DateTimeOffset CreatedAt,
     DateTimeOffset? FinishedAt,
-    TransferStage? Stage = null);
+    TransferStage? Stage = null,
+    int SkippedItems = 0);
 
 /// <summary>
 /// v0.4.1: where a job that runs in stages is (<see cref="IWholeJobTransferHandler"/>; deleting photos: "copying",

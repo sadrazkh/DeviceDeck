@@ -265,6 +265,8 @@ public static class BridgeMethods
         WhatsAppMethods.Register(rpc, s);
         // Deleting photos, iPhone included, with a reason when it can't (round 4, photodelete).
         PhotoDeleteMethods.Register(rpc, s);
+        // Every other delete as a transfer job too: files and folders, and apps (v0.6).
+        DeleteMethods.Register(rpc, s);
         // Drivers card: start a driver, download Android tools, open the Store and driver pages (v0.6, drivers).
         DriversMethods.Register(rpc, s);
 

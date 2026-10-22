@@ -15,18 +15,23 @@ public enum PhotoDeleteSource { Photos, Cleanup }
 
 /// <summary>A delete job's request, saved with the job.</summary>
 /// <param name="Items">Exactly what the user confirmed, each at the size the page showed.</param>
-/// <param name="Skipped">Clean-up: items left out before the job because they changed since the analysis.</param>
+/// <param name="Skipped">Clean-up before v0.6: items left out before the job because they changed since the analysis.</param>
+/// <param name="SkipChanged">
+/// v0.6, Clean-up: the job itself first leaves alone what changed since the analysis (gone, or another size) and
+/// deletes the rest; starting it reads nothing from the phone, so the dialog closes at once.
+/// </param>
 public sealed record PhotosDeleteRequest(
     IReadOnlyList<PhotoDeleteItem> Items,
     long ExpectedBytes,
     string? CopyFirstTo,
     string FolderPattern,
     PhotoDeleteSource Source = PhotoDeleteSource.Photos,
-    int Skipped = 0);
+    int Skipped = 0,
+    bool SkipChanged = false);
 
 /// <summary>What starting a delete answers: its job (shown in the Transfers drawer).</summary>
-/// <param name="JobId">Null when nothing was left to delete (Clean-up: every item changed since the analysis).</param>
-/// <param name="Skipped">Clean-up: items left out because they changed since the analysis.</param>
+/// <param name="JobId">Null when nothing was left to delete (Clean-up before v0.6: every item changed since the analysis).</param>
+/// <param name="Skipped">Clean-up before v0.6: items left out because they changed since the analysis (the job says so since).</param>
 public sealed record PhotoDeleteStarted(string? JobId, int Skipped);
 
 /// <summary>A delete job's results so far (all of them once it finished).</summary>
@@ -49,7 +54,8 @@ public sealed record PhotoDeleteJobStatus(
     TransferError? Error);
 
 /// <summary>A delete job finished (done, failed or stopped) with these items gone.</summary>
-public sealed record PhotoDeleteFinished(string JobId, string DeviceId, IReadOnlyList<string> Deleted, long FreedBytes);
+/// <param name="Missing">v0.6: items it found no longer on the phone (Clean-up's check): gone too, but they freed nothing now.</param>
+public sealed record PhotoDeleteFinished(string JobId, string DeviceId, IReadOnlyList<string> Deleted, long FreedBytes, IReadOnlyList<string>? Missing = null);
 
 /// <summary>
 /// Runs <see cref="TransferKind.PhotosDelete"/> jobs (see <see cref="IWholeJobTransferHandler"/>): every rule of the
@@ -66,6 +72,9 @@ public sealed class PhotoDeleteHandler : TransferHandler<PhotosDeleteRequest>, I
     /// <summary>What an item says when the delete stopped before it got to it.</summary>
     public const string StoppedNote = "Not tried: the delete was stopped.";
 
+    /// <summary>v0.6: the code and sentence of an item left alone because it changed since the analysis (Clean-up).</summary>
+    public const string ChangedCode = "changed", ChangedNote = "It changed since the analysis, so it was left alone.";
+
     private const string CopyIncompleteNote = "The copy to the PC didn't finish, so nothing was deleted.";
     private const string InterruptedNote = "The delete stopped while this was being deleted: it may be gone from the phone. Look on the phone.";
 
@@ -74,10 +83,13 @@ public sealed class PhotoDeleteHandler : TransferHandler<PhotosDeleteRequest>, I
         public string DeviceId { get; } = deviceId;
         public PhotosDeleteRequest Request { get; } = request;
 
-        /// <summary>Each item's name as the library gave it when the job was planned.</summary>
-        public string[] Names { get; } = request.Items.Select(i => FileNameOf(i.Id)).ToArray();
+        /// <summary>Each item's name as the page showed it (or as the job was planned with).</summary>
+        public string[] Names { get; } = request.Items.Select(NameOf).ToArray();
         public PhotoDeleteResult?[] Results { get; } = new PhotoDeleteResult?[request.Items.Count];
         public List<string> CopyJobIds { get; } = [];
+
+        /// <summary>Items Clean-up's check found gone from the library (v0.6).</summary>
+        public List<string> Missing { get; } = [];
         public bool CopyIncomplete { get; set; }
         public PhotoDeleteDestination GoesTo { get; set; }
         public bool Finished { get; set; }
@@ -132,21 +144,12 @@ public sealed class PhotoDeleteHandler : TransferHandler<PhotosDeleteRequest>, I
             : $"Deleting {items.Count:N0} photos and videos from {device.Summary.Name}";
     }
 
-    /// <summary>One item per confirmed photo, named as the library names it.</summary>
-    protected override async Task<IReadOnlyList<TransferItemPlan>> PlanAsync(TransferWorkContext context, PhotosDeleteRequest request, CancellationToken ct)
-    {
-        Dictionary<string, PhotoAsset> library;
-        try
-        {
-            library = await PhotoDeletes.ReadLibraryAsync(context.Device, ct).ConfigureAwait(false);
-        }
-        catch (DeviceException ex) when (ex.Code is DeviceErrorCodes.NotSupported)
-        {
-            library = [];
-        }
-
-        return request.Items.Select(i => new TransferItemPlan(i.Id, "", library.GetValueOrDefault(i.Id)?.FileName ?? FileNameOf(i.Id), i.Size)).ToList();
-    }
+    /// <summary>
+    /// One item per confirmed photo, named as the page showed it. v0.6: planned while the page waits for the job, so it
+    /// reads nothing from the phone (reading an iPhone's library could keep the dialog open for seconds).
+    /// </summary>
+    protected override Task<IReadOnlyList<TransferItemPlan>> PlanAsync(TransferWorkContext context, PhotosDeleteRequest request, CancellationToken ct) =>
+        Task.FromResult<IReadOnlyList<TransferItemPlan>>(request.Items.Select(i => new TransferItemPlan(i.Id, "", NameOf(i), i.Size)).ToList());
 
     protected override Task<TransferItemState> RunItemAsync(TransferWorkContext context, PhotosDeleteRequest request, TransferItem item, IProgress<long> progress, CancellationToken ct) =>
         throw new InvalidOperationException("A photo delete runs as a whole (RunJobAsync).");
@@ -177,18 +180,33 @@ public sealed class PhotoDeleteHandler : TransferHandler<PhotosDeleteRequest>, I
         var observer = new Observer(report, memory);
         try
         {
+            // v0.6, Clean-up: what changed since the analysis stays; the rest goes. Checked here, not before the job.
+            var kept = Enumerable.Range(0, items.Count).ToList();
+            if (request.SkipChanged)
+            {
+                report.Stage(Reading, 0, 0);
+                kept = await KeepUnchangedAsync(device, memory, observer, ct).ConfigureAwait(false);
+                if (kept.Count == 0)
+                {
+                    Finish(context.JobId, memory, PhotoDeleteDestination.Unknown);
+                    return;
+                }
+            }
+
+            var keptItems = kept.Select(i => items[i]).ToList();
+            IPhotoDeleteObserver run = kept.Count == items.Count ? observer : new Remapped(observer, kept);
             if (request.CopyFirstTo is { } folder)
             {
                 var queue = context.Queue ?? throw new InvalidOperationException("Copying first needs the transfer queue.");
-                report.Stage(Copying, 0, items.Count);
-                memory.CopyJobIds.AddRange(await PhotoDeletes.EnqueueCopiesAsync(queue, device, items.Select(i => i.Id).ToList(), folder,
+                report.Stage(Copying, 0, keptItems.Count);
+                memory.CopyJobIds.AddRange(await PhotoDeletes.EnqueueCopiesAsync(queue, device, keptItems.Select(i => i.Id).ToList(), folder,
                     request.FolderPattern, ct).ConfigureAwait(false));
                 var copied = await PhotoDeletes.WaitForCopiesAsync(queue, memory.CopyJobIds,
-                    (done, total) => report.Stage(Copying, done, Math.Max(total, items.Count)), ct).ConfigureAwait(false);
+                    (done, total) => report.Stage(Copying, done, Math.Max(total, keptItems.Count)), ct).ConfigureAwait(false);
                 if (!copied)
                 {
                     memory.CopyIncomplete = true;
-                    for (var i = 0; i < items.Count; i++)
+                    foreach (var i in kept)
                     {
                         observer.Result(i, NotTried(i, memory, CopyIncompleteNote));
                     }
@@ -199,10 +217,10 @@ public sealed class PhotoDeleteHandler : TransferHandler<PhotosDeleteRequest>, I
                 }
             }
 
-            var results = await PhotoDeletes.DeleteItemsAsync(device, items, observer, ct).ConfigureAwait(false);
+            var results = await PhotoDeletes.DeleteItemsAsync(device, keptItems, run, ct).ConfigureAwait(false);
             for (var i = 0; i < results.Count; i++)
             {
-                observer.Result(i, results[i]);
+                run.Result(i, results[i]);
             }
 
             if (results.All(r => r.Outcome != PhotoDeleteOutcome.Deleted) && results.FirstOrDefault(r => r.Outcome is PhotoDeleteOutcome.Mismatch or PhotoDeleteOutcome.Failed) is { } first)
@@ -254,7 +272,8 @@ public sealed class PhotoDeleteHandler : TransferHandler<PhotosDeleteRequest>, I
                     item.ErrorMessage = "DeviceDeck closed while this was being deleted: it may be gone from the phone. Look on the phone.";
                     break;
                 case TransferItemState.Queued:
-                    item.ErrorMessage ??= "Not tried: DeviceDeck closed before the delete got to it.";
+                    // Settled as "stopped" when the run stopped at shutdown: it was DeviceDeck closing.
+                    item.ErrorMessage = item.ErrorMessage is null or StoppedNote ? "Not tried: DeviceDeck closed before the delete got to it." : item.ErrorMessage;
                     break;
             }
         }
@@ -274,6 +293,8 @@ public sealed class PhotoDeleteHandler : TransferHandler<PhotosDeleteRequest>, I
     /// <summary>A job's results from the queue's saved items, when this run of DeviceDeck didn't run it (after a restart).</summary>
     internal static PhotoDeleteResult FromItem(TransferItem item) => item.State switch
     {
+        TransferItemState.Skipped => new PhotoDeleteResult(item.Source, item.Name, item.Size, PhotoDeleteOutcome.Mismatch, item.ErrorCode ?? ChangedCode,
+            item.ErrorMessage ?? ChangedNote, [], PhotoDeleteDestination.Unknown),
         TransferItemState.Done => new PhotoDeleteResult(item.Source, item.Name, item.Size, PhotoDeleteOutcome.Deleted, null, item.ErrorMessage, [], PhotoDeleteDestination.Unknown),
         TransferItemState.Failed => new PhotoDeleteResult(item.Source, item.Name, item.Size, PhotoDeleteOutcome.Failed, item.ErrorCode, item.ErrorMessage, [], PhotoDeleteDestination.Unknown),
         _ => new PhotoDeleteResult(item.Source, item.Name, item.Size, PhotoDeleteOutcome.NotTried, null, item.ErrorMessage, [], PhotoDeleteDestination.Unknown),
@@ -289,7 +310,7 @@ public sealed class PhotoDeleteHandler : TransferHandler<PhotosDeleteRequest>, I
         var gone = memory.Results.Where(r => r?.Outcome == PhotoDeleteOutcome.Deleted).Select(r => r!).ToList();
         try
         {
-            Finished?.Invoke(this, new PhotoDeleteFinished(jobId, memory.DeviceId, gone.Select(r => r.Id).ToList(), gone.Sum(r => r.Size)));
+            Finished?.Invoke(this, new PhotoDeleteFinished(jobId, memory.DeviceId, gone.Select(r => r.Id).ToList(), gone.Sum(r => r.Size), memory.Missing.ToList()));
         }
         catch (Exception)
         {
@@ -345,10 +366,39 @@ public sealed class PhotoDeleteHandler : TransferHandler<PhotosDeleteRequest>, I
         }
     }
 
+    /// <summary>Clean-up (v0.6): the items still on the phone at the size the analysis saw; the others are left alone.</summary>
+    private static async Task<List<int>> KeepUnchangedAsync(IDevice device, Memory memory, Observer observer, CancellationToken ct)
+    {
+        var items = memory.Request.Items;
+        var library = await PhotoDeletes.ReadLibraryAsync(device, ct).ConfigureAwait(false);
+        var kept = new List<int>();
+        for (var i = 0; i < items.Count; i++)
+        {
+            if (library.TryGetValue(items[i].Id, out var asset) && asset.Size == items[i].Size)
+            {
+                kept.Add(i);
+            }
+            else
+            {
+                if (asset is null)
+                {
+                    memory.Missing.Add(items[i].Id);
+                }
+
+                observer.Skipped(i, new PhotoDeleteResult(items[i].Id, memory.Names[i], items[i].Size, PhotoDeleteOutcome.Mismatch, ChangedCode, ChangedNote, [],
+                    PhotoDeleteDestination.Unknown));
+            }
+        }
+
+        return kept;
+    }
+
     private static PhotoDeleteResult NotTried(int index, Memory memory, string why) =>
         new(memory.Request.Items[index].Id, memory.Names[index], memory.Request.Items[index].Size, PhotoDeleteOutcome.NotTried, null, why, [], PhotoDeleteDestination.Unknown);
 
     private static string FileNameOf(string id) => id[(id.LastIndexOf('/') + 1)..];
+
+    private static string NameOf(PhotoDeleteItem item) => item.Name is { Length: > 0 } name ? name : FileNameOf(item.Id);
 
     /// <summary>The delete's stages and results, passed on to the job: saved per item as they come.</summary>
     private sealed class Observer(ITransferJobReporter report, Memory memory) : IPhotoDeleteObserver
@@ -375,6 +425,13 @@ public sealed class PhotoDeleteHandler : TransferHandler<PhotosDeleteRequest>, I
             }
         }
 
+        /// <summary>An item left alone before anything started (it changed since the analysis): skipped, not failed.</summary>
+        public void Skipped(int item, PhotoDeleteResult result)
+        {
+            memory.Results[item] = result;
+            report.Item(item, TransferItemState.Skipped, result.Code, result.Message);
+        }
+
         public void Result(int item, PhotoDeleteResult result)
         {
             lock (InFlight)
@@ -393,5 +450,15 @@ public sealed class PhotoDeleteHandler : TransferHandler<PhotosDeleteRequest>, I
             }, named.Outcome == PhotoDeleteOutcome.Deleted ? null : named.Code, named.Message,
                 named.Outcome == PhotoDeleteOutcome.Deleted ? named.Size : null);
         }
+    }
+
+    /// <summary>The delete of the items kept (Clean-up, v0.6): it numbers them 0..n; the job numbers all it was given.</summary>
+    private sealed class Remapped(IPhotoDeleteObserver inner, IReadOnlyList<int> map) : IPhotoDeleteObserver
+    {
+        public void Stage(PhotoDeleteStage stage, int done, int total) => inner.Stage(stage, done, total);
+
+        public void Deleting(IReadOnlyList<int> items) => inner.Deleting(items.Select(i => map[i]).ToList());
+
+        public void Result(int item, PhotoDeleteResult result) => inner.Result(map[item], result);
     }
 }

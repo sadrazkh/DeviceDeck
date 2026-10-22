@@ -270,7 +270,9 @@ sends the exact items the user confirmed, each with the size the page showed, an
 The host deletes an item only when the last analysis listed it at that size and it is still the same on the phone;
 anything that changed is skipped and counted. With `copyFirstTo` (a PC folder) the items are copied first through the
 transfer queue (`keepBoth`, originals unconverted), and nothing is deleted unless every copy finished.
-Deletes wait while an analysis runs. A report is dropped when its phone disconnects.
+Deletes can't be started while an analysis runs. Since v0.6 a delete is a job that runs on after its dialog closed; one
+that ends while an analysis runs is applied to that analysis' report when it finishes. A report is dropped when its
+phone disconnects.
 
 | Method | Params | Result |
 | --- | --- | --- |
@@ -278,8 +280,8 @@ Deletes wait while an analysis runs. A report is dropped when its phone disconne
 | `cleanup.analyze` | `{ deviceId }` | `CleanupStatus` (starts one, or returns the one running) |
 | `cleanup.cancel` | `{ deviceId }` | `{}` |
 | `cleanup.deleteMedia` | `{ deviceId, items: { id, size }[], expectedBytes, copyFirstTo? }` | `PhotoDeleteStarted` since v0.4.1 (a `photosDelete` job; see "Deleting photos as a transfer" at the end); `not_supported` on a phone without `photosDelete` |
-| `cleanup.deleteFiles` | `{ deviceId, items: { root, path, size }[], expectedBytes, copyFirstTo? }` | `CleanupResult` |
-| `cleanup.uninstallApps` | `{ deviceId, items: { id, size }[], expectedBytes, copyFirstTo? }` | `CleanupResult` — `size` is appBytes + dataBytes; copy first saves the APK (Android), not the app's data |
+| `cleanup.deleteFiles` | `{ deviceId, items: { root, path, size }[], expectedBytes, copyFirstTo? }` | `DeleteStarted` since v0.6: a `filesDelete` job (see "Every delete as a transfer") |
+| `cleanup.uninstallApps` | `{ deviceId, items: { id, size }[], expectedBytes, copyFirstTo? }` | `DeleteStarted` since v0.6: an `appsUninstall` job — `size` is appBytes + dataBytes; copy first saves the APK (Android), not the app's data |
 | `cleanup.trimCaches` | `{ deviceId }` | `CleanupResult` — Android `pm trim-caches`: every app's cache; `freedBytes` is free space after minus before |
 
 | Event | Params |
@@ -1088,7 +1090,7 @@ the first failure, never folders, one log line per object; the confirmation stil
 | Method | Params | Result |
 | --- | --- | --- |
 | `photos.deleteItems` | `{ deviceId, items: { id, size }[], expectedBytes, copyFirstTo? }` | `PhotoDeleteStarted` at once. Bad params `-32602`; a phone that can't delete `not_supported` (no job then) |
-| `cleanup.deleteMedia` | as before | `PhotoDeleteStarted`: items that changed since the analysis are left out and counted in `skipped`; `jobId` is null when none is left |
+| `cleanup.deleteMedia` | as before | `PhotoDeleteStarted` at once. Since v0.6 the job itself leaves alone what changed since the analysis (results `mismatch`, code `changed`, counted in the job's `skipped`): `skipped` here is 0 and `jobId` never null |
 | `photos.deleteJob` | `{ jobId }` | `PhotoDeleteJobStatus`: the results so far, all of them once the job ended; `-32602` for another kind of job |
 
 ```ts
@@ -1265,6 +1267,46 @@ only such items selected there is no Delete, the reason and Copy instead. Photos
 the confirmation lists them apart and deletes the rest; with nothing else selected, Delete is off with the reason.
 While checking, a quiet "Checking which items this PC can delete…" with a bar. Mock: `?reach=some` (every fourth
 iPhone item), with `?deletespeed=slow` for a read ahead of about 15 s.
+
+## Every delete as a transfer (v0.6)
+
+Files and folders (Files, App files, Clean-up) and apps (Apps, Clean-up) are deleted the way photos are: the call answers
+with a job at once, the confirmation closes, and the Transfers drawer shows the job's stage with a bar, Stop, and
+**Results**. Starting a delete reads nothing from the phone, photos included (`photos.deleteItems` items may carry
+`name`, the file name the page showed): on the owner's iPhone, reading the library first kept the dialog open 12 s.
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `files.deleteItems` | `{ deviceId, items: FileDeleteItem[], expectedBytes }` | `DeleteStarted`. Bad params `-32602` (empty, a repeat, a wrong total, a whole shared folder `"/"`); a root the phone doesn't share `not_supported` |
+| `apps.uninstallItems` | `{ deviceId, items: AppUninstallItem[], expectedBytes, copyFirstTo? }` | `DeleteStarted`. `not_supported` when the phone can't remove apps (or can't copy them first) |
+| `transfers.items` | `{ jobId }` | `TransferItemView[]`: any job's items as saved, in order; for a delete, its result per item |
+
+```ts
+type FileDeleteItem = { root: string; path: string; size: number; isDirectory?: boolean };  // a folder: what it holds, or 0
+type AppUninstallItem = { id: string; size: number; name?: string | null };                 // size: appBytes + dataBytes
+type DeleteStarted = { jobId: string };
+type TransferItemView = { index: number; name: string; source: string; size: number;
+  state: "queued" | "running" | "done" | "failed" | "skipped"; code: string | null; message: string | null };
+// TransferKind gains "filesDelete" and "appsUninstall". TransferJob gains skippedItems (a delete's items left alone
+// because they changed since the user chose them; not in doneItems).
+```
+
+- **Stages.** `reading` (Clean-up only: what changed since the analysis; those items end `skipped`, code `changed`),
+  `copying` (copy first: CopyToPc per root, or AppExport per app; nothing goes unless every copy finished), then
+  `deleting` (files) or `removing` (apps): items done of the items kept, one at a time. A folder goes with everything
+  in it; a file still listed afterwards failed.
+- **Just before each item** goes, a file is looked at again (jobs take turns, so it may have changed since Delete): one
+  of another size is left alone (`skipped`, code `changed`), one that is gone too (code `missing`; an app no longer
+  installed the same). Clean-up's report drops what went and what is gone; only what went counts as freed.
+- **An item the phone refuses** fails (`permission_denied`, …) and the job goes on with the next;
+  the job fails only when nothing went (its error: "Nothing was deleted. name: why"). A phone that goes away stops it;
+  the item on its way may or may not have gone (`failed` / `interrupted`).
+- **Cancel** stops before the next item: the one on its way finishes. While copying, nothing has gone and the copies
+  are cancelled. The rest stay `queued` with "Not tried: the delete was stopped."
+- **Never by itself**, one at a time per phone, and a restart in the middle: as for photos (above).
+- **When it ends** the page reads the lists again (files, app files, apps, app folders, storage); Clean-up's report drops
+  what went, whichever screen deleted it (a folder takes the listed files inside it along).
+- `files.delete`, `apps.uninstall` and `photos.delete` stay for older callers; the page no longer uses them.
 
 ## Drivers card (v0.6, drivers)
 

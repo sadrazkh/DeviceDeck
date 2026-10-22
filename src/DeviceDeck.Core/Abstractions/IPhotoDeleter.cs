@@ -73,7 +73,8 @@ public sealed record PhotoDeleteSupport(
 }
 
 /// <summary>An asset the user confirmed, with the size the page showed for it.</summary>
-public sealed record PhotoDeleteItem(string Id, long Size);
+/// <param name="Name">v0.6: its file name as the page showed it, so the job is listed at once without reading the library.</param>
+public sealed record PhotoDeleteItem(string Id, long Size, string? Name = null);
 
 public enum PhotoDeleteOutcome
 {

@@ -19,6 +19,8 @@ public sealed class CleanupService : IAsyncDisposable
     private readonly SettingsStore _settings;
     private readonly StorageAnalyzer _analyzer;
     private readonly PhotoDelete.PhotoDeleteService _deletes;
+    private readonly Deletes.FilesDeleteHandler? _fileDeletes;
+    private readonly Deletes.AppsUninstallHandler? _appRemovals;
     private readonly Lock _gate = new();
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
     private bool _disposed;
@@ -35,14 +37,52 @@ public sealed class CleanupService : IAsyncDisposable
         {
             handler.Finished += OnPhotosDeleted;
         }
+
+        // v0.6: files and apps are deleted by jobs too, from here or from Files, App files and Apps.
+        _fileDeletes = transfers.HandlerOf<Deletes.FilesDeleteHandler>();
+        _appRemovals = transfers.HandlerOf<Deletes.AppsUninstallHandler>();
+        if (_fileDeletes is not null)
+        {
+            _fileDeletes.Finished += OnFilesDeleted;
+        }
+
+        if (_appRemovals is not null)
+        {
+            _appRemovals.Finished += OnAppsRemoved;
+        }
     }
 
-    /// <summary>A delete job (from here or from Photos) finished: what went leaves the report.</summary>
+    // A delete job finished, from here or from another screen: what went, and what it found gone already, leaves the
+    // report; only what it deleted counts as freed.
+
+    private void OnFilesDeleted(object? sender, Deletes.DeleteFinished<Deletes.FileDeleteItem> finished)
+    {
+        var all = finished.Gone.Concat(finished.Missing).ToList();
+        if (all.Count > 0)
+        {
+            // A folder that went (Files, App files) takes the listed files inside it along.
+            var files = all.Where(i => !i.IsDirectory).Select(i => (i.Root, i.Path)).ToHashSet();
+            var folders = all.Where(i => i.IsDirectory).Select(i => (i.Root, Inside: i.Path.TrimEnd('/') + "/")).ToList();
+            bool Gone(AppFileHit f) => files.Contains((f.Root, f.Path)) || folders.Any(d => d.Root == f.Root && f.Path.StartsWith(d.Inside, StringComparison.Ordinal));
+            Mutate(finished.DeviceId, r => WithoutFiles(r, Gone, finished.Gone.Sum(i => i.Size)));
+        }
+    }
+
+    private void OnAppsRemoved(object? sender, Deletes.DeleteFinished<Deletes.AppUninstallItem> finished)
+    {
+        var all = finished.Gone.Concat(finished.Missing).ToList();
+        if (all.Count > 0)
+        {
+            var gone = all.Select(i => i.Id).ToHashSet(StringComparer.Ordinal);
+            Mutate(finished.DeviceId, r => WithoutApps(r, gone, finished.Gone.Sum(i => i.Size)));
+        }
+    }
+
     private void OnPhotosDeleted(object? sender, PhotoDelete.PhotoDeleteFinished finished)
     {
-        if (finished.Deleted.Count > 0)
+        var gone = finished.Deleted.Concat(finished.Missing ?? []).ToHashSet(StringComparer.Ordinal);
+        if (gone.Count > 0)
         {
-            var gone = finished.Deleted.ToHashSet(StringComparer.Ordinal);
             Mutate(finished.DeviceId, r => WithoutMedia(r, gone, finished.FreedBytes));
         }
     }
@@ -62,6 +102,12 @@ public sealed class CleanupService : IAsyncDisposable
 
         /// <summary>One clean-up action at a time per phone.</summary>
         public readonly SemaphoreSlim Action = new(1, 1);
+
+        /// <summary>
+        /// v0.6: what delete jobs took away while an analysis ran (a job keeps running after its dialog closed): applied
+        /// to that analysis' report when it finishes, so it never lists what is gone.
+        /// </summary>
+        public readonly List<Func<CleanupReport, CleanupReport>> Pending = [];
     }
 
     private static CleanupStatus Idle(string deviceId) => new(deviceId, CleanupState.Idle, null, null, null, null);
@@ -144,6 +190,12 @@ public sealed class CleanupService : IAsyncDisposable
             // Unless the phone went away meanwhile and the entry was reset.
             if (entry.Cts == cts)
             {
+                if (final.Report is { } report)
+                {
+                    final = final with { Report = entry.Pending.Aggregate(report, (r, change) => change(r)) };
+                }
+
+                entry.Pending.Clear();
                 entry.Status = final;
                 entry.Cts = null;
                 publish = final;
@@ -218,14 +270,14 @@ public sealed class CleanupService : IAsyncDisposable
 
     /// <summary>
     /// Deletes photos and videos the analysis listed, as a transfer job (v0.4.1; the Transfers drawer shows it): Android
-    /// through MediaStore, an iPhone through Windows' camera connection when it allows it. Items that changed since the
-    /// analysis are left out and counted; the job matches the rest again and deletes nothing unless all of them match.
-    /// What went leaves the report when the job finishes. No job (a null id) when nothing is left to delete.
+    /// through MediaStore, an iPhone through Windows' camera connection when it allows it. Since v0.6 it answers at once:
+    /// the job itself leaves alone what changed since the analysis (gone, or another size) and deletes the rest, matched
+    /// again. What went leaves the report when the job finishes.
     /// </summary>
     public Task<PhotoDelete.PhotoDeleteStarted> DeleteMediaAsync(string deviceId, IReadOnlyList<CleanupItem> items, long expectedBytes, string? copyFirstTo, CancellationToken ct)
     {
         RequireConfirmed(items.Select(i => i.Size), items.Select(i => i.Id), expectedBytes);
-        return ActAsync(deviceId, async (device, report) =>
+        return ActAsync(deviceId, (device, report) =>
         {
             if (!StorageAnalyzer.CanDeleteMedia(device.Summary))
             {
@@ -235,30 +287,26 @@ public sealed class CleanupService : IAsyncDisposable
             }
 
             var listed = ListedMedia(report);
+            var confirmed = new List<PhotoDeleteItem>();
             foreach (var item in items)
             {
                 if (!listed.TryGetValue(item.Id, out var asset) || asset.Size != item.Size)
                 {
                     throw new ArgumentException($"'{item.Id}' isn't a photo or video the analysis listed at that size. Run the analysis again.");
                 }
+
+                confirmed.Add(new PhotoDeleteItem(item.Id, item.Size, asset.FileName));
             }
 
-            // Still there, still the same size: otherwise it changed since the user saw it, and stays.
-            var now = await ReadLibraryAsync(device, ct).ConfigureAwait(false);
-            var verified = items.Where(i => now.TryGetValue(i.Id, out var a) && a.Size == i.Size).ToList();
-            var skipped = items.Count - verified.Count;
-            if (verified.Count == 0)
-            {
-                return new PhotoDelete.PhotoDeleteStarted(null, skipped);
-            }
-
-            return await _deletes.StartAsync(deviceId, verified.Select(i => new PhotoDeleteItem(i.Id, i.Size)).ToList(), verified.Sum(i => i.Size), copyFirstTo,
-                PhotoDelete.PhotoDeleteSource.Cleanup, skipped, ct).ConfigureAwait(false);
+            return _deletes.StartAsync(deviceId, confirmed, expectedBytes, copyFirstTo, PhotoDelete.PhotoDeleteSource.Cleanup, 0, ct, skipChanged: true);
         }, ct);
     }
 
-    /// <summary>Deletes files in app folders the analysis listed.</summary>
-    public Task<CleanupResult> DeleteFilesAsync(string deviceId, IReadOnlyList<CleanupFileItem> items, long expectedBytes, string? copyFirstTo, CancellationToken ct)
+    /// <summary>
+    /// Deletes files in app folders the analysis listed, as a transfer job (v0.6): it answers at once; the job leaves
+    /// alone what changed since the analysis, copies the rest to the PC first when asked, then deletes them.
+    /// </summary>
+    public Task<Deletes.DeleteStarted> DeleteFilesAsync(string deviceId, IReadOnlyList<CleanupFileItem> items, long expectedBytes, string? copyFirstTo, CancellationToken ct)
     {
         RequireConfirmed(items.Select(i => i.Size), items.Select(i => i.Root + "\n" + i.Path), expectedBytes);
         return ActAsync(deviceId, async (device, report) =>
@@ -277,64 +325,18 @@ public sealed class CleanupService : IAsyncDisposable
                 }
             }
 
-            var verified = new List<CleanupFileItem>();
-            foreach (var root in items.GroupBy(i => i.Root, StringComparer.Ordinal))
-            {
-                await using var fs = await device.OpenFileSystemAsync(root.Key, ct).ConfigureAwait(false);
-                foreach (var item in root)
-                {
-                    if (await fs.StatAsync(item.Path, ct).ConfigureAwait(false) is { IsDirectory: false } entry && entry.Size == item.Size)
-                    {
-                        verified.Add(item);
-                    }
-                }
-            }
-
-            var skipped = items.Count - verified.Count;
-            if (verified.Count == 0)
-            {
-                return new CleanupResult(0, skipped, 0, [], false);
-            }
-
-            var jobs = new List<string>();
-            if (copyFirstTo is not null)
-            {
-                foreach (var root in verified.GroupBy(i => i.Root, StringComparer.Ordinal))
-                {
-                    var job = await _transfers.EnqueueAsync(deviceId, TransferKind.CopyToPc,
-                        new CopyToPcRequest(root.Key, root.Select(i => i.Path).ToList(), copyFirstTo), ConflictRule.KeepBoth, ct).ConfigureAwait(false);
-                    jobs.Add(job.Id);
-                }
-
-                if (!await WaitForCopiesAsync(jobs, ct).ConfigureAwait(false))
-                {
-                    return new CleanupResult(0, skipped, 0, jobs, true);
-                }
-            }
-
-            var gone = new List<CleanupFileItem>();
-            foreach (var root in verified.GroupBy(i => i.Root, StringComparer.Ordinal))
-            {
-                await using var fs = await device.OpenFileSystemAsync(root.Key, ct).ConfigureAwait(false);
-                foreach (var item in root)
-                {
-                    await fs.DeleteAsync(item.Path, recursive: false, ct).ConfigureAwait(false);
-                    if (await fs.StatAsync(item.Path, ct).ConfigureAwait(false) is null)
-                    {
-                        gone.Add(item);
-                    }
-                }
-            }
-
-            var freed = gone.Sum(i => i.Size);
-            var goneKeys = gone.Select(i => (i.Root, i.Path)).ToHashSet();
-            Mutate(deviceId, r => WithoutFiles(r, goneKeys, freed));
-            return new CleanupResult(gone.Count, items.Count - gone.Count, freed, jobs, false);
+            var request = new Deletes.FilesDeleteRequest(items.Select(i => new Deletes.FileDeleteItem(i.Root, i.Path, i.Size)).ToList(), expectedBytes, copyFirstTo,
+                Deletes.DeleteSource.Cleanup, SkipChanged: true);
+            var job = await _transfers.EnqueueAsync(deviceId, TransferKind.FilesDelete, request, ConflictRule.KeepBoth, ct).ConfigureAwait(false);
+            return new Deletes.DeleteStarted(job.Id);
         }, ct);
     }
 
-    /// <summary>Uninstalls apps the analysis listed. With copy first (Android), each app's APK is saved to the PC before it goes; its data is not.</summary>
-    public Task<CleanupResult> UninstallAppsAsync(string deviceId, IReadOnlyList<CleanupItem> items, long expectedBytes, string? copyFirstTo, CancellationToken ct)
+    /// <summary>
+    /// Uninstalls apps the analysis listed, as a transfer job (v0.6): it answers at once. With copy first (Android), each
+    /// app's APK is saved to the PC before anything goes; its data is not. Apps no longer installed are left alone.
+    /// </summary>
+    public Task<Deletes.DeleteStarted> UninstallAppsAsync(string deviceId, IReadOnlyList<CleanupItem> items, long expectedBytes, string? copyFirstTo, CancellationToken ct)
     {
         RequireConfirmed(items.Select(i => i.Size), items.Select(i => i.Id), expectedBytes);
         return ActAsync(deviceId, async (device, report) =>
@@ -351,61 +353,20 @@ public sealed class CleanupService : IAsyncDisposable
             }
 
             var listed = (report.Apps?.Largest ?? []).ToDictionary(a => a.Id, StringComparer.Ordinal);
+            var confirmed = new List<Deletes.AppUninstallItem>();
             foreach (var item in items)
             {
                 if (!listed.TryGetValue(item.Id, out var app) || app.AppBytes + app.DataBytes != item.Size)
                 {
                     throw new ArgumentException($"'{item.Id}' isn't an app the analysis listed at that size. Run the analysis again.");
                 }
+
+                confirmed.Add(new Deletes.AppUninstallItem(item.Id, item.Size, app.Name));
             }
 
-            var installed = (await device.Apps.ListAsync(false, ct).ConfigureAwait(false)).ToDictionary(a => a.Id, StringComparer.Ordinal);
-            var verified = items.Where(i => installed.TryGetValue(i.Id, out var a) && a.Source != AppSource.System).ToList();
-            var skipped = items.Count - verified.Count;
-            if (verified.Count == 0)
-            {
-                return new CleanupResult(0, skipped, 0, [], false);
-            }
-
-            var jobs = new List<string>();
-            if (copyFirstTo is not null)
-            {
-                foreach (var item in verified)
-                {
-                    var job = await _transfers.EnqueueAsync(deviceId, TransferKind.AppExport, new AppExportRequest(item.Id, copyFirstTo), ConflictRule.KeepBoth, ct).ConfigureAwait(false);
-                    jobs.Add(job.Id);
-                }
-
-                if (!await WaitForCopiesAsync(jobs, ct).ConfigureAwait(false))
-                {
-                    return new CleanupResult(0, skipped, 0, jobs, true);
-                }
-            }
-
-            var gone = new List<CleanupItem>();
-            DeviceException? firstError = null;
-            foreach (var item in verified)
-            {
-                try
-                {
-                    await device.Apps.UninstallAsync(item.Id, ct).ConfigureAwait(false);
-                    gone.Add(item);
-                }
-                catch (DeviceException ex) when (ex.Code is not (DeviceErrorCodes.Disconnected or DeviceErrorCodes.TrustRequired or DeviceErrorCodes.Unauthorized))
-                {
-                    firstError ??= ex;
-                }
-            }
-
-            if (gone.Count == 0 && firstError is not null)
-            {
-                throw firstError;
-            }
-
-            var freed = gone.Sum(i => i.Size);
-            var goneIds = gone.Select(i => i.Id).ToHashSet(StringComparer.Ordinal);
-            Mutate(deviceId, r => WithoutApps(r, goneIds, freed));
-            return new CleanupResult(gone.Count, items.Count - gone.Count, freed, jobs, false);
+            var request = new Deletes.AppsUninstallRequest(confirmed, expectedBytes, copyFirstTo, Deletes.DeleteSource.Cleanup, SkipChanged: true);
+            var job = await _transfers.EnqueueAsync(deviceId, TransferKind.AppsUninstall, request, ConflictRule.KeepBoth, ct).ConfigureAwait(false);
+            return new Deletes.DeleteStarted(job.Id);
         }, ct);
     }
 
@@ -488,72 +449,6 @@ public sealed class CleanupService : IAsyncDisposable
         }
     }
 
-    /// <summary>
-    /// Waits for copy jobs to finish. True only when every job is done with every item copied; false as soon as one fails,
-    /// is cancelled, or waits for an unplugged phone (it carries on by itself when the phone is back, but nothing is deleted).
-    /// </summary>
-    private async Task<bool> WaitForCopiesAsync(IReadOnlyList<string> jobIds, CancellationToken ct)
-    {
-        using var signal = new SemaphoreSlim(0);
-        var watched = jobIds.ToHashSet(StringComparer.Ordinal);
-        void OnJob(object? sender, TransferJob job)
-        {
-            if (watched.Contains(job.Id))
-            {
-                try
-                {
-                    signal.Release();
-                }
-                catch (ObjectDisposedException)
-                {
-                }
-            }
-        }
-
-        _transfers.JobUpdated += OnJob;
-        try
-        {
-            while (true)
-            {
-                var jobs = jobIds.Select(_transfers.Get).ToList();
-                if (jobs.Any(j => j is null || j.State is TransferState.Failed or TransferState.Cancelled or TransferState.WaitingForDevice or TransferState.NeedsDecision))
-                {
-                    return false;
-                }
-
-                if (jobs.All(j => j!.State == TransferState.Done))
-                {
-                    return jobs.All(j => j!.FailedItems == 0 && j.DoneItems == j.TotalItems);
-                }
-
-                await signal.WaitAsync(TimeSpan.FromSeconds(1), ct).ConfigureAwait(false);
-            }
-        }
-        finally
-        {
-            _transfers.JobUpdated -= OnJob;
-        }
-    }
-
-    private static async Task<Dictionary<string, PhotoAsset>> ReadLibraryAsync(IDevice device, CancellationToken ct)
-    {
-        var all = new Dictionary<string, PhotoAsset>(StringComparer.Ordinal);
-        for (var offset = 0; ;)
-        {
-            var page = await device.Photos.GetAssetsAsync(null, offset, 2000, ct).ConfigureAwait(false);
-            foreach (var asset in page.Items)
-            {
-                all[asset.Id] = asset;
-            }
-
-            offset += page.Items.Count;
-            if (page.Items.Count == 0 || offset >= page.Total)
-            {
-                return all;
-            }
-        }
-    }
-
     private static Dictionary<string, PhotoAsset> ListedMedia(CleanupReport report)
     {
         var listed = new Dictionary<string, PhotoAsset>(StringComparer.Ordinal);
@@ -572,7 +467,19 @@ public sealed class CleanupService : IAsyncDisposable
         CleanupStatus status;
         lock (_gate)
         {
-            if (!_entries.TryGetValue(deviceId, out var entry) || entry.Status.Report is not { } report)
+            if (!_entries.TryGetValue(deviceId, out var entry))
+            {
+                return;
+            }
+
+            // An analysis is running: its report comes later, and gets this change then.
+            if (entry.Status.State == CleanupState.Running)
+            {
+                entry.Pending.Add(change);
+                return;
+            }
+
+            if (entry.Status.Report is not { } report)
             {
                 return;
             }
@@ -617,14 +524,14 @@ public sealed class CleanupService : IAsyncDisposable
         return r with { Media = media, Duplicates = duplicates, FreeBytes = r.FreeBytes + freed };
     }
 
-    private static CleanupReport WithoutFiles(CleanupReport r, HashSet<(string Root, string Path)> gone, long freed)
+    private static CleanupReport WithoutFiles(CleanupReport r, Func<AppFileHit, bool> gone, long freed)
     {
         if (r.AppFiles is not { } files)
         {
             return r;
         }
 
-        var left = files.Files.Where(f => !gone.Contains((f.Root, f.Path))).ToList();
+        var left = files.Files.Where(f => !gone(f)).ToList();
         return r with { AppFiles = files with { Files = left, TotalBytes = left.Sum(f => f.Size) }, FreeBytes = r.FreeBytes + freed };
     }
 
@@ -643,7 +550,15 @@ public sealed class CleanupService : IAsyncDisposable
         }
 
         var caches = r.Caches is null ? null : r.Caches with { Apps = r.Caches.Apps.Where(c => !gone.Contains(c.AppId)).ToList() };
-        return r with { Apps = apps, Caches = caches, FreeBytes = r.FreeBytes + freed };
+        // An app's own files go with it (its Documents on an iPhone, Android/media on Android).
+        var files = r.AppFiles;
+        if (files is not null && files.Files.Any(f => f.AppId is { } id && gone.Contains(id)))
+        {
+            var left = files.Files.Where(f => f.AppId is not { } id || !gone.Contains(id)).ToList();
+            files = files with { Files = left, TotalBytes = left.Sum(f => f.Size) };
+        }
+
+        return r with { Apps = apps, Caches = caches, AppFiles = files, FreeBytes = r.FreeBytes + freed };
     }
 
     private Entry EntryFor(string deviceId)
@@ -691,6 +606,16 @@ public sealed class CleanupService : IAsyncDisposable
         if (_deletes.Handler is { } handler)
         {
             handler.Finished -= OnPhotosDeleted;
+        }
+
+        if (_fileDeletes is not null)
+        {
+            _fileDeletes.Finished -= OnFilesDeleted;
+        }
+
+        if (_appRemovals is not null)
+        {
+            _appRemovals.Finished -= OnAppsRemoved;
         }
 
         try

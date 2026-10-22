@@ -22,15 +22,16 @@ public sealed class PhotoDeleteService(DeviceHub hub, TransferQueue transfers, S
     /// Queues the delete of exactly these items, each at the size the page showed, after an optional copy to the PC that
     /// must finish first. Bad input and a phone that can't delete answer at once; the delete runs in the background.
     /// </summary>
+    /// <param name="skipChanged">v0.6, Clean-up: the job leaves alone what changed since the analysis (see PhotosDeleteRequest).</param>
     public async Task<PhotoDeleteStarted> StartAsync(string deviceId, IReadOnlyList<PhotoDeleteItem> items, long expectedBytes, string? copyFirstTo,
-        PhotoDeleteSource source, int skipped, CancellationToken ct)
+        PhotoDeleteSource source, int skipped, CancellationToken ct, bool skipChanged = false)
     {
         if (Handler is null)
         {
             throw new DeviceException(DeviceErrorCodes.NotSupported, "This DeviceDeck can't delete photos.");
         }
 
-        var request = new PhotosDeleteRequest(items, expectedBytes, copyFirstTo, settings.Current.PhotoFolderPattern, source, skipped);
+        var request = new PhotosDeleteRequest(items, expectedBytes, copyFirstTo, settings.Current.PhotoFolderPattern, source, skipped, skipChanged);
         var job = await transfers.EnqueueAsync(deviceId, TransferKind.PhotosDelete, request, ConflictRule.KeepBoth, ct).ConfigureAwait(false);
         return new PhotoDeleteStarted(job.Id, skipped);
     }
@@ -52,6 +53,7 @@ public sealed class PhotoDeleteService(DeviceHub hub, TransferQueue transfers, S
             .ToList();
         var deleted = results.Where(r => r.Outcome == PhotoDeleteOutcome.Deleted).ToList();
         return new PhotoDeleteJobStatus(job.Id, job.DeviceId, request.Source, job.State, job.Stage, results, deleted.Count, deleted.Sum(r => r.Size),
-            memory?.GoesTo ?? PhotoDeleteDestination.Unknown, memory?.CopyJobIds.ToList() ?? [], memory?.CopyIncomplete ?? false, request.Skipped, job.Error);
+            memory?.GoesTo ?? PhotoDeleteDestination.Unknown, memory?.CopyJobIds.ToList() ?? [], memory?.CopyIncomplete ?? false,
+            request.Skipped + results.Count(r => r.Outcome == PhotoDeleteOutcome.Mismatch && r.Code == PhotoDeleteHandler.ChangedCode), job.Error);
     }
 }

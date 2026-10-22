@@ -170,8 +170,9 @@ public sealed class CleanupTests
 
         // Gone from the phone meanwhile (deleted in the gallery app, say).
         await host.Hub.GetDevice(id).Photos.DeleteAsync([other.Id], None);
+        // v0.6: the job finds that out itself, so starting it answers at once.
         var started = await host.Cleanup.DeleteMediaAsync(id, [Item(big), Item(other)], big.Size + other.Size, null, None);
-        Assert.Equal(1, started.Skipped);
+        Assert.Equal(0, started.Skipped);
         var result = await DeleteJobs.FinishedAsync(host, started);
         Assert.Equal(1, result.Deleted);
         Assert.Equal(1, result.Skipped);
@@ -184,9 +185,11 @@ public sealed class CleanupTests
             await fs.WriteAsync(file.Path, new MemoryStream(new byte[260_000]), 260_000, null, None);
         }
 
-        var files = await host.Cleanup.DeleteFilesAsync(id, [new(file.Root, file.Path, file.Size)], file.Size, null, None);
+        var files = await DeleteJobs.FinishedAsync(host, await host.Cleanup.DeleteFilesAsync(id, [new(file.Root, file.Path, file.Size)], file.Size, null, None));
         Assert.Equal(0, files.Deleted);
         Assert.Equal(1, files.Skipped);
+        Assert.Equal(TransferState.Done, files.State);
+        Assert.Equal("changed", files.Items[0].ErrorCode);
         await using var check = await host.Hub.GetDevice(id).OpenFileSystemAsync("internal", None);
         Assert.Equal(260_000, (await check.StatAsync(file.Path, None))!.Size);
     }
@@ -221,7 +224,7 @@ public sealed class CleanupTests
 
         // App files the same way: copied, then deleted.
         var apk = report.AppFiles!.Files.Single(f => f.Path == "/Download/setup.apk");
-        var files = await host.Cleanup.DeleteFilesAsync(id, [new(apk.Root, apk.Path, apk.Size)], apk.Size, host.PcFolder("files"), None);
+        var files = await DeleteJobs.FinishedAsync(host, await host.Cleanup.DeleteFilesAsync(id, [new(apk.Root, apk.Path, apk.Size)], apk.Size, host.PcFolder("files"), None));
         Assert.Equal(1, files.Deleted);
         Assert.True(File.Exists(Path.Combine(host.PcFolder("files"), "setup.apk")));
         await using var fs = await host.Hub.GetDevice(id).OpenFileSystemAsync("internal", None);
@@ -244,7 +247,7 @@ public sealed class CleanupTests
 
         // Files in an app's own folder can go.
         var movie = report.AppFiles!.Files.Single(f => f.Name == "Movie.mkv");
-        var result = await host.Cleanup.DeleteFilesAsync(id, [new(movie.Root, movie.Path, movie.Size)], movie.Size, null, None);
+        var result = await DeleteJobs.FinishedAsync(host, await host.Cleanup.DeleteFilesAsync(id, [new(movie.Root, movie.Path, movie.Size)], movie.Size, null, None));
         Assert.Equal(1, result.Deleted);
         Assert.DoesNotContain(host.Cleanup.GetStatus(id).Report!.AppFiles!.Files, f => f.Name == "Movie.mkv");
 
@@ -266,7 +269,7 @@ public sealed class CleanupTests
         var size = game.AppBytes + game.DataBytes;
 
         var folder = host.PcFolder("apks");
-        var result = await host.Cleanup.UninstallAppsAsync(id, [new(game.Id, size)], size, folder, None);
+        var result = await DeleteJobs.FinishedAsync(host, await host.Cleanup.UninstallAppsAsync(id, [new(game.Id, size)], size, folder, None));
         Assert.Equal(1, result.Deleted);
         Assert.Equal(size, result.FreedBytes);
         Assert.NotEmpty(Directory.GetFiles(folder));

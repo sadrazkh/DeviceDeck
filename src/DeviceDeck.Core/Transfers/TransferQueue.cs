@@ -59,6 +59,9 @@ public sealed class TransferQueue : IAsyncDisposable
         // Running totals of the items, so a snapshot doesn't walk them all (a photo backup can have tens of thousands).
         public int DoneCount { get; set; }
         public int FailedCount { get; set; }
+
+        /// <summary>v0.6: a delete's items left alone (they changed since the user chose them); not counted as done.</summary>
+        public int SkippedCount { get; set; }
         public long TotalBytes { get; set; }
         public long DoneBytes { get; set; }
 
@@ -801,6 +804,9 @@ public sealed class TransferQueue : IAsyncDisposable
     {
         switch (item.State)
         {
+            case TransferItemState.Skipped when job.Whole is not null:
+                job.SkippedCount += sign;
+                break;
             case TransferItemState.Done or TransferItemState.Skipped:
                 job.DoneCount += sign;
                 job.DoneBytes += sign * item.Size;
@@ -1007,13 +1013,17 @@ public sealed class TransferQueue : IAsyncDisposable
     /// <summary>The totals from scratch: when a job is loaded, planned, retried or started. Caller holds _gate.</summary>
     private static void Recount(Job job)
     {
-        int done = 0, failed = 0;
+        int done = 0, failed = 0, skipped = 0;
         long total = 0, doneBytes = 0;
         foreach (var item in job.Data.Items)
         {
             total += item.Size;
             switch (item.State)
             {
+                // A delete's item left alone didn't go: it isn't done (v0.6).
+                case TransferItemState.Skipped when job.Whole is not null:
+                    skipped++;
+                    break;
                 case TransferItemState.Done or TransferItemState.Skipped:
                     done++;
                     doneBytes += item.Size;
@@ -1024,7 +1034,7 @@ public sealed class TransferQueue : IAsyncDisposable
             }
         }
 
-        (job.DoneCount, job.FailedCount, job.TotalBytes, job.DoneBytes) = (done, failed, total, doneBytes);
+        (job.DoneCount, job.FailedCount, job.SkippedCount, job.TotalBytes, job.DoneBytes) = (done, failed, skipped, total, doneBytes);
     }
 
     private void OnItemProgress(Job job, Flight flight, long bytes)
@@ -1222,7 +1232,8 @@ public sealed class TransferQueue : IAsyncDisposable
             data.Error,
             data.CreatedAt,
             data.FinishedAt,
-            running ? job.Stage : null);
+            running ? job.Stage : null,
+            job.SkippedCount);
     }
 
     private void Prune()

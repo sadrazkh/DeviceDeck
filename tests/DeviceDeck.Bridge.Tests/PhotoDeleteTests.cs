@@ -253,8 +253,18 @@ public sealed class PhotoDeleteTests
         public Task<PhotoDeleteReach> GetDeleteReachAsync(CancellationToken ct) =>
             Task.FromResult(Reach ?? new PhotoDeleteReach(Summary.Id, PhotoDeleteReachState.Checking, 0, 0, [], null));
 
-        public Task<IReadOnlyDictionary<string, string>> HashAssetsAsync(IReadOnlyList<string> assetIds, long? prefixBytes, IProgress<long>? progress, CancellationToken ct) =>
-            ((IMediaHashSource)inner).HashAssetsAsync(assetIds, prefixBytes, progress, ct);
+        /// <summary>v0.6, set: hashing (Clean-up's last section, duplicates) waits for it.</summary>
+        public TaskCompletionSource? HoldHashing { get; set; }
+
+        public async Task<IReadOnlyDictionary<string, string>> HashAssetsAsync(IReadOnlyList<string> assetIds, long? prefixBytes, IProgress<long>? progress, CancellationToken ct)
+        {
+            if (HoldHashing is { } hold)
+            {
+                await hold.Task.WaitAsync(ct);
+            }
+
+            return await ((IMediaHashSource)inner).HashAssetsAsync(assetIds, prefixBytes, progress, ct);
+        }
 
         public ConcurrentQueue<IReadOnlyList<PhotoDeleteItem>> Calls { get; } = new();
 
@@ -264,8 +274,11 @@ public sealed class PhotoDeleteTests
         /// <summary>Called once a batch is announced and before it goes (batch number from 0).</summary>
         public Func<int, CancellationToken, Task>? BeforeBatch { get; set; }
 
+        /// <summary>v0.6, set: reading the library waits for it (an iPhone still reading Photos.sqlite).</summary>
+        public TaskCompletionSource? HoldLibrary { get; set; }
+
         public DeviceSummary Summary => inner.Summary;
-        public IPhotoLibrary Photos => inner.Photos;
+        public IPhotoLibrary Photos => HoldLibrary is { } hold ? new HeldLibrary(inner.Photos, hold) : inner.Photos;
         public IAppManager Apps => inner.Apps;
         public IDeviceActions Actions => inner.Actions;
         public Task<StorageInfo> GetStorageAsync(CancellationToken ct) => inner.GetStorageAsync(ct);
@@ -464,6 +477,106 @@ public sealed class PhotoDeleteTests
         Assert.True(rig.Phone.Calls.TryPeek(out var call));
         Assert.Equal(copy.Id, Assert.Single(call).Id);
         Assert.Empty(rig.Cleanup.GetStatus(IphoneId).Report!.Duplicates!.Groups);
+    }
+
+    private sealed class HeldLibrary(IPhotoLibrary inner, TaskCompletionSource hold) : IPhotoLibrary
+    {
+        public IAsyncEnumerable<PhotoAlbum> GetAlbumsAsync(CancellationToken ct) => inner.GetAlbumsAsync(ct);
+
+        public async Task<Page<PhotoAsset>> GetAssetsAsync(string? albumId, int offset, int limit, CancellationToken ct)
+        {
+            await hold.Task.WaitAsync(ct);
+            return await inner.GetAssetsAsync(albumId, offset, limit, ct);
+        }
+
+        public Task<byte[]?> GetThumbnailAsync(string assetId, int size, CancellationToken ct) => inner.GetThumbnailAsync(assetId, size, ct);
+        public Task ReadOriginalAsync(string assetId, Stream destination, IProgress<long>? progress, CancellationToken ct) => inner.ReadOriginalAsync(assetId, destination, progress, ct);
+        public Task DeleteAsync(IReadOnlyList<string> assetIds, CancellationToken ct) => inner.DeleteAsync(assetIds, ct);
+        public Task ImportAsync(string fileName, Stream source, long length, IProgress<long>? progress, CancellationToken ct) => inner.ImportAsync(fileName, source, length, progress, ct);
+    }
+
+    [Fact]
+    public async Task Starting_a_delete_answers_at_once_while_the_iPhones_library_is_still_being_read()
+    {
+        await using var rig = await Rig.StartAsync();
+        rig.Phone.HoldLibrary = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        // v0.6: on the owner's iPhone the dialog stayed open 12 s because the job read the library before it existed.
+        var started = await rig.Deletes.StartAsync(IphoneId, [new("DCIM/100APPLE/IMG_0005.HEIC", 3_000_000, "IMG_0005.HEIC")], 3_000_000, null,
+            PhotoDeleteSource.Photos, 0, None).WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal("IMG_0005.HEIC", rig.Queue.Details(started.JobId!)!.Value.Items.Single().Name);
+
+        rig.Phone.HoldLibrary.SetResult();
+        var report = await rig.FinishedAsync(started);
+        Assert.Equal(1, report.Deleted);
+        Assert.Equal("IMG_0005.HEIC", report.Items.Single().FileName);
+    }
+
+    [Fact]
+    public async Task Clean_up_answers_at_once_and_its_job_reads_the_library_to_leave_alone_what_changed()
+    {
+        await using var rig = await Rig.StartAsync();
+        rig.Cleanup.Analyze(IphoneId);
+        await Wait.UntilAsync(() => rig.Cleanup.GetStatus(IphoneId).State is not CleanupState.Running, "the analysis");
+        var copy = rig.Cleanup.GetStatus(IphoneId).Report!.Duplicates!.Groups.Single().Assets[1];
+        rig.Phone.HoldLibrary = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        var started = await rig.Cleanup.DeleteMediaAsync(IphoneId, [new(copy.Id, copy.Size)], copy.Size, null, None).WaitAsync(TimeSpan.FromSeconds(10));
+        Assert.Equal(0, started.Skipped);
+        await rig.WaitForStageAsync(started.JobId!, PhotoDeleteHandler.Reading);
+        Assert.Empty(rig.Phone.Calls);
+
+        rig.Phone.HoldLibrary.SetResult();
+        var result = await rig.FinishedAsync(started);
+        Assert.Equal(1, result.Deleted);
+        Assert.Equal(0, result.Skipped);
+        Assert.Equal(copy.FileName, result.Items.Single().FileName);
+    }
+
+    [Fact]
+    public async Task Clean_ups_job_deletes_what_is_unchanged_and_says_which_item_changed()
+    {
+        await using var host = await TestHost.StartAsync(CleanupPhones.Android());
+        var id = CleanupPhones.AndroidId;
+        host.Cleanup.Analyze(id);
+        await Wait.UntilAsync(() => host.Cleanup.GetStatus(id).State is not CleanupState.Running, "the analysis");
+        var videos = host.Cleanup.GetStatus(id).Report!.Media!.LargestVideos;
+        var (big, other) = (videos[0], videos[3]);
+        await host.Hub.GetDevice(id).Photos.DeleteAsync([other.Id], None);
+
+        var started = await host.Cleanup.DeleteMediaAsync(id, [new(big.Id, big.Size), new(other.Id, other.Size)], big.Size + other.Size, null, None);
+        await Wait.UntilAsync(() => host.Queue.Get(started.JobId!) is { } j && DeleteJobs.IsFinished(j.State), "the job");
+        var job = host.Queue.Get(started.JobId!)!;
+        Assert.Equal((TransferState.Done, 1, 0, 1), (job.State, job.DoneItems, job.FailedItems, job.SkippedItems));
+        Assert.Equal(big.Size, job.DoneBytes);
+
+        var report = (await host.ResultAsync("photos.deleteJob", new { jobId = started.JobId }))!.AsObject();
+        Assert.Equal(1, (int)report["skipped"]!);
+        var changed = report["items"]!.AsArray().Single(i => (string?)i!["id"] == other.Id)!;
+        Assert.Equal(("mismatch", "changed"), ((string?)changed["outcome"], (string?)changed["code"]));
+        Assert.Equal(other.FileName, (string?)changed["fileName"]);
+    }
+
+    [Fact]
+    public async Task A_delete_that_ends_while_an_analysis_runs_is_taken_out_of_that_analysis_report()
+    {
+        await using var rig = await Rig.StartAsync();
+        rig.Phone.HoldHashing = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        rig.Cleanup.Analyze(IphoneId);
+        // Duplicates come last: the app files are listed by then.
+        await Wait.UntilAsync(() => rig.Cleanup.GetStatus(IphoneId).Progress?.Section == CleanupSection.Duplicates, "the duplicates section");
+
+        // v0.6: a delete runs on after its dialog closed (here one from App files), so it can end in the middle of an analysis.
+        var job = await rig.Queue.EnqueueAsync(IphoneId, TransferKind.FilesDelete,
+            new Core.Deletes.FilesDeleteRequest([new("app:org.videolan.vlc-ios", "/Movie.mkv", 300_000)], 300_000), ConflictRule.KeepBoth, None);
+        await Wait.UntilAsync(() => rig.Queue.Get(job.Id)!.State == TransferState.Done, "the delete");
+        Assert.Equal(CleanupState.Running, rig.Cleanup.GetStatus(IphoneId).State);
+
+        rig.Phone.HoldHashing.SetResult();
+        await Wait.UntilAsync(() => rig.Cleanup.GetStatus(IphoneId).State is not CleanupState.Running, "the analysis");
+        var files = rig.Cleanup.GetStatus(IphoneId).Report!.AppFiles!.Files;
+        Assert.DoesNotContain(files, f => f.Name == "Movie.mkv");
+        Assert.Contains(files, f => f.Name == "archive.zip");
     }
 
     [Fact]
