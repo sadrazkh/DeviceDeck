@@ -86,7 +86,10 @@
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-align: start;
+  text-align: left;
+}
+:global([dir='rtl']) .detail {
+  text-align: right;
 }
 
 .actions {

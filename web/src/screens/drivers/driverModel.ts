@@ -90,6 +90,8 @@ function androidRow(status: DriverStatus, download: DriverDownloadStatus | null)
     case 'starting':
       return { ...base, chip: 'starting', line: 'drivers.android.starting' };
     case 'missing':
+      // Installed a moment ago; the host's drivers.changed ("starting", then "ready") is on its way.
+      if (download?.state === 'done') return { ...base, chip: 'starting', line: 'drivers.android.starting' };
       if (download?.state === 'failed') {
         return {
           ...base,

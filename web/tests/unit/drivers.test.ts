@@ -58,6 +58,8 @@ describe('driver rows', () => {
       action: 'retryDownload',
     });
     expect(rowModel(missing, dl('cancelled'))).toMatchObject({ chip: 'action', action: 'downloadAdb' });
+    // Installed, the host not heard from yet: grey "starting", not the Download button again.
+    expect(rowModel(missing, dl('done', { version: '37.0.1' }))).toMatchObject({ chip: 'starting', action: null });
     // Once installed the host's row decides (starting, then ready).
     expect(rowModel(adb('ready'), dl('done'))).toMatchObject({ chip: 'ready' });
   });

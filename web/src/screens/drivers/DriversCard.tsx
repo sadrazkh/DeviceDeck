@@ -213,9 +213,9 @@ function DriverRow({
           {t(row.line)}
         </p>
         {row.detail ? (
-          <p className={styles.detail} title={row.detail}>
-            {/* adb's own (English) words, isolated so they read left to right inside a Persian row. */}
-            <bdi dir="ltr">{row.detail}</bdi>
+          // adb's own (English) words: left to right with the cut at their end, and right-aligned in a Persian row.
+          <p className={styles.detail} dir="ltr" title={row.detail}>
+            {row.detail}
           </p>
         ) : null}
 
