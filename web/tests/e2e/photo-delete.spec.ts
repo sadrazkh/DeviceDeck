@@ -100,7 +100,7 @@ test('Photos: deleting two iPhone photos confirms, hands off to Transfers at onc
   consoleWatch.assertClean();
 });
 
-test('Photos: more than 20 photos copy to this PC first; the job shows copying, reading, deleting and checking', async ({ page }) => {
+test('Photos: more than 20 photos copy to this PC first; the job shows copying, deleting and checking', async ({ page }) => {
   await page.goto(query('light', { screen: 'photos', queue: '0' }));
   await selectPhotos(page, 21);
   await page.getByTestId('delete-selected').click();
@@ -111,8 +111,7 @@ test('Photos: more than 20 photos copy to this PC first; the job shows copying, 
   await expect(row).toHaveAttribute('data-stage', 'copying');
   await expect(row.getByTestId('delete-job-line')).toContainText('Copying to this PC:');
   await expect(row.getByRole('progressbar')).toBeVisible();
-  await expect(row).toHaveAttribute('data-stage', 'reading');
-  await expect(row.getByTestId('delete-job-line')).toContainText('Reading the iPhone’s camera roll');
+  // Reading the camera roll: read ahead since the selection (v0.4.2), so it may take no time at all here.
   await expect(row).toHaveAttribute('data-stage', 'deleting');
   await expect(row).toHaveAttribute('data-stage', 'checking');
   await expect(row.getByTestId('delete-job-stop')).toHaveCount(0); // checking only reads: nothing to stop
