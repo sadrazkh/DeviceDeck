@@ -65,27 +65,47 @@ public sealed class LocalSendFinder : IAsyncDisposable
             return (LocalSendUsbState.Unavailable, $"{device.Summary.Name} can't be reached over its cable.", null);
         }
 
-        var clock = Stopwatch.StartNew();
         var first = await ProbeAsync(tunnel, https: true, ct).ConfigureAwait(false);
         if (first.State is LocalSendUsbState.Found or LocalSendUsbState.NotListening or LocalSendUsbState.Unavailable)
         {
-            return first;
+            return (first.State, first.Detail, first.Receiver);
         }
 
-        // Something answered but not with TLS, quickly: LocalSend with encryption off speaks plain HTTP.
-        if (clock.Elapsed < _options.ProbeTimeouts.Connect / 2)
+        // Something answered, but not with TLS: LocalSend with encryption off speaks plain HTTP. A silent port (LocalSend in
+        // the background) only ran out of time, so it isn't asked twice. Decided by what went wrong, not by how long it
+        // took: on a slow PC a refused handshake can take longer than any fixed limit.
+        if (!first.Silent)
         {
             var plain = await ProbeAsync(tunnel, https: false, ct).ConfigureAwait(false);
             if (plain.State == LocalSendUsbState.Found)
             {
-                return plain;
+                return (plain.State, plain.Detail, plain.Receiver);
             }
         }
 
-        return first;
+        return (first.State, first.Detail, first.Receiver);
     }
 
-    private async Task<(LocalSendUsbState State, string? Detail, LocalSendReceiver? Receiver)> ProbeAsync(IDevicePortTunnel tunnel, bool https, CancellationToken ct)
+    /// <summary>A failure that is only a timeout: nothing came back at all (no inner error, or a cancellation or timeout inside).</summary>
+    private static bool OnlyTimedOut(Exception ex)
+    {
+        if (ex.InnerException is null)
+        {
+            return true;
+        }
+
+        for (var e = ex.InnerException; e is not null; e = e.InnerException)
+        {
+            if (e is OperationCanceledException or TimeoutException)
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private async Task<(LocalSendUsbState State, string? Detail, LocalSendReceiver? Receiver, bool Silent)> ProbeAsync(IDevicePortTunnel tunnel, bool https, CancellationToken ct)
     {
         var port = _options.Port;
         using var client = new LocalSendClient(
@@ -107,24 +127,24 @@ public sealed class LocalSendFinder : IAsyncDisposable
             var fingerprint = https ? client.PeerFingerprint : info.Fingerprint;
             if (https && !LocalSendProtocol.SameFingerprint(fingerprint, info.Fingerprint))
             {
-                return (LocalSendUsbState.NotAnswering, "The certificate on port 53317 isn't the one LocalSend states.", null);
+                return (LocalSendUsbState.NotAnswering, "The certificate on port 53317 isn't the one LocalSend states.", null, false);
             }
 
             var receiver = new LocalSendReceiver("usb:" + fingerprint, LocalSendRoute.Usb, info.Alias, info.DeviceModel, info.DeviceType,
                 null, port, https ? "https" : "http", fingerprint!, Likely: true);
-            return (LocalSendUsbState.Found, null, receiver);
+            return (LocalSendUsbState.Found, null, receiver, false);
         }
         catch (DeviceException ex) when (ex.Code == LocalSendErrors.NotListening && ex.InnerException is DeviceException { Code: IDevicePortTunnel.PortClosedCode })
         {
-            return (LocalSendUsbState.NotListening, "Nothing listens on the iPhone's port 53317: LocalSend isn't open.", null);
+            return (LocalSendUsbState.NotListening, "Nothing listens on the iPhone's port 53317: LocalSend isn't open.", null, false);
         }
         catch (DeviceException ex) when (ex.Code.StartsWith("localsend_", StringComparison.Ordinal))
         {
-            return (LocalSendUsbState.NotAnswering, ex.Message, null);
+            return (LocalSendUsbState.NotAnswering, ex.Message, null, OnlyTimedOut(ex));
         }
         catch (DeviceException ex) when (!ct.IsCancellationRequested)
         {
-            return (LocalSendUsbState.Unavailable, ex.Message, null);
+            return (LocalSendUsbState.Unavailable, ex.Message, null, false);
         }
     }
 

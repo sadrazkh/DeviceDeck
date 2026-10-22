@@ -301,6 +301,19 @@ public sealed class LocalSendTests
     }
 
     [Fact]
+    public async Task A_slow_LocalSend_with_encryption_off_is_still_found_over_plain_HTTP()
+    {
+        // A slow phone or a busy PC: the refused TLS handshake takes longer than half the connect timeout (3 s here).
+        // Plain HTTP is still tried, because something did answer; only a silent port is not asked twice.
+        var (receiver, host) = await StartAsync(https: false);
+        await using var _ = receiver;
+        await using var __ = host;
+        receiver.AnswerDelay = TimeSpan.FromSeconds(2);
+        var target = await host.FindUsbTargetAsync();
+        Assert.Equal("http", (string?)target["protocol"]);
+    }
+
+    [Fact]
     public async Task On_WiFi_the_sweep_finds_LocalSend_and_the_send_goes_to_its_address()
     {
         await using var receiver = new FakeLocalSendReceiver { Alias = "Test iPhone" };

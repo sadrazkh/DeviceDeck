@@ -79,6 +79,9 @@ internal sealed class FakeLocalSendReceiver : IAsyncDisposable
     /// <summary>Accepts connections and never answers (iOS suspended the app).</summary>
     public bool Silent { get; set; }
 
+    /// <summary>Waits this long before answering each new connection, as a slow phone or a busy PC does. None by default.</summary>
+    public TimeSpan AnswerDelay { get; set; }
+
     /// <summary>LocalSend (2.2, on iOS) wants the sender's own certificate in the TLS handshake; without one it drops the connection.</summary>
     public bool RequireClientCertificate { get; set; } = true;
 
@@ -165,6 +168,11 @@ internal sealed class FakeLocalSendReceiver : IAsyncDisposable
             {
                 await Task.Delay(Timeout.Infinite, ct);
                 return;
+            }
+
+            if (AnswerDelay > TimeSpan.Zero)
+            {
+                await Task.Delay(AnswerDelay, ct);
             }
 
             if (_certificate is not null)
