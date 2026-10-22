@@ -6,7 +6,7 @@
     <TargetPlatformMinVersion>10.0.19041.0</TargetPlatformMinVersion>
     <RootNamespace>DeviceDeck.Shell</RootNamespace>
     <AssemblyName>DeviceDeck</AssemblyName>
-    <Version>0.5.0</Version>
+    <Version>0.5.1</Version>
     <ApplicationManifest>app.manifest</ApplicationManifest>
     <ApplicationIcon>Assets\DeviceDeck.ico</ApplicationIcon>
     <ImplicitUsings>enable</ImplicitUsings>
