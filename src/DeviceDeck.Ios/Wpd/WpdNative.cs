@@ -71,6 +71,10 @@ internal static class WpdKeys
     public static readonly Guid ContentTypeFunctionalObject = new("99ED0160-17FF-4C44-9D98-1D7A6F941921");
 
     public const string DeviceObjectId = "DEVICE";
+
+    /// <summary>WPD_RESOURCE_DEFAULT: an object's data.</summary>
+    public static readonly PropertyKey ResourceDefault = new(new Guid("E81E79BE-34F0-41BF-B53F-F1A06AE87842"), 0);
+    public const uint StgmRead = 0;
     public const uint DeleteNoRecursion = 0;
     public const uint SecurityImpersonation = 0x00020000;
     public const uint GenericRead = 0x80000000;
@@ -101,9 +105,24 @@ internal interface IPortableDevice
     void Open([MarshalAs(UnmanagedType.LPWStr)] string pnpDeviceId, IPortableDeviceValues clientInfo);
     void SendCommand(uint flags, IPortableDeviceValues parameters, out IPortableDeviceValues results);
     void Content(out IPortableDeviceContent content);
-    void Capabilities(out IntPtr capabilities);
+    void Capabilities(out IPortableDeviceCapabilities capabilities);
     void Cancel();
     void Close();
+}
+
+[ComImport, Guid("fd8878ac-d841-4d17-891c-e6829cdb6934"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IPortableDeviceResources
+{
+    void GetSupportedResources([MarshalAs(UnmanagedType.LPWStr)] string objectId, out IPortableDeviceKeyCollection keys);
+    void GetResourceAttributes([MarshalAs(UnmanagedType.LPWStr)] string objectId, ref PropertyKey key, out IPortableDeviceValues attributes);
+    void GetStream([MarshalAs(UnmanagedType.LPWStr)] string objectId, ref PropertyKey key, uint mode, ref uint optimalBufferSize,
+        out System.Runtime.InteropServices.ComTypes.IStream stream);
+}
+
+[ComImport, Guid("2c8c6dbf-e3dc-4061-becc-8542e810d126"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IPortableDeviceCapabilities
+{
+    void GetSupportedCommands(out IPortableDeviceKeyCollection commands);
 }
 
 [ComImport, Guid("6a96ed84-7c73-4480-9938-bf5af477d426"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
@@ -111,7 +130,7 @@ internal interface IPortableDeviceContent
 {
     void EnumObjects(uint flags, [MarshalAs(UnmanagedType.LPWStr)] string parentObjectId, IPortableDeviceValues? filter, out IEnumPortableDeviceObjectIDs enumerator);
     void Properties(out IPortableDeviceProperties properties);
-    void Transfer(out IntPtr resources);
+    void Transfer(out IPortableDeviceResources resources);
     void CreateObjectWithPropertiesOnly(IPortableDeviceValues values, out IntPtr objectId);
     void CreateObjectWithPropertiesAndData(IPortableDeviceValues values, out IntPtr data, ref uint optimalWriteBufferSize, out IntPtr cookie);
     [PreserveSig] int Delete(uint options, IPortableDevicePropVariantCollection objectIds, out IPortableDevicePropVariantCollection? results);

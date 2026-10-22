@@ -80,6 +80,81 @@ public sealed class WpdPhotoDeleterTests
         Assert.Equal(WpdMapProblem.Ambiguous, map.Find("DCIM/101APPLE/IMG_0002.HEIC", 30).Problem);
     }
 
+    /// <summary>
+    /// As seen on an iPhone 16 with iOS 27: pictures saved into Photos from elsewhere (LocalSend) are IMG_7414.PNG… on the
+    /// phone but PZHI6539.PNG… to Windows, in month folders straight under the storage, with no can-delete flag.
+    /// </summary>
+    private (FakeWpdDevice Device, DateTimeOffset Taken) RenamedImports(bool twin = false)
+    {
+        var taken = new DateTimeOffset(2026, 10, 21, 13, 42, 44, TimeSpan.Zero);
+        var shown = taken.ToOffset(TimeSpan.FromHours(3.5));
+        _roll.Add("DCIM/107APPLE/IMG_7413.HEIC", 3_013_973).Add("DCIM/107APPLE/IMG_7414.PNG", 35_861).Add("DCIM/107APPLE/IMG_7415.PNG", 36_216);
+        _roll.Taken["DCIM/107APPLE/IMG_7414.PNG"] = taken;
+        _roll.Taken["DCIM/107APPLE/IMG_7415.PNG"] = taken;
+        var device = _wpd.AddIphone(Udid);
+        device.Commands.Add(WpdCommands.DeleteObjects);
+        var storage = device.AddStorage();
+        var month = device.AddFolder(storage, "202610_a");
+        device.AddFile(month, "IMG_7413.HEIC", 3_013_973, canDelete: null, "DCIM/107APPLE/IMG_7413.HEIC");
+        device.AddFile(month, "PZHI6539.PNG", 35_861, canDelete: null, "DCIM/107APPLE/IMG_7414.PNG", shown);
+        device.AddFile(month, "HGGS6324.PNG", 36_216, canDelete: null, "DCIM/107APPLE/IMG_7415.PNG", shown);
+        if (twin)
+        {
+            device.AddFile(month, "QQQQ0001.PNG", 35_861, canDelete: null, "DCIM/107APPLE/IMG_9999.PNG", shown);
+        }
+
+        device.Deleted = (_, path) => _roll.Disk.Remove(path);
+        return (device, taken);
+    }
+
+    [Fact]
+    public async Task A_picture_windows_shows_under_another_name_maps_by_type_size_and_time_and_is_deleted()
+    {
+        var (device, _) = RenamedImports();
+        var deleter = Deleter();
+        Assert.True((await deleter.CheckAsync(DeviceState.Ready, Ct)).CanDelete); // no can-delete flag, but the phone deletes objects
+
+        var results = await deleter.DeleteAsync([new PhotoDeleteItem("DCIM/107APPLE/IMG_7414.PNG", 35_861), new PhotoDeleteItem("DCIM/107APPLE/IMG_7415.PNG", 36_216)], Ct);
+
+        Assert.All(results, r => Assert.Equal(PhotoDeleteOutcome.Deleted, r.Outcome));
+        Assert.Contains("Windows calls it PZHI6539.PNG", results[0].Message);
+        Assert.Equal(["DCIM/107APPLE/IMG_7413.HEIC"], _roll.Disk.Keys);
+        Assert.True(device.Has("IMG_7413.HEIC"));
+        Assert.Empty(device.Forbidden);
+    }
+
+    [Fact]
+    public async Task A_renamed_picture_that_another_object_could_be_is_refused()
+    {
+        var (device, _) = RenamedImports(twin: true);
+
+        var results = await Deleter().DeleteAsync([new PhotoDeleteItem("DCIM/107APPLE/IMG_7414.PNG", 35_861), new PhotoDeleteItem("DCIM/107APPLE/IMG_7415.PNG", 36_216)], Ct);
+
+        Assert.Equal([PhotoDeleteOutcome.Mismatch, PhotoDeleteOutcome.NotTried], results.Select(r => r.Outcome));
+        Assert.Contains("2 objects", results[0].Message);
+        Assert.Empty(device.DeleteCalls);
+    }
+
+    [Fact]
+    public async Task Without_photos_sqlite_a_renamed_picture_is_not_matched()
+    {
+        var (device, _) = RenamedImports();
+        _roll.WithDatabase = false;
+
+        var r = Assert.Single(await Deleter().DeleteAsync([new PhotoDeleteItem("DCIM/107APPLE/IMG_7414.PNG", 35_861)], Ct));
+
+        Assert.Equal(PhotoDeleteOutcome.Mismatch, r.Outcome);
+        Assert.Empty(device.DeleteCalls);
+    }
+
+    [Fact]
+    public async Task A_phone_that_doesnt_mark_its_files_and_doesnt_say_it_deletes_stays_read_only()
+    {
+        var (device, _) = RenamedImports();
+        device.Commands.Clear();
+        Assert.Equal(PhotoDeleteBlock.ReadOnly, (await Deleter().CheckAsync(DeviceState.Ready, Ct)).Reason);
+    }
+
     [Fact]
     public void Camera_folders_straight_under_the_storage_are_the_camera_roll()
     {
@@ -181,6 +256,35 @@ public sealed class WpdPhotoDeleterTests
     }
 
     [Fact]
+    public async Task A_delete_windows_answered_ok_counts_even_when_reading_the_object_back_still_shows_it()
+    {
+        // iOS 27: the driver answered S_OK per object and still returned the objects' old properties afterwards.
+        var device = Library(3);
+        device.StaleAfterDelete = true;
+
+        var results = await Deleter().DeleteAsync([Item(1), Item(2), Item(3)], Ct);
+
+        Assert.All(results, r => Assert.Equal(PhotoDeleteOutcome.Deleted, r.Outcome));
+        Assert.All(results, r => Assert.Equal(PhotoDeleteDestination.Permanent, r.WentTo));
+        Assert.Empty(_roll.Disk);
+        Assert.DoesNotContain(_log.Written, l => l.Contains("failed", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Windows_saying_ok_while_the_phone_keeps_and_lists_the_photo_is_a_failure()
+    {
+        var device = Library(2);
+        device.Deleted = null; // the phone keeps the files and its library keeps listing them
+
+        var results = await Deleter().DeleteAsync([Item(1), Item(2)], Ct);
+
+        Assert.All(results, r => Assert.Equal(PhotoDeleteOutcome.Failed, r.Outcome));
+        Assert.Contains("still has it", results[0].Message);
+        Assert.Contains(_log.Written, l => l.Contains("not deleted after all, DCIM/100APPLE/IMG_0001.HEIC", StringComparison.Ordinal));
+        Assert.Equal(PhotoDeleteDestination.Permanent, Deleter().Current.GoesTo); // nothing seen: still what users report
+    }
+
+    [Fact]
     public async Task An_object_that_changed_just_before_its_batch_stops_the_delete()
     {
         var device = Library(7);
@@ -266,7 +370,7 @@ public sealed class WpdPhotoDeleterTests
         var results = await Deleter().DeleteAsync([Item(1)], Ct);
 
         Assert.Equal(PhotoDeleteOutcome.Deleted, results[0].Outcome);
-        Assert.Contains("Windows still lists IMG_E0001.JPG, IMG_0001.AAE", results[0].Message);
+        Assert.Contains("Its edit (IMG_E0001.JPG, IMG_0001.AAE) went with it.", results[0].Message);
         Assert.Single(device.DeleteCalls.Single()); // the edit itself isn't deleted by DeviceDeck
     }
 
@@ -283,7 +387,7 @@ public sealed class WpdPhotoDeleterTests
 
         Assert.All(results, r => Assert.Equal(PhotoDeleteDestination.RecentlyDeleted, r.WentTo));
         Assert.Equal((PhotoDeleteDestination.RecentlyDeleted, true), (deleter.Current.GoesTo, deleter.Current.Observed));
-        Assert.Contains(_log.Written, l => l.Contains("marks it deleted (Recently Deleted)", StringComparison.Ordinal));
+        Assert.Contains(_log.Written, l => l.Contains("no longer lists it (Recently Deleted)", StringComparison.Ordinal));
         Assert.True(_roll.Refreshes >= 2); // the index was rebuilt after the delete
     }
 

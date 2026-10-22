@@ -16,6 +16,9 @@ internal sealed class FakeCameraRoll : IPhoneCameraRoll
 
     public HashSet<string> Edited { get; } = new(StringComparer.Ordinal);
 
+    /// <summary>When an asset was taken, where a test cares; others get a minute apart from 19:10.</summary>
+    public Dictionary<string, DateTimeOffset> Taken { get; } = new(StringComparer.Ordinal);
+
     /// <summary>Assets the library lists whose original is in iCloud only (no file in DCIM).</summary>
     public Dictionary<string, long> CloudOnly { get; } = new(StringComparer.Ordinal);
 
@@ -74,7 +77,7 @@ internal sealed class FakeCameraRoll : IPhoneCameraRoll
             var live = !video && files.Contains(Path.ChangeExtension(f, ".MOV"));
             var slash = f.LastIndexOf('/');
             rows.Add(new PhotoRow(++pk, f[..slash], f[(slash + 1)..], video ? 1 : 0, live ? 2 : 0,
-                new DateTimeOffset(2026, 10, 21, 19, 10, 0, TimeSpan.Zero).AddMinutes(pk), false, false, Trashed.Contains(f),
+                Taken.TryGetValue(f, out var taken) ? taken : new DateTimeOffset(2026, 10, 21, 19, 10, 0, TimeSpan.Zero).AddMinutes(pk), false, false, Trashed.Contains(f),
                 4032, 3024, video ? 10 : null, "UUID-" + pk, false, Disk.TryGetValue(f, out var size) ? size : CloudOnly[f], f[(slash + 1)..], HasAdjustments: Edited.Contains(f)));
         }
 
