@@ -226,6 +226,15 @@ public sealed class WpdListingCache(TimeProvider? time = null, TimeSpan? lifetim
         }
     }
 
+    /// <summary>The kept listing as it is, recent or not (for deciding whether to read ahead).</summary>
+    public WpdListing? Peek()
+    {
+        lock (_gate)
+        {
+            return _listing;
+        }
+    }
+
     /// <summary>Keeps a listing, unless the cache was dropped since <see cref="Take"/> (the phone went away meanwhile).</summary>
     public bool Keep(WpdListing listing, long generation)
     {

@@ -95,6 +95,27 @@ public sealed class WpdMappingSpeedTests(ITestOutputHelper output)
     }
 
     [Fact]
+    public async Task With_a_read_ahead_the_delete_reads_almost_nothing_even_where_bulk_is_no_faster()
+    {
+        // The owner's iPhone 16 (v0.4.1 probe): bulk 48 ms an object, one by one 47 ms; 39 items in 17 months.
+        var rig = new Rig(perBulkObject: TimeSpan.FromMilliseconds(48));
+        var items = rig.Big.LargestVideos(39);
+        rig.Wpd.Latency.Reset();
+        Assert.True(rig.Deleter.StartPrefetch("Clean-up's analysis finished", Ct));
+        await rig.Deleter.Prefetching!.WaitAsync(TimeSpan.FromSeconds(30));
+        var ahead = rig.Wpd.Latency.Elapsed;
+        output.WriteLine($"{"read ahead in the background (while the user chooses)",-66} {ahead.TotalSeconds,6:0.0} s  ({rig.Deleter.LastPrefetch})");
+
+        var after = await rig.DeleteAsync(items);
+        Line("then Delete → first delete", after, rig);
+        Assert.True(after < TimeSpan.FromSeconds(5), after.ToString());
+
+        var cold = await new Rig(perBulkObject: TimeSpan.FromMilliseconds(48)).DeleteAsync(items);
+        output.WriteLine($"{"the same delete without a read ahead",-66} {cold.TotalSeconds,6:0.0} s");
+        Assert.True(after < cold / 10, $"{after} vs {cold}");
+    }
+
+    [Fact]
     public async Task Videos_from_three_months_read_only_those_months()
     {
         // A trip: every video is in month 3, 9 or 15; the photos spread over all 18 months.

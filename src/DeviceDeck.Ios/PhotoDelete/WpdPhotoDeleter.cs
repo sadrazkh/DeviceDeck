@@ -70,11 +70,201 @@ public sealed class WpdPhotoDeleter
     /// <summary>The last answer of <see cref="CheckAsync"/>, with what deletes on this phone have shown since.</summary>
     public PhotoDeleteSupport Current => WithDestination(Volatile.Read(ref _support));
 
-    /// <summary>Forgets the last check and the kept listing (the phone was locked or went away).</summary>
+    /// <summary>Forgets the last check and the kept listing, and stops a read ahead (the phone was locked or went away).</summary>
     public void Reset(PhotoDeleteBlock reason, string? detail = null)
     {
+        CancelPrefetch();
         _cache.Invalidate();
         Volatile.Write(ref _support, PhotoDeleteSupport.No(reason, detail));
+    }
+
+    // ---------- Reading ahead (v0.4.2) ----------
+
+    private readonly Lock _prefetchGate = new();
+    private CancellationTokenSource? _prefetchCts;
+    private Task? _prefetchTask;
+
+    /// <summary>How the last read ahead went (the probe prints it).</summary>
+    public WpdReadStats? LastPrefetch { get; private set; }
+
+    /// <summary>The read ahead running now, if any.</summary>
+    public Task? Prefetching
+    {
+        get
+        {
+            lock (_prefetchGate)
+            {
+                return _prefetchTask is { IsCompleted: false } task ? task : null;
+            }
+        }
+    }
+
+    /// <summary>
+    /// Starts reading Windows' view of the whole camera roll in the background, read-only, on a low-priority thread, into
+    /// the kept listing: a delete that follows then reads (almost) nothing itself. On the owner's iPhone a first read took
+    /// about 90 s for 3,217 objects, and Windows' driver then keeps what it read until the phone is unplugged (0.1 s
+    /// to read them all again). Does nothing while one runs, while a delete runs, or when the kept listing is complete.
+    /// A delete stops it and carries on from what it read; locking or unplugging the phone stops it.
+    /// </summary>
+    /// <returns>True when a read ahead started.</returns>
+    public bool StartPrefetch(string reason, CancellationToken life)
+    {
+        if (_wpd is null || _gate.CurrentCount == 0)
+        {
+            return false;
+        }
+
+        lock (_prefetchGate)
+        {
+            if (_prefetchTask is { IsCompleted: false })
+            {
+                return false;
+            }
+
+            if (_cache.Peek() is { HasAll: true } kept && _cache.Now - kept.ReadAt < _cache.Lifetime / 2)
+            {
+                return false;
+            }
+
+            var cts = CancellationTokenSource.CreateLinkedTokenSource(life);
+            _prefetchCts = cts;
+            _prefetchTask = Task.Factory.StartNew(() => Prefetch(reason, cts.Token), cts.Token, TaskCreationOptions.LongRunning, TaskScheduler.Default)
+                .ContinueWith(_ => cts.Dispose(), CancellationToken.None, TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
+            return true;
+        }
+    }
+
+    private void Prefetch(string reason, CancellationToken ct)
+    {
+        Thread.CurrentThread.Priority = ThreadPriority.BelowNormal;
+        var stats = new WpdReadStats();
+        LastPrefetch = stats;
+        try
+        {
+            var (device, _) = FindDevice(ct);
+            if (device is null)
+            {
+                return;
+            }
+
+            using var c = _wpd!.Open(device.PnpId, readOnly: true);
+            var kept = _cache.Take(device.PnpId, out var generation);
+            var reader = new WpdRollReader(c, stats, null, ct);
+            var listing = reader.Structure(kept, device.PnpId, _cache.Now, out _);
+            if (listing is null)
+            {
+                return;
+            }
+
+            stats.FoldersInRoll = listing.Folders.Count;
+            // Folder by folder, newest first (what Clean-up and Photos show first), each kept as soon as it is read.
+            foreach (var folder in listing.Folders.OrderByDescending(f => WpdMonths.MonthOf(f.FileName) ?? (9999, 12)))
+            {
+                ct.ThrowIfCancellationRequested();
+                reader.Load(listing, [folder]);
+                if (!_cache.Keep(listing, generation))
+                {
+                    return; // the phone went away meanwhile
+                }
+            }
+
+            Log($"read ahead ({reason}): {stats}");
+        }
+        catch (OperationCanceledException)
+        {
+            Log($"read ahead ({reason}) stopped: {stats}");
+        }
+        catch (Exception ex) when (ex is WpdException or DeviceException or IOException)
+        {
+            Log($"read ahead ({reason}) failed: {ex.Message}");
+        }
+    }
+
+    private void CancelPrefetch()
+    {
+        lock (_prefetchGate)
+        {
+            try
+            {
+                _prefetchCts?.Cancel();
+            }
+            catch (ObjectDisposedException)
+            {
+            }
+        }
+    }
+
+    /// <summary>Stops a read ahead and waits for it to hand over; one that doesn't stop in time is cut off from the kept listing.</summary>
+    private async Task StopPrefetchAsync()
+    {
+        Task? running;
+        lock (_prefetchGate)
+        {
+            running = _prefetchTask is { IsCompleted: false } task ? task : null;
+        }
+
+        if (running is null)
+        {
+            return;
+        }
+
+        CancelPrefetch();
+        try
+        {
+            await running.WaitAsync(TimeSpan.FromSeconds(20)).ConfigureAwait(false);
+        }
+        catch (TimeoutException)
+        {
+            // Still inside a call to Windows: the delete reads on its own (Windows keeps what was read either way).
+            _cache.Invalidate();
+        }
+    }
+
+    /// <summary>What a dry run found for one item: the object it maps to, or why not.</summary>
+    public sealed record DryRunItem(PhotoDeleteItem Item, WpdObject? Object, string? Folder, WpdObject? Pair, string? Refusal);
+
+    /// <summary>
+    /// Everything a delete does before its first batch (the phone's side, then Windows' view, kept listing and read ahead
+    /// included), on a read-only connection, and nothing after: for timing and checking the mapping on a real phone.
+    /// </summary>
+    public async Task<IReadOnlyList<DryRunItem>> DryRunAsync(IReadOnlyList<PhotoDeleteItem> items, IPhotoDeleteObserver? observer, CancellationToken ct)
+    {
+        if (_wpd is null)
+        {
+            throw new DeviceException(DeviceErrorCodes.NotSupported, "This PC can't reach the iPhone's camera connection (Windows Portable Devices).");
+        }
+
+        observer ??= NoPhotoDeleteObserver.Instance;
+        await _gate.WaitAsync(ct).ConfigureAwait(false);
+        try
+        {
+            observer.Stage(PhotoDeleteStage.Reading, 0, 0);
+            await StopPrefetchAsync().ConfigureAwait(false);
+            var results = new PhotoDeleteResult?[items.Count];
+            var plans = new Plan?[items.Count];
+            if (await PhoneSideAsync(items, results, plans, ct).ConfigureAwait(false) is not { } side)
+            {
+                return items.Select((item, i) => new DryRunItem(item, null, null, null, results[i]?.Message ?? "Not tried: another item didn't match.")).ToList();
+            }
+
+            return await Task.Run(() =>
+            {
+                var (device, why) = FindDevice(ct);
+                if (device is null)
+                {
+                    return items.Select(i => new DryRunItem(i, null, null, null, "Windows doesn't list the iPhone as a camera now. " + why)).ToList();
+                }
+
+                using var c = _wpd.Open(device.PnpId, readOnly: true);
+                var map = MapWithWindows(c, device.PnpId, plans!, side.Files, side.Assets, side.Edited, observer, ct);
+                return plans!.Select(p => new DryRunItem(p!.Item, map is null ? null : p.Still, p.Still is null || map is null ? null : map.FolderOf(p.Still)?.Name,
+                    p.Pair, map is null ? "Windows shows no camera roll." : p.Refusal)).ToList();
+            }, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            _gate.Release();
+        }
     }
 
     // ---------- Can this phone's photos be deleted from the PC? ----------
@@ -328,15 +518,16 @@ public sealed class WpdPhotoDeleter
         }
     }
 
-    private async Task<IReadOnlyList<PhotoDeleteResult>> DeleteLockedAsync(IReadOnlyList<PhotoDeleteItem> items, IPhotoDeleteObserver observer, CancellationToken ct)
-    {
-        var results = new PhotoDeleteResult?[items.Count];
-        observer.Stage(PhotoDeleteStage.Reading, 0, 0);
+    private sealed record PhoneSide(IReadOnlyList<string> Files, HashSet<string> Edited, IReadOnlyCollection<WpdPhoneAsset>? Assets);
 
-        // 1. The phone's side: still in the library at the confirmed size, and its file is in DCIM at that size.
+    /// <summary>
+    /// 1. The phone's side: still in the library at the confirmed size, and its file is in DCIM at that size. Fills
+    /// <paramref name="results"/> with refusals; null when one was refused (nothing may be deleted then).
+    /// </summary>
+    private async Task<PhoneSide?> PhoneSideAsync(IReadOnlyList<PhotoDeleteItem> items, PhotoDeleteResult?[] results, Plan?[] plans, CancellationToken ct)
+    {
         var index = await _phone.GetIndexAsync(refresh: true, ct).ConfigureAwait(false);
         var assets = index.Assets.GroupBy(a => a.Id, StringComparer.Ordinal).ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
-        var plans = new Plan?[items.Count];
         for (var i = 0; i < items.Count; i++)
         {
             var item = items[i];
@@ -387,7 +578,7 @@ public sealed class WpdPhotoDeleter
 
         if (results.Any(r => r is not null))
         {
-            return Refuse(items, results, plans, "Nothing was deleted, because another selected item didn't match.");
+            return null;
         }
 
         var phoneFiles = await _phone.ListDcimAsync(ct).ConfigureAwait(false);
@@ -396,6 +587,24 @@ public sealed class WpdPhotoDeleter
         var phoneAssets = index.Mode == PhotoIndexMode.Database
             ? index.Assets.Where(a => a.Size > 0).Select(a => new WpdPhoneAsset(a.Id, a.Size, a.TakenAt)).ToList()
             : null;
+        return new PhoneSide(phoneFiles, edited, phoneAssets);
+    }
+
+    private async Task<IReadOnlyList<PhotoDeleteResult>> DeleteLockedAsync(IReadOnlyList<PhotoDeleteItem> items, IPhotoDeleteObserver observer, CancellationToken ct)
+    {
+        var results = new PhotoDeleteResult?[items.Count];
+        observer.Stage(PhotoDeleteStage.Reading, 0, 0);
+
+        // A read ahead still running hands over what it read (the delete reads the rest itself).
+        await StopPrefetchAsync().ConfigureAwait(false);
+
+        var plans = new Plan?[items.Count];
+        if (await PhoneSideAsync(items, results, plans, ct).ConfigureAwait(false) is not { } side)
+        {
+            return Refuse(items, results, plans, "Nothing was deleted, because another selected item didn't match.");
+        }
+
+        var (phoneFiles, edited, phoneAssets) = (side.Files, side.Edited, side.Assets);
 
         // 2. Windows' side, then 3. the deletes: blocking COM calls, off the caller's thread.
         var run = await Task.Run(() => DeleteWithWindows(items, plans!, results, phoneFiles, edited, phoneAssets, observer, ct), ct).ConfigureAwait(false);
@@ -563,6 +772,16 @@ public sealed class WpdPhotoDeleter
                 listing = reader.Structure(null, pnpId, _cache.Now, out _);
                 fresh = true;
                 continue;
+            }
+
+            if (full && fresh)
+            {
+                // Read everywhere, fresh: an item Windows lists nowhere can't be deleted from a PC at all. On the owner's
+                // iPhone 16 that was 2,361 of 4,376 DCIM files (the ones moved over from an earlier iPhone).
+                foreach (var plan in plans.Where(p => p.Problem == WpdMapProblem.Absent))
+                {
+                    plan.Refusal = $"Windows doesn't list {Path.GetFileName(plan.Item.Id)} anywhere in the iPhone's camera roll, so this PC can't delete it. Delete it in the Photos app on the iPhone.";
+                }
             }
 
             Log($"read Windows' view for {plans.Length} item(s) ({(byFolder ? "by folder" : "by month")}): {stats}");

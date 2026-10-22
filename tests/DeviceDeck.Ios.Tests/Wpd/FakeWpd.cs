@@ -24,6 +24,23 @@ internal sealed class FakeWpd : IWpdBackend
     /// <summary>A bulk read fails with this HRESULT (a driver that breaks or stalls on it).</summary>
     public int? BulkFails { get; set; }
 
+    /// <summary>Called before every read (a test can hold a read ahead in the middle of a folder).</summary>
+    public Action? BeforeRead { get; set; }
+
+    /// <summary>Reads made on read-only connections (a read ahead only reads).</summary>
+    public int ReadOnlyReads => Volatile.Read(ref _readOnlyReads);
+
+    private int _readOnlyReads;
+
+    internal void Reading(bool readOnly)
+    {
+        BeforeRead?.Invoke();
+        if (readOnly)
+        {
+            Interlocked.Increment(ref _readOnlyReads);
+        }
+    }
+
     /// <summary>An iPhone the way Windows lists it: Apple's VID, the UDID (no dash) as the USB serial, Internal Storage.</summary>
     public FakeWpdDevice AddIphone(string udid, string? usbSerial = "", string? wpdSerial = null)
     {
@@ -68,6 +85,7 @@ internal sealed class FakeWpd : IWpdBackend
     {
         public IReadOnlyList<WpdObject>? GetMany(IReadOnlyList<string> objectIds, Action<int>? progress, CancellationToken ct)
         {
+            owner.Reading(readOnly);
             if (!owner.BulkReads)
             {
                 return null;
@@ -90,6 +108,7 @@ internal sealed class FakeWpd : IWpdBackend
 
         public IReadOnlyList<string> ChildIds(string parentId, CancellationToken ct)
         {
+            owner.Reading(readOnly);
             var ids = device.Children(parentId);
             latency.ChildIds(ids.Count);
             return ids;
@@ -97,6 +116,7 @@ internal sealed class FakeWpd : IWpdBackend
 
         public WpdObject? Get(string objectId)
         {
+            owner.Reading(readOnly);
             latency.Get();
             return device.Get(objectId);
         }

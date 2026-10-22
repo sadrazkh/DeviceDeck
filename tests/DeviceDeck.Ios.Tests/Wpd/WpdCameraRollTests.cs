@@ -427,4 +427,192 @@ public sealed class WpdCameraRollTests
         Assert.All(results, r => Assert.Contains("couldn't check on the iPhone", r.Message));
         Assert.False(_cache.Holds);
     }
+
+    // ---------- Reading ahead (v0.4.2) ----------
+
+    private static async Task ReadAheadFinished(WpdPhotoDeleter deleter)
+    {
+        if (deleter.Prefetching is { } running)
+        {
+            await running.WaitAsync(TimeSpan.FromSeconds(30));
+        }
+    }
+
+    [Fact]
+    public async Task A_read_ahead_reads_the_whole_roll_read_only_and_the_delete_then_reads_almost_nothing()
+    {
+        var big = BigCameraRoll.Build(_wpd, _roll, Udid);
+        _wpd.Latency.LikeTheOwnersIphone(TimeSpan.FromMilliseconds(47)); // bulk no faster, as on the owner's iPhone 16
+        var deleter = Deleter();
+
+        Assert.True(deleter.StartPrefetch("test", Ct));
+        await ReadAheadFinished(deleter);
+
+        Assert.Equal((0, 0), (_wpd.ReadWriteOpens, big.Device.DeleteCalls.Count)); // read-only, nothing deleted
+        Assert.True(_wpd.ReadOnlyOpens > 0);
+        Assert.True(_cache.Peek()!.HasAll);
+        Assert.Equal(18, deleter.LastPrefetch!.FoldersRead);
+        Assert.Contains(_log.Written, l => l.Contains("read ahead (test)", StringComparison.Ordinal));
+        var readAhead = _wpd.Latency.Elapsed;
+
+        _wpd.Latency.Reset();
+        TimeSpan? first = null;
+        big.Device.Answer = _ =>
+        {
+            first ??= _wpd.Latency.Elapsed;
+            return 0;
+        };
+        var items = big.Entries.Where(e => e.Month == "202508_a").Take(3).Select(ItemOf).ToList();
+        var results = await deleter.DeleteAsync(items, Ct);
+
+        Assert.All(results, r => Assert.Equal(PhotoDeleteOutcome.Deleted, r.Outcome));
+        Assert.Equal((0, 1, 3), (deleter.LastRead!.FoldersRead, deleter.LastRead.FoldersFromCache, deleter.LastRead.Verified));
+        Assert.True(first < TimeSpan.FromSeconds(2), $"{first} after a read ahead of {readAhead}");
+    }
+
+    [Fact]
+    public async Task A_read_ahead_doesnt_start_again_while_the_listing_is_complete_and_recent()
+    {
+        Library(6);
+        var deleter = Deleter();
+        Assert.True(deleter.StartPrefetch("first", Ct));
+        await ReadAheadFinished(deleter);
+        var opens = _wpd.ReadOnlyOpens;
+
+        Assert.False(deleter.StartPrefetch("again", Ct));
+        _time.Now += TimeSpan.FromMinutes(3); // past half the listing's life: read again
+        Assert.True(deleter.StartPrefetch("later", Ct));
+        await ReadAheadFinished(deleter);
+        Assert.True(_wpd.ReadOnlyOpens > opens);
+    }
+
+    [Fact]
+    public async Task A_delete_stops_a_read_ahead_and_carries_on_from_what_it_read()
+    {
+        var big = BigCameraRoll.Build(_wpd, _roll, Udid);
+        using var hold = new SemaphoreSlim(0);
+        var pause = true;
+        var held = false;
+        // Once three folders are read ahead, the read ahead waits.
+        _wpd.BeforeRead = () =>
+        {
+            if (Volatile.Read(ref pause) && _cache.Peek() is { } kept && kept.ToDcim().Folders.Count >= 3)
+            {
+                Volatile.Write(ref held, true);
+                hold.Wait(TimeSpan.FromSeconds(10));
+            }
+        };
+        var deleter = Deleter();
+        Assert.True(deleter.StartPrefetch("test", Ct));
+        await WaitUntil(() => Volatile.Read(ref held));
+        var partly = _cache.Peek()!.ToDcim().Folders.Select(f => f.Name).ToList();
+        Assert.True(partly.Count < 18);
+
+        // The delete wants items from a folder read ahead and from one not read yet.
+        var month = partly[0];
+        var other = big.MonthFolders.Keys.First(m => !partly.Contains(m));
+        var items = big.Entries.Where(e => e.Month == month).Take(2).Concat(big.Entries.Where(e => e.Month == other).Take(2)).Select(ItemOf).ToList();
+        var deleting = Task.Run(() => deleter.DeleteAsync(items, Ct));
+        await Task.Delay(200);
+        Volatile.Write(ref pause, false);
+        hold.Release(1000);
+        var results = await deleting;
+
+        Assert.All(results, r => Assert.Equal(PhotoDeleteOutcome.Deleted, r.Outcome));
+        Assert.Null(deleter.Prefetching);
+        Assert.True(deleter.LastRead!.FoldersFromCache >= 1, deleter.LastRead.ToString()); // carried on from the read ahead
+        Assert.True(deleter.LastRead.FoldersRead >= 1, deleter.LastRead.ToString()); // and read the rest itself
+        Assert.Contains(_log.Written, l => l.Contains("read ahead (test) stopped", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public async Task Locking_or_unplugging_stops_a_read_ahead_and_drops_what_it_read()
+    {
+        BigCameraRoll.Build(_wpd, _roll, Udid);
+        using var hold = new SemaphoreSlim(0);
+        var pause = false;
+        _wpd.BeforeRead = () =>
+        {
+            if (Volatile.Read(ref pause))
+            {
+                hold.Wait(TimeSpan.FromSeconds(10));
+            }
+        };
+        var deleter = Deleter();
+        deleter.StartPrefetch("test", Ct);
+        await WaitUntil(() => _cache.Peek() is { } kept && kept.ToDcim().Folders.Count >= 2);
+        Volatile.Write(ref pause, true);
+
+        deleter.Reset(PhotoDeleteBlock.Locked);
+        Volatile.Write(ref pause, false);
+        hold.Release(1000);
+        await ReadAheadFinished(deleter);
+
+        Assert.False(_cache.Holds);
+        Assert.Null(deleter.Prefetching);
+    }
+
+    [Fact]
+    public async Task No_read_ahead_while_a_delete_runs()
+    {
+        Library(4);
+        using var hold = new SemaphoreSlim(0);
+        var deleter = Deleter();
+        var pause = true;
+        _wpd.BeforeRead = () =>
+        {
+            if (Volatile.Read(ref pause))
+            {
+                hold.Wait(TimeSpan.FromSeconds(10));
+            }
+        };
+        var deleting = Task.Run(() => deleter.DeleteAsync([Item(1)], Ct));
+        await Task.Delay(100);
+
+        Assert.False(deleter.StartPrefetch("during a delete", Ct));
+        Volatile.Write(ref pause, false);
+        hold.Release(1000);
+        Assert.Equal(PhotoDeleteOutcome.Deleted, Assert.Single(await deleting).Outcome);
+    }
+
+    [Fact]
+    public async Task A_months_second_folder_is_read_with_the_first()
+    {
+        // The owner's iPhone shows "202610_b" beside "202610_a": both are October 2026.
+        var entries = BigCameraRoll.Build(new FakeWpd(), new FakeCameraRoll(), Udid).Entries.ToList();
+        var index = entries.FindIndex(e => e.Month == "202508_a");
+        entries[index] = entries[index] with { Month = "202508_b" };
+        BigCameraRoll.Place(_wpd, _roll, Udid, entries);
+        var deleter = Deleter();
+
+        var results = await deleter.DeleteAsync([ItemOf(entries[index]), ItemOf(entries[index + 1])], Ct);
+
+        Assert.All(results, r => Assert.Equal(PhotoDeleteOutcome.Deleted, r.Outcome));
+        Assert.Equal((2, null), (deleter.LastRead!.FoldersRead, deleter.LastRead.FreshBecause));
+    }
+
+    [Fact]
+    public async Task An_item_windows_lists_nowhere_is_refused_saying_to_delete_it_on_the_iPhone()
+    {
+        // As 38 of the owner's 39 largest videos: in the phone's DCIM, moved over from an earlier iPhone, not in Windows' view.
+        var device = Library(4);
+        _roll.Add("DCIM/100APPLE/IMG_0009.MOV", 900_000_000);
+
+        var results = await Deleter().DeleteAsync([Item(1), new PhotoDeleteItem("DCIM/100APPLE/IMG_0009.MOV", 900_000_000)], Ct);
+
+        Assert.Equal([PhotoDeleteOutcome.NotTried, PhotoDeleteOutcome.Mismatch], results.Select(r => r.Outcome));
+        Assert.Contains("anywhere in the iPhone's camera roll", results[1].Message);
+        Assert.Contains("Photos app", results[1].Message);
+        Assert.Empty(device.DeleteCalls);
+    }
+
+    private static async Task WaitUntil(Func<bool> condition)
+    {
+        var deadline = DateTime.UtcNow.AddSeconds(30);
+        while (!condition())
+        {
+            Assert.True(DateTime.UtcNow < deadline, "timed out");
+            await Task.Delay(10);
+        }
+    }
 }
