@@ -36,6 +36,8 @@ import type {
   PhotoAlbum,
   PhotoAsset,
   PhotoBackupCount,
+  PhotoBackupHidden,
+  PhotoBackupHiddenLayout,
   PhotoBackupOnConnect,
   PhotoBackupRange,
   PhotoBackupSpace,
@@ -151,11 +153,14 @@ export interface BridgeMethods {
       destination?: string;
       folderPattern?: string;
       convertHeic?: boolean;
-      includeHidden?: boolean;
       useDefaults?: boolean;
       range?: PhotoBackupRange;
       onConnect?: PhotoBackupOnConnect;
       saveEdited?: boolean;
+      // Round 4 (hiddenbackup); replaces includeHidden, which the host still takes (true = include, together).
+      hidden?: PhotoBackupHidden;
+      hiddenLayout?: PhotoBackupHiddenLayout;
+      hiddenFolder?: string;
     };
     result: PhotoBackupStatus;
   };

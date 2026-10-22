@@ -38,7 +38,7 @@ import {
 import { MockBackups } from './backup';
 import { MockPc, PcError } from './pc';
 import { assetsInAlbum, generateLibrary, toContractAsset, type MockAsset, type MockLibrary } from './photos';
-import { MockPhotoBackup } from './photosBackup';
+import { MockPhotoBackup, hiddenSettingsProblem } from './photosBackup';
 import { hashString } from './random';
 import { TransferEngine, type JobItem } from './transfers';
 import { MockToolbox } from './toolbox';
@@ -597,6 +597,8 @@ export class MockBackend {
     'shell.revealInExplorer': () => ({}),
     'settings.get': () => ({ ...this.settings }),
     'settings.set': (patch) => {
+      const hiddenProblem = hiddenSettingsProblem(patch);
+      if (hiddenProblem) throw badParams(hiddenProblem);
       this.settings = { ...this.settings, ...pickSettings(patch) };
       return { ...this.settings };
     },
@@ -867,6 +869,10 @@ const SETTINGS_KEYS: (keyof Settings)[] = [
   'photoBackupConvertHeic',
   'backupFolder',
   'backupKeep',
+  // Hidden photos in the photo backup (round 4, hiddenbackup)
+  'photoBackupHidden',
+  'photoBackupHiddenLayout',
+  'photoBackupHiddenFolder',
 ];
 
 function pickSettings(patch: Partial<Settings>): Partial<Settings> {

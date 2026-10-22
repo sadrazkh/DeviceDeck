@@ -9,6 +9,7 @@ import { photoBackupFa } from '../screens/photos/backupStrings';
 import { updatesFa } from '../shell/updateStrings';
 import { whatsAppFa } from '../screens/contacts/whatsAppStrings';
 import { photoDeleteFa } from '../screens/photos/deleteStrings';
+import { hiddenBackupFa } from '../screens/photos/hiddenBackupStrings';
 import type { MessageKey } from './en';
 
 export const fa: Record<MessageKey, string> = {
@@ -554,8 +555,6 @@ export const fa: Record<MessageKey, string> = {
   'photos.backup.convertHeicHint': 'JPG همه‌جا باز می‌شود و تاریخ، دوربین و مکان را نگه می‌دارد؛ فایل‌ها حدود ۶۰٪ بزرگ‌ترند. ویدیوها و JPGها همان‌طور کپی می‌شوند.',
   'photos.backup.codecMissing.title': 'این PC هنوز نمی‌تواند HEIC را تبدیل کند',
   'photos.backup.codecMissing.body': '«HEIF Image Extensions» و «HEVC Video Extensions» را از Microsoft Store نصب کنید. تا آن موقع عکس‌های HEIC به همان شکل HEIC نگه داشته می‌شوند.',
-  'photos.backup.includeHidden': 'آلبوم Hidden هم باشد',
-  'photos.backup.includeHiddenHint': 'به‌طور پیش‌فرض خاموش است: عکس‌های پنهان روی آیفون قفل‌اند، ولی پوشهٔ پشتیبان قفل نیست.',
   'photos.backup.how': 'عکس‌هایی که از قبل در پوشه هستند (همان اندازه و همان محتوا) دوباره کپی نمی‌شوند. عکس و ویدیوی یک Live Photo با یک نام کنار هم می‌مانند. هر وقت خواستید مکث کنید یا کابل را بکشید؛ از همان‌جا ادامه می‌دهد.',
   'photos.backup.useDefaults': 'برگشت به پیش‌فرض‌های تنظیمات',
   'photos.backup.fromSettings': 'این‌ها پیش‌فرض‌های تنظیمات‌اند.',
@@ -622,4 +621,6 @@ export const fa: Record<MessageKey, string> = {
   ...whatsAppFa,
   // Deleting photos, iPhone included (round 4, photodelete)
   ...photoDeleteFa,
+  // Hidden photos in the photo backup (round 4, hiddenbackup)
+  ...hiddenBackupFa,
 };

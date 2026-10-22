@@ -21,6 +21,7 @@ import type {
   Settings,
 } from '../types';
 import { ANDROID_ID, GB, IPHONE_ID } from './mock-data';
+import { HIDDEN_LAYOUTS, HIDDEN_MODES, hiddenFolderProblem, hiddenRoot } from '../hiddenBackup';
 
 export type PhotoBackupMethod =
   | 'photos.newCount'
@@ -144,6 +145,9 @@ function numbered(name: string, n: number): string {
 export class MockPhotoBackup {
   private readonly devices = new Map<string, DeviceBackup>();
 
+  /** Where the last backup job's items go, relative to its destination ("Hidden\2026\10\IMG_H0001.HEIC"), for tests. */
+  lastItems: string[] = [];
+
   constructor(private readonly host: PhotoBackupHost) {}
 
   private state(deviceId: string): DeviceBackup {
@@ -192,16 +196,19 @@ export class MockPhotoBackup {
       destination: own.destination ?? `${s.photoBackupFolder}\\${device.name}`,
       folderPattern: own.folderPattern ?? s.photoBackupPattern,
       convertHeic: own.convertHeic ?? s.photoBackupConvertHeic,
-      includeHidden: own.includeHidden ?? false,
       range: own.range ?? EVERYTHING,
       saveEdited: own.saveEdited ?? false,
+      // As the host: only an iPhone has a Hidden album.
+      hidden: device.platform === 'ios' ? (own.hidden ?? s.photoBackupHidden) : 'exclude',
+      hiddenLayout: own.hiddenLayout ?? s.photoBackupHiddenLayout,
+      hiddenFolder: own.hiddenFolder ?? s.photoBackupHiddenFolder,
     };
   }
 
   /** The mock iPhone's photos edited in Photos: every 97th; their edited version is copied once per edit. */
   private editsWanted(deviceId: string, options: PhotoBackupOptions): MockAsset[] {
     const device = this.host.library(deviceId);
-    if (!options.saveEdited || deviceId !== IPHONE_ID) return [];
+    if (!options.saveEdited || deviceId !== IPHONE_ID || options.hidden === 'only') return [];
     const state = this.state(deviceId);
     const cutoff = rangeCutoff(options.range, this.host.now());
     return device.assets.filter(
@@ -209,7 +216,11 @@ export class MockPhotoBackup {
     );
   }
 
-  private candidates(deviceId: string, options: PhotoBackupOptions): { copy: MockAsset[]; cloud: number; hidden: number; outOfRange: number } {
+  /** As the host: hidden or not is the phone's now; a photo copied before stays copied (backedUp), whichever tree it went to. */
+  private candidates(
+    deviceId: string,
+    options: PhotoBackupOptions,
+  ): { copy: MockAsset[]; cloud: number; hidden: number; outOfRange: number; newHidden: number; normalLeftOut: number } {
     const library = this.host.library(deviceId);
     const state = this.state(deviceId);
     const cutoff = rangeCutoff(options.range, this.host.now());
@@ -217,17 +228,21 @@ export class MockPhotoBackup {
     const unknown = [...library.assets, ...library.hidden].filter((a) => !state.backedUp.has(a.id));
     const fresh = library.assets.filter((a) => !state.backedUp.has(a.id) && inRange(a));
     const hiddenFresh = library.hidden.filter((a) => !state.backedUp.has(a.id) && inRange(a));
-    const copy = fresh.filter((a) => !a.inCloudOnly);
+    const wantNormal = options.hidden !== 'only';
+    const wantHidden = options.hidden !== 'exclude';
+    const copy = wantNormal ? fresh.filter((a) => !a.inCloudOnly) : [];
     return {
-      copy: options.includeHidden ? [...copy, ...hiddenFresh] : copy,
-      cloud: fresh.length - copy.length,
-      hidden: options.includeHidden ? 0 : hiddenFresh.length,
+      copy: wantHidden ? [...copy, ...hiddenFresh] : copy,
+      cloud: wantNormal ? fresh.length - copy.length : 0,
+      hidden: wantHidden ? 0 : hiddenFresh.length,
       outOfRange: unknown.filter((a) => !inRange(a)).length,
+      newHidden: wantHidden ? hiddenFresh.length : 0,
+      normalLeftOut: wantNormal ? 0 : fresh.length,
     };
   }
 
   count(device: DeviceSummary): PhotoBackupCount {
-    const { copy, cloud, hidden, outOfRange } = this.candidates(device.id, this.options(device));
+    const { copy, cloud, hidden, outOfRange, newHidden, normalLeftOut } = this.candidates(device.id, this.options(device));
     const videos = copy.filter((a) => a.kind === 'video').length;
     return {
       deviceId: device.id,
@@ -239,6 +254,8 @@ export class MockPhotoBackup {
       hiddenLeftOut: hidden,
       outOfRange,
       newEdits: this.editsWanted(device.id, this.options(device)).length,
+      newHidden,
+      normalLeftOut,
     };
   }
 
@@ -280,9 +297,13 @@ export class MockPhotoBackup {
     const edits = new Set(this.editsWanted(deviceId, options).map((a) => a.id));
     const assetOf = new Map<JobItem, MockAsset>();
     const editOf = new Map<JobItem, MockAsset>();
+    // Hidden ones under "<hiddenFolder>\", dated inside the same way, when the options keep them apart.
+    const hiddenIds = new Set(this.host.library(deviceId).hidden.map((a) => a.id));
+    const apart = hiddenRoot(options.destination, options.hidden, options.hiddenLayout, options.hiddenFolder) ? `${options.hiddenFolder}\\` : '';
     const items = copy.map<JobItem>((a) => {
       const name = options.convertHeic ? a.fileName.replace(/\.HEIC$/i, '.jpg') : a.fileName;
-      const item = { name: folderFor(options.folderPattern, a.takenAt) + name, size: a.size + (a.livePairId ? LIVE_MOTION_BYTES : 0) };
+      const tree = hiddenIds.has(a.id) ? apart : '';
+      const item = { name: tree + folderFor(options.folderPattern, a.takenAt) + name, size: a.size + (a.livePairId ? LIVE_MOTION_BYTES : 0) };
       assetOf.set(item, a);
       if (edits.delete(a.id)) editOf.set(item, a);
       return item;
@@ -295,6 +316,7 @@ export class MockPhotoBackup {
       editOf.set(item, a);
       items.push(item);
     }
+    this.lastItems = items.map((i) => i.name);
     const startedAt = new Date(this.host.now()).toISOString();
     const run: PhotoBackupRun = {
       jobId: '',
@@ -357,7 +379,19 @@ export class MockPhotoBackup {
   readonly handlers: Handlers = {
     'photos.newCount': ({ deviceId }) => this.count(this.host.requireReady(deviceId, 'photosRead')),
     'photos.backupStatus': ({ deviceId }) => this.status(this.host.requireReady(deviceId, 'photosRead')),
-    'photos.backupConfigure': ({ deviceId, destination, folderPattern, convertHeic, includeHidden, useDefaults, range, onConnect, saveEdited }) => {
+    'photos.backupConfigure': ({
+      deviceId,
+      destination,
+      folderPattern,
+      convertHeic,
+      useDefaults,
+      range,
+      onConnect,
+      saveEdited,
+      hidden,
+      hiddenLayout,
+      hiddenFolder,
+    }) => {
       const device = this.host.requireReady(deviceId, 'photosRead');
       if (destination !== undefined && !/^[a-z]:\\/i.test(destination)) throw this.host.badParams('destination must be a full folder path on this PC.');
       if (folderPattern !== undefined && !isValidPattern(folderPattern)) {
@@ -368,6 +402,10 @@ export class MockPhotoBackup {
       if (onConnect !== undefined && !['nothing', 'notify', 'backUp'].includes(onConnect)) {
         throw this.host.badParams('onConnect must be "nothing", "notify" or "backUp".');
       }
+      if (hidden !== undefined && !HIDDEN_MODES.includes(hidden)) throw this.host.badParams('hidden must be "exclude", "include" or "only".');
+      if (hiddenLayout !== undefined && !HIDDEN_LAYOUTS.includes(hiddenLayout)) throw this.host.badParams('hiddenLayout must be "separate" or "together".');
+      const folderProblem = hiddenFolder === undefined ? null : hiddenFolderProblem(hiddenFolder);
+      if (folderProblem) throw this.host.badParams(`hiddenFolder: ${folderProblem}.`);
       const state = this.state(deviceId);
       if (onConnect !== undefined) state.onConnect = onConnect;
       if (useDefaults) state.own = {};
@@ -375,8 +413,10 @@ export class MockPhotoBackup {
       if (destination !== undefined) state.own.destination = destination;
       if (folderPattern !== undefined) state.own.folderPattern = folderPattern;
       if (convertHeic !== undefined) state.own.convertHeic = convertHeic;
-      if (includeHidden !== undefined) state.own.includeHidden = includeHidden;
       if (saveEdited !== undefined) state.own.saveEdited = saveEdited;
+      if (hidden !== undefined) state.own.hidden = hidden;
+      if (hiddenLayout !== undefined) state.own.hiddenLayout = hiddenLayout;
+      if (hiddenFolder !== undefined) state.own.hiddenFolder = hiddenFolder.trim();
       return this.status(device);
     },
     'photos.backup': ({ deviceId }) => this.start(this.host.requireReady(deviceId, 'photosRead'), 'manual'),
@@ -431,6 +471,15 @@ export class MockPhotoBackup {
       return { jobId: job.id, folder, parts };
     },
   };
+}
+
+/** Settings' hidden-photo defaults, checked as the host checks them (round 4); a message for -32602, or null. */
+export function hiddenSettingsProblem(patch: Partial<Settings>): string | null {
+  if (patch.photoBackupHidden !== undefined && !HIDDEN_MODES.includes(patch.photoBackupHidden)) return 'photoBackupHidden is out of range.';
+  if (patch.photoBackupHiddenLayout !== undefined && !HIDDEN_LAYOUTS.includes(patch.photoBackupHiddenLayout)) return 'photoBackupHiddenLayout is out of range.';
+  const folder = patch.photoBackupHiddenFolder;
+  if (folder !== undefined && (hiddenFolderProblem(folder) || folder !== folder.trim())) return 'photoBackupHiddenFolder must be one folder name.';
+  return null;
 }
 
 /** The folders a send to an app fills: the dated one, or its parts of 200 ("1-200", "201-400", …). */

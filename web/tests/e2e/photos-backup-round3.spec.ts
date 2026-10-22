@@ -66,7 +66,7 @@ test('a destination short of space or gone is said before the button, with Choos
   await expect(dialog.getByTestId('backup-count')).toBeVisible();
   // A nearly full USB stick as the destination (any change in the panel brings the phone's status back with it).
   await page.evaluate((id) => window.deviceDeckMock.handle('photos.backupConfigure', { deviceId: id, destination: 'F:\\Phone backups' }), IPHONE);
-  await dialog.getByRole('switch', { name: 'Include the Hidden album' }).click();
+  await dialog.getByTestId('backup-hidden').getByRole('radio', { name: 'Both' }).click();
   await expect(dialog.getByTestId('backup-space')).toHaveAttribute('data-state', 'short');
   await expect(dialog.getByTestId('backup-space')).toContainText('Not enough space on');
   await expect(dialog.getByTestId('backup-start')).toBeDisabled();

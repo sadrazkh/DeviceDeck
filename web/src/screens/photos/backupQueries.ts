@@ -168,6 +168,19 @@ export function exampleFolder(pattern: string, when: Date): string {
 
 export const PATTERN_PRESETS = ['yyyy/MM', 'yyyy/MM/dd', 'yyyy-MM', 'yyyy', ''] as const;
 
+/**
+ * Where a photo taken on `when` lands: "E:\Backup\Sadal\Hidden\2026\10\IMG_1234.HEIC" with `apartFolder` (a hidden one
+ * kept apart, round 4), "E:\Backup\Sadal\2026\10\IMG_1234.HEIC" without. ".jpg" when HEIC becomes JPG.
+ */
+export function examplePath(destination: string, pattern: string, when: Date, convertHeic: boolean, apartFolder: string | null): string {
+  const parts = [destination.replace(/[\\/]+$/, '')];
+  if (apartFolder) parts.push(apartFolder.trim());
+  const folder = exampleFolder(pattern, when);
+  if (folder) parts.push(folder);
+  parts.push(convertHeic ? 'IMG_1234.jpg' : 'IMG_1234.HEIC');
+  return parts.join('\\');
+}
+
 /** A local calendar day as "yyyy-MM-dd" (what range.since and <input type="date"> use). */
 export function isoDay(when: Date): string {
   const pad = (n: number) => String(n).padStart(2, '0');

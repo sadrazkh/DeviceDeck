@@ -275,6 +275,13 @@ export interface Settings {
   backupFolder: string;
   /** Backups of each phone to keep; older ones are offered for deletion. */
   backupKeep: number;
+  // Hidden photos in the photo backup (round 4, hiddenbackup): the defaults for an iPhone without its own.
+  /** The iPhone's Hidden album: left out (default), backed up too, or backed up alone. */
+  photoBackupHidden: PhotoBackupHidden;
+  /** Where hidden photos go when backed up: a folder of their own (default) or with the others. */
+  photoBackupHiddenLayout: PhotoBackupHiddenLayout;
+  /** That folder's name under each phone's backup folder ("Hidden"). */
+  photoBackupHiddenFolder: string;
 }
 
 export interface HelloResult {
@@ -439,7 +446,17 @@ export interface PhotoBackupCount {
   outOfRange: number;
   /** Edited versions to copy (iPhone, with saveEdited): new photos' edits and new edits of photos already copied. */
   newEdits: number;
+  /** How many of newCount are in the Hidden album (0 unless the options include it). Round 4. */
+  newHidden: number;
+  /** New ones not in the Hidden album, left out because the options back up hidden photos only. Round 4. */
+  normalLeftOut: number;
 }
+
+/** The iPhone's Hidden album in a backup: left out, backed up as well as the others, or backed up alone (round 4). */
+export type PhotoBackupHidden = 'exclude' | 'include' | 'only';
+
+/** Where hidden photos go: `<destination>\<hiddenFolder>\<date folders>`, or the same date folders as the others. */
+export type PhotoBackupHiddenLayout = 'separate' | 'together';
 
 /** Which photos a backup looks at, by the date taken. Undated photos are always included. */
 export interface PhotoBackupRange {
@@ -454,11 +471,15 @@ export interface PhotoBackupOptions {
   destination: string;
   folderPattern: string;
   convertHeic: boolean;
-  includeHidden: boolean;
   /** The phone's own only (Settings has none): everything by default. */
   range: PhotoBackupRange;
   /** iPhone: also "IMG_1234 (edited).jpg" next to a photo edited in Photos, kept up to date. Off by default. */
   saveEdited: boolean;
+  /** iPhone (round 4): the Hidden album. Always "exclude" on Android. */
+  hidden: PhotoBackupHidden;
+  hiddenLayout: PhotoBackupHiddenLayout;
+  /** One folder name; "Hidden" by default. */
+  hiddenFolder: string;
 }
 
 export type PhotoBackupRunState = 'running' | 'done' | 'failed' | 'cancelled';

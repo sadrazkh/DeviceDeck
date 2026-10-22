@@ -332,6 +332,9 @@ export const defaultSettings: Settings = {
   photoBackupConvertHeic: false,
   backupFolder: 'C:\\Users\\Nima\\DeviceDeck\\Backups',
   backupKeep: 3,
+  photoBackupHidden: 'exclude',
+  photoBackupHiddenLayout: 'separate',
+  photoBackupHiddenFolder: 'Hidden',
 };
 
 /** Folders shell.pickFolder hands back in turn (the mock has no real picker). */
