@@ -21,6 +21,7 @@ import { MB } from './mock-data';
 import { toContractAsset, type MockAsset, type MockLibrary } from './photos';
 import { createRandom, hashString } from './random';
 import type { JobItem } from './transfers';
+import type { AppUninstallItem, DeleteStarted, FileDeleteItem } from '../deleteTypes';
 
 export type CleanupMethodName = Extract<MethodName, `cleanup.${string}`>;
 
@@ -45,6 +46,15 @@ export interface MockCleanupContext {
   ): string;
   /** v0.4.2: an analysis finished (an iPhone that can delete reads its camera roll's view ahead). */
   analysed?(deviceId: string): void;
+  /** v0.6: queues a delete job of files or apps (./itemDelete.ts); `onFinished` hears which items went. */
+  startFileDelete?(deviceId: string, items: FileDeleteItem[], expectedBytes: number, options: DeleteJobOptions): DeleteStarted;
+  startAppRemoval?(deviceId: string, items: AppUninstallItem[], expectedBytes: number, options: DeleteJobOptions): DeleteStarted;
+}
+
+interface DeleteJobOptions {
+  copyFirstTo?: string | null;
+  skipChanged: boolean;
+  onFinished(gone: number[], missing: number[]): void;
 }
 
 const TOP_APPS = 30;
@@ -95,13 +105,6 @@ export function cleanupHandlers(ctx: MockCleanupContext): { [M in CleanupMethodN
   const mutate = (deviceId: string, change: (report: CleanupReport) => CleanupReport) => {
     const current = status(deviceId);
     if (current.report) publish({ ...current, report: change(current.report) });
-  };
-
-  const copyJob = (deviceId: string, kind: TransferKind, destination: string | null | undefined, items: JobItem[], what: string): string[] => {
-    if (!destination) return [];
-    if (!/^[a-zA-Z]:\\/.test(destination)) throw ctx.badParams('copyFirstTo must be a full folder path on this PC.');
-    const job = ctx.addJob({ deviceId, kind, title: `Copying ${what} to ${destination} before clean-up`, items });
-    return [job.id];
   };
 
   return {
@@ -197,22 +200,26 @@ export function cleanupHandlers(ctx: MockCleanupContext): { [M in CleanupMethodN
       for (const item of items) {
         if (listed.get(`${item.root}\n${item.path}`)?.size !== item.size) throw ctx.badParams(`'${item.path}' isn't a file the analysis listed at that size.`);
       }
-      const fs = ctx.fs(deviceId);
-      const present = items.filter((i) => fs.stat(i.root, i.path)?.size === i.size);
-      const jobs = copyJob(deviceId, 'copyToPc', copyFirstTo, present.map((i) => ({ name: listed.get(`${i.root}\n${i.path}`)!.name, size: i.size })), `${present.length} files`);
-      for (const item of present) fs.delete(item.root, [item.path], false);
-      const gone = new Set(present.map((i) => `${i.root}\n${i.path}`));
-      const freed = present.reduce((n, i) => n + i.size, 0);
-      mutate(deviceId, (r) =>
-        r.appFiles
-          ? {
-              ...r,
-              freeBytes: r.freeBytes === null ? null : r.freeBytes + freed,
-              appFiles: { ...r.appFiles, files: r.appFiles.files.filter((f) => !gone.has(`${f.root}\n${f.path}`)), totalBytes: r.appFiles.totalBytes - freed },
-            }
-          : r,
-      );
-      return result(present.length, items.length - present.length, freed, jobs);
+      if (!ctx.startFileDelete) throw ctx.fault('not_supported');
+      // v0.6: a filesDelete job in the Transfers drawer; it leaves alone what changed, and what went leaves the report.
+      return ctx.startFileDelete(deviceId, items.map((i) => ({ root: i.root, path: i.path, size: i.size })), expectedBytes, {
+        copyFirstTo,
+        skipChanged: true,
+        onFinished: (indexes, missing) => {
+          // What went and what was already gone leave the report; only what went freed space.
+          const gone = new Set([...indexes, ...missing].map((n) => `${items[n]!.root}\n${items[n]!.path}`));
+          const freed = indexes.reduce((n, i) => n + items[i]!.size, 0);
+          mutate(deviceId, (r) =>
+            r.appFiles
+              ? {
+                  ...r,
+                  freeBytes: r.freeBytes === null ? null : r.freeBytes + freed,
+                  appFiles: { ...r.appFiles, files: r.appFiles.files.filter((f) => !gone.has(`${f.root}\n${f.path}`)), totalBytes: r.appFiles.totalBytes - freed },
+                }
+              : r,
+          );
+        },
+      });
     },
 
     'cleanup.uninstallApps': ({ deviceId, items, expectedBytes, copyFirstTo }) => {
@@ -225,23 +232,24 @@ export function cleanupHandlers(ctx: MockCleanupContext): { [M in CleanupMethodN
         const app = listed.get(item.id);
         if (!app || app.appBytes + app.dataBytes !== item.size) throw ctx.badParams(`'${item.id}' isn't an app the analysis listed at that size.`);
       }
-      const installed = ctx.apps(deviceId);
-      const present = items.filter((i) => installed.some((a) => a.id === i.id && a.source !== 'system'));
-      const jobs = copyFirstTo
-        ? present.flatMap((i) => copyJob(deviceId, 'appExport', copyFirstTo, [{ name: `${i.id}.apk`, size: listed.get(i.id)!.appBytes }], listed.get(i.id)!.name))
-        : [];
-      const gone = new Set(present.map((i) => i.id));
-      ctx.setApps(deviceId, installed.filter((a) => !gone.has(a.id)));
-      const freed = present.reduce((n, i) => n + i.size, 0);
-      mutate(deviceId, (r) => ({
-        ...r,
-        freeBytes: r.freeBytes === null ? null : r.freeBytes + freed,
-        apps: r.apps
-          ? { ...r.apps, largest: r.apps.largest.filter((a) => !gone.has(a.id)), count: r.apps.count - gone.size, totalBytes: r.apps.totalBytes - freed }
-          : null,
-        caches: r.caches ? { ...r.caches, apps: r.caches.apps.filter((c) => !gone.has(c.appId)) } : null,
-      }));
-      return result(present.length, items.length - present.length, freed, jobs);
+      if (!ctx.startAppRemoval) throw ctx.fault('not_supported');
+      // v0.6: an appsUninstall job in the Transfers drawer; apps no longer installed are left alone.
+      return ctx.startAppRemoval(deviceId, items.map((i) => ({ id: i.id, size: i.size, name: listed.get(i.id)!.name })), expectedBytes, {
+        copyFirstTo,
+        skipChanged: true,
+        onFinished: (indexes, missing) => {
+          const gone = new Set([...indexes, ...missing].map((n) => items[n]!.id));
+          const freed = indexes.reduce((n, i) => n + items[i]!.size, 0);
+          mutate(deviceId, (r) => ({
+            ...r,
+            freeBytes: r.freeBytes === null ? null : r.freeBytes + freed,
+            apps: r.apps
+              ? { ...r.apps, largest: r.apps.largest.filter((a) => !gone.has(a.id)), count: r.apps.count - gone.size, totalBytes: r.apps.totalBytes - freed }
+              : null,
+            caches: r.caches ? { ...r.caches, apps: r.caches.apps.filter((c) => !gone.has(c.appId)) } : null,
+          }));
+        },
+      });
     },
 
     'cleanup.trimCaches': ({ deviceId }) => {

@@ -25,6 +25,7 @@ import { toast } from '../../state/toasts';
 import { jobFraction } from '../../state/transfers';
 import { useUi } from '../../state/ui';
 import { progressLine } from '../../shell/TransferDrawer';
+import { announceDeleteStarted } from '../../shell/DeleteJobRow';
 import { ScreenLayout } from '../ScreenLayout';
 import styles from './Apps.module.css';
 
@@ -337,10 +338,17 @@ export function AppsScreen({ device }: { device: DeviceSummary }) {
         body={t('apps.uninstall.body')}
         confirmLabel={t('apps.uninstall')}
         onConfirm={async () => {
+          // v0.6: one job in the Transfers drawer removes them one by one; the list is read again when it ends.
           const targets = uninstall ?? [];
           setUninstall(null);
-          for (const app of targets) await actions.uninstallApp(device, app.id, app.name);
           setSelected(new Set());
+          try {
+            const items = targets.map((a) => ({ id: a.id, size: a.appBytes + a.dataBytes, name: a.name }));
+            const started = await client.call('apps.uninstallItems', { deviceId: device.id, items, expectedBytes: items.reduce((n, i) => n + i.size, 0) });
+            announceDeleteStarted(i18n, started, 'appsUninstall');
+          } catch (error) {
+            actions.fail(error);
+          }
         }}
       />
     </ScreenLayout>

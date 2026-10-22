@@ -1,5 +1,6 @@
 // Pure helpers over the transfer queue (grouping for the drawer, the pill's overall percentage).
 
+import { isDeleteKind } from '../bridge/deleteTypes';
 import type { TransferJob, TransferState } from '../bridge/types';
 
 export type TransferGroup = 'active' | 'queued' | 'done' | 'failed';
@@ -54,8 +55,8 @@ export function overallProgress(jobs: readonly TransferJob[]): { active: number;
     if (group === 'failed') failed++;
     if (group !== 'active' && group !== 'queued') continue;
     active++;
-    // A delete (v0.4.1) moves in stages, not bytes: it counts as active without a share of the bytes.
-    if (job.kind === 'photosDelete') continue;
+    // A delete (v0.4.1; v0.6 files and apps too) moves in stages, not bytes: it counts as active without a share of the bytes.
+    if (isDeleteKind(job.kind)) continue;
     total += job.totalBytes;
     done += job.doneBytes;
   }
@@ -64,7 +65,7 @@ export function overallProgress(jobs: readonly TransferJob[]): { active: number;
 
 function isByteJob(job: TransferJob): boolean {
   const group = groupOf(job.state);
-  return job.kind !== 'photosDelete' && (group === 'active' || group === 'queued');
+  return !isDeleteKind(job.kind) && (group === 'active' || group === 'queued');
 }
 
 export function isFinished(state: TransferState): boolean {

@@ -99,33 +99,29 @@ export function useCleanupActions(device: DeviceSummary) {
       },
 
       /**
-       * Runs a confirmed clean-up. Resolves with the result when it finished (even with nothing deleted), "started" when
-       * photos and videos went to the Transfers drawer as a delete job (v0.4.1), null on an error.
+       * Runs a confirmed clean-up. Resolves with the result when it finished (trimming caches), "started" when it went
+       * to the Transfers drawer as a delete job (photos and videos since v0.4.1; files and apps since v0.6), null on
+       * an error.
        */
       async run(request: CleanupRequest): Promise<CleanupResult | 'started' | null> {
         try {
-          let result: CleanupResult;
-          let copyFirstTo: string | null = null;
           if (request.kind === 'caches') {
-            result = await client.call('cleanup.trimCaches', { deviceId });
-          } else if (request.kind === 'media') {
-            // A delete job: the report and the photo lists follow when it ends (cleanup.updated, transfer.updated).
-            const expectedBytes = request.items.reduce((n, i) => n + i.size, 0);
-            const started = await client.call('cleanup.deleteMedia', { deviceId, expectedBytes, copyFirstTo: request.copyFirstTo, items: request.items });
-            announceDeleteStarted(i18n, started);
-            return 'started';
-          } else {
-            copyFirstTo = request.copyFirstTo;
-            const expectedBytes = request.items.reduce((n, i) => n + i.size, 0);
-            const common = { deviceId, expectedBytes, copyFirstTo };
-            result =
-              request.kind === 'files'
-                ? await client.call('cleanup.deleteFiles', { ...common, items: request.items })
-                : await client.call('cleanup.uninstallApps', { ...common, items: request.items });
+            const result = await client.call('cleanup.trimCaches', { deviceId });
+            refresh(request.kind);
+            report(request.kind, result, null);
+            return result;
           }
-          refresh(request.kind);
-          report(request.kind, result, copyFirstTo);
-          return result;
+          // A delete job: the report and the lists follow when it ends (cleanup.updated, transfer.updated).
+          const expectedBytes = request.items.reduce((n, i) => n + i.size, 0);
+          const common = { deviceId, expectedBytes, copyFirstTo: request.copyFirstTo };
+          if (request.kind === 'media') {
+            announceDeleteStarted(i18n, await client.call('cleanup.deleteMedia', { ...common, items: request.items }));
+          } else if (request.kind === 'files') {
+            announceDeleteStarted(i18n, await client.call('cleanup.deleteFiles', { ...common, items: request.items }), 'filesDelete');
+          } else {
+            announceDeleteStarted(i18n, await client.call('cleanup.uninstallApps', { ...common, items: request.items }), 'appsUninstall');
+          }
+          return 'started';
         } catch (error) {
           actions.fail(error);
           return null;

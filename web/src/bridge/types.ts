@@ -214,7 +214,11 @@ export type TransferKind =
   /** Round 4: WhatsApp's media and encrypted backups copied off an Android phone. */
   | 'whatsAppMedia'
   /** v0.4.1: deleting the photos the user confirmed (Photos or Clean-up), in stages. */
-  | 'photosDelete';
+  | 'photosDelete'
+  /** v0.6: deleting the files and folders the user confirmed (Files, App files or Clean-up). */
+  | 'filesDelete'
+  /** v0.6: removing the apps the user confirmed (Apps or Clean-up). */
+  | 'appsUninstall';
 
 export type TransferState =
   | 'queued'
@@ -253,6 +257,8 @@ export interface TransferJob {
   finishedAt: string | null;
   /** v0.4.1: a job that runs in stages (photosDelete) says where it is while it runs; null otherwise. */
   stage?: TransferStage | null;
+  /** v0.6, a delete: items left alone because they changed since the user chose them (not in doneItems). */
+  skippedItems?: number;
 }
 
 /** v0.4.1: "copying" | "reading" | "deleting" | "checking" for a delete; done of total in that stage (0 of 0: not known yet). */

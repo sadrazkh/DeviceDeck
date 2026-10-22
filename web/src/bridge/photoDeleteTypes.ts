@@ -25,6 +25,8 @@ export interface PhotoDeleteSupport {
 export interface PhotoDeleteItem {
   id: string;
   size: number;
+  /** v0.6: its file name as the page shows it, so the job is listed at once. */
+  name?: string;
 }
 
 export type PhotoDeleteOutcome = 'deleted' | 'mismatch' | 'failed' | 'notTried';

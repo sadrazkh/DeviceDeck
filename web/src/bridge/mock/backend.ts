@@ -44,6 +44,7 @@ import { MockLocalSend, type MockLocalSendScenario } from './localSend';
 import { MockUpdates, type MockNotesScenario, type MockUpdateScenario } from './updates';
 import { MockWhatsApp } from './whatsApp';
 import { MockPhotoDelete, type MockDeleteSpeed, type MockPhotoDeleteScenario, type MockReachScenario } from './photoDelete';
+import { MockItemDeletes } from './itemDelete';
 import { MockDrivers, type MockDriversScenario } from './drivers';
 
 export type MockScenario = 'ready' | 'empty' | 'trust' | 'limited' | 'driverMissing' | 'iphoneOnly';
@@ -405,6 +406,20 @@ export class MockBackend {
     badParams: (message) => badParams(message),
   });
 
+  /** Every other delete as a job (v0.6): files, folders and apps (./itemDelete.ts); its handlers end the table below. */
+  readonly itemDeletes = new MockItemDeletes({
+    requireReady: (deviceId, capability) => this.requireReady(deviceId, capability),
+    fs: (deviceId) => this.fs(deviceId),
+    apps: (deviceId) => this.appLists.get(deviceId) ?? [],
+    setApps: (deviceId, list) => void this.appLists.set(deviceId, list),
+    addJob: (spec) => this.engine.add(spec),
+    job: (jobId) => this.engine.get(jobId),
+    cancelJob: (jobId) => void this.engine.cancel(jobId),
+    speed: () => this.photoDelete.speed,
+    fault: (code, message) => fault(code, message),
+    badParams: (message) => badParams(message),
+  });
+
   readonly handlers: { [M in MethodName]: Handler<M> } = {
     ...this.backups.handlers,
     'app.hello': () => ({ version: this.updates.version, isWebView: false }),
@@ -601,6 +616,10 @@ export class MockBackend {
       return {};
     },
     'transfers.list': () => this.engine.list(),
+    'transfers.items': ({ jobId }) => {
+      if (!this.engine.get(jobId)) throw badParams('No transfer has that id.');
+      return this.itemDeletes.items(jobId) ?? [];
+    },
     'transfers.pause': ({ jobId }) => this.jobCall(this.staged(() => this.engine.pause(jobId))),
     'transfers.resume': ({ jobId }) => this.jobCall(this.staged(() => this.engine.resume(jobId))),
     'transfers.cancel': ({ jobId }) => this.jobCall(this.engine.cancel(jobId)),
@@ -682,6 +701,8 @@ export class MockBackend {
       fault: (code, message) => fault(code, message),
       badParams,
       startPhotoDelete: (deviceId, items, options) => this.photoDelete.start(deviceId, items, options),
+      startFileDelete: (deviceId, items, expectedBytes, options) => this.itemDeletes.startFiles(deviceId, items, expectedBytes, options),
+      startAppRemoval: (deviceId, items, expectedBytes, options) => this.itemDeletes.startApps(deviceId, items, expectedBytes, options),
       analysed: (deviceId) => this.photoDelete.prefetch(deviceId),
     }),
     ...batteryHandlers({
@@ -697,6 +718,7 @@ export class MockBackend {
     ...this.whatsApp.handlers,
     ...this.photoDelete.handlers,
     ...this.drivers.handlers,
+    ...this.itemDeletes.handlers,
   };
 
   private pcCall<T>(run: () => T): T {

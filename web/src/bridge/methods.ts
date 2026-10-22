@@ -67,6 +67,7 @@ import type { LocalSendDiscovery, LocalSendJobStatus, LocalSendTarget, PhotosToA
 import type { ReleaseNotes } from './releaseNotes';
 import type { WhatsAppAndroidInfo, WhatsAppChat, WhatsAppMessage, WhatsAppStatus } from './whatsApp';
 import type { PhotoDeleteItem, PhotoDeleteJobStatus, PhotoDeleteReach, PhotoDeleteStarted, PhotoDeleteSupport } from './photoDeleteTypes';
+import type { AppUninstallItem, DeleteStarted, FileDeleteItem, TransferItemView } from './deleteTypes';
 
 type DeviceParams = { deviceId: string };
 
@@ -178,13 +179,14 @@ export interface BridgeMethods {
     params: DeviceParams & { items: CleanupItem[]; expectedBytes: number; copyFirstTo?: string | null };
     result: PhotoDeleteStarted;
   };
+  // v0.6: files and apps go to the Transfers drawer as delete jobs too.
   'cleanup.deleteFiles': {
     params: DeviceParams & { items: CleanupFileItem[]; expectedBytes: number; copyFirstTo?: string | null };
-    result: CleanupResult;
+    result: DeleteStarted;
   };
   'cleanup.uninstallApps': {
     params: DeviceParams & { items: CleanupItem[]; expectedBytes: number; copyFirstTo?: string | null };
-    result: CleanupResult;
+    result: DeleteStarted;
   };
   'cleanup.trimCaches': { params: DeviceParams; result: CleanupResult };
   'battery.devices': { params: Empty; result: BatteryDevice[] };
@@ -309,6 +311,13 @@ export interface BridgeMethods {
   'drivers.downloadStatus': { params: { providerId: string }; result: DriverDownloadStatus };
   'drivers.cancelDownload': { params: { providerId: string }; result: Empty };
   'drivers.openLink': { params: { link: DriverLink }; result: Empty };
+  // Every delete as a transfer (v0.6): files and folders, and apps, as jobs; any job's items afterwards (its results).
+  'files.deleteItems': { params: DeviceParams & { items: FileDeleteItem[]; expectedBytes: number }; result: DeleteStarted };
+  'apps.uninstallItems': {
+    params: DeviceParams & { items: AppUninstallItem[]; expectedBytes: number; copyFirstTo?: string | null };
+    result: DeleteStarted;
+  };
+  'transfers.items': { params: { jobId: string }; result: TransferItemView[] };
 }
 
 export type MethodName = keyof BridgeMethods;
@@ -474,6 +483,10 @@ const methodTable = {
   'drivers.downloadStatus': true,
   'drivers.cancelDownload': true,
   'drivers.openLink': true,
+  // Every delete as a transfer (v0.6)
+  'files.deleteItems': true,
+  'apps.uninstallItems': true,
+  'transfers.items': true,
 } as const satisfies Record<MethodName, true>;
 
 export const METHOD_NAMES = Object.keys(methodTable) as MethodName[];

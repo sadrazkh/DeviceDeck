@@ -30,6 +30,7 @@ import { useUi } from '../state/ui';
 import styles from './Drawer.module.css';
 import { useConflictQueue } from './ConflictDialog';
 import { DeleteJobRow, DeleteResultsDialog } from './DeleteJobRow';
+import { isDeleteJob } from '../bridge/deleteTypes';
 
 const KIND_ICON: Record<TransferKind, typeof ArrowDownloadRegular> = {
   photosExport: ImageMultipleRegular,
@@ -44,6 +45,8 @@ const KIND_ICON: Record<TransferKind, typeof ArrowDownloadRegular> = {
   localSend: ImageMultipleRegular,
   whatsAppMedia: ArrowDownloadRegular, // round 4, whatsapp session
   photosDelete: DeleteRegular, // v0.4.1: its own row (DeleteJobRow)
+  filesDelete: DeleteRegular, // v0.6: every delete has that row
+  appsUninstall: DeleteRegular,
 };
 
 const GROUP_LABEL: Record<TransferGroup, 'transfers.group.active' | 'transfers.group.queued' | 'transfers.group.done' | 'transfers.group.failed'> = {
@@ -235,7 +238,7 @@ export function TransferDrawer() {
                       </h3>
                       <ul className={styles.jobs}>
                         {groups[group].map((job) =>
-                          job.kind === 'photosDelete' ? (
+                          isDeleteJob(job) ? (
                             <DeleteJobRow key={job.id} job={job} device={devices.find((d) => d.id === job.deviceId)} showDevice={multiDevice} />
                           ) : (
                             <JobRow key={job.id} job={job} device={devices.find((d) => d.id === job.deviceId)} showDevice={multiDevice} />

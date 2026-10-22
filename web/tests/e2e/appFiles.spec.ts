@@ -114,7 +114,8 @@ test('the file browser: search, drop on a folder row, export with a folder picke
   await settle(page);
   await shot(page, 'file-browser-delete-light');
   await page.getByTestId('delete-confirm').click();
-  await expect(page.getByText('2 items deleted')).toBeVisible();
+  // v0.6: the delete runs as a job in the Transfers drawer (delete-jobs.spec.ts); the list drops what went.
+  await expect(page.getByTestId('transfer-drawer').locator('[data-kind=filesDelete]')).toHaveAttribute('data-state', 'done', { timeout: 30_000 });
   await expect(table).not.toContainText('Persepolis.mkv');
   await expect(table).not.toContainText('Subtitles');
   consoleWatch.assertClean();

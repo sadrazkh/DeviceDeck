@@ -89,7 +89,7 @@ export function PhotoDeleteDialog({
   const run = async () => {
     setBusy(true);
     const started = await deletePhotos(
-      items.map((a) => ({ id: a.id, size: a.size })),
+      items.map((a) => ({ id: a.id, size: a.size, name: a.fileName })),
       copying ? folder : null,
     );
     setBusy(false);

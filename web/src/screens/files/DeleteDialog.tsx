@@ -1,7 +1,9 @@
 // Delete asks first and says exactly what goes: each item (a folder with what is inside it), the total the phone
-// frees, and that it can't be undone. Folder contents are counted on the phone (appFiles.measure).
+// frees, and that it can't be undone. Folder contents are counted on the phone (appFiles.measure). v0.6: Delete hands
+// the items, each with the size shown, to a job in the Transfers drawer.
 
 import { DocumentRegular, FolderRegular } from '@fluentui/react-icons';
+import type { FileDeleteItem } from '../../bridge/deleteTypes';
 import type { DeviceSummary, FileEntry } from '../../bridge/types';
 import { Button } from '../../components/Button';
 import { Dialog } from '../../components/Dialog';
@@ -25,7 +27,7 @@ export function DeleteDialog({
   entries: FileEntry[] | null;
   busy: boolean;
   onCancel(): void;
-  onConfirm(): void;
+  onConfirm(items: FileDeleteItem[]): void;
 }) {
   const { t, bytes } = useI18n();
   const list = entries ?? [];
@@ -36,6 +38,9 @@ export function DeleteDialog({
   const fileCount = list.filter((e) => !e.isDirectory).length;
   const total = counted ? { files: fileCount + (usage.data?.files ?? 0), bytes: fileBytes + (usage.data?.bytes ?? 0) } : null;
   const inside = (entry: FileEntry) => usage.data?.items.find((i) => i.path === entry.path);
+  // A folder goes with what it holds: its size is what was counted inside it (0 when it couldn't be counted).
+  const confirmed = (): FileDeleteItem[] =>
+    list.map((e) => ({ root, path: e.path, size: e.isDirectory ? (inside(e)?.bytes ?? 0) : e.size, isDirectory: e.isDirectory }));
 
   return (
     <Dialog
@@ -52,7 +57,7 @@ export function DeleteDialog({
       footer={
         <>
           <Button onClick={onCancel}>{t('common.cancel')}</Button>
-          <Button variant="dangerSolid" onClick={onConfirm} loading={busy} disabled={!counted && !usage.error} autoFocus data-testid="delete-confirm">
+          <Button variant="dangerSolid" onClick={() => onConfirm(confirmed())} loading={busy} disabled={!counted && !usage.error} autoFocus data-testid="delete-confirm">
             {t('common.delete')}
           </Button>
         </>

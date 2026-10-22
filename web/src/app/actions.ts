@@ -1,6 +1,5 @@
 // Actions used from several places (screens, nav drops, the command palette), with their toasts.
 
-import { useQueryClient } from '@tanstack/react-query';
 import { useMemo } from 'react';
 import type { FileSource } from '../bridge';
 import type { DeviceSummary, FolderPattern } from '../bridge/types';
@@ -9,7 +8,6 @@ import { useI18n } from '../i18n';
 import { toast } from '../state/toasts';
 import { useUi } from '../state/ui';
 import { useClient } from './bridgeContext';
-import { keys } from './queries';
 
 export const APP_EXTENSIONS = { ios: ['.ipa'], android: ['.apk', '.apks', '.xapk'] } as const;
 
@@ -20,7 +18,6 @@ export function isAppPackage(device: DeviceSummary, name: string): boolean {
 
 export function useActions() {
   const client = useClient();
-  const queryClient = useQueryClient();
   const { t } = useI18n();
 
   return useMemo(() => {
@@ -63,19 +60,6 @@ export function useActions() {
         }
       },
 
-      async deletePhotos(device: DeviceSummary, assetIds: string[]) {
-        try {
-          const { deleted } = await client.call('photos.delete', { deviceId: device.id, assetIds });
-          await queryClient.invalidateQueries({ queryKey: ['photos.list', device.id] });
-          await queryClient.invalidateQueries({ queryKey: keys.albums(device.id) });
-          toast({ tone: 'success', title: t('photos.deleted', { count: deleted }) });
-          return true;
-        } catch (error) {
-          fail(error);
-          return false;
-        }
-      },
-
       async importPhotos(device: DeviceSummary, files: FileSource) {
         try {
           return (await client.callWithFiles('photos.import', { deviceId: device.id }, files)).jobId;
@@ -95,18 +79,6 @@ export function useActions() {
         } catch (error) {
           fail(error);
           return null;
-        }
-      },
-
-      async uninstallApp(device: DeviceSummary, appId: string, name: string) {
-        try {
-          await client.call('apps.uninstall', { deviceId: device.id, appId });
-          await queryClient.invalidateQueries({ queryKey: ['apps.list', device.id] });
-          toast({ tone: 'success', title: t('apps.uninstalled', { name }) });
-          return true;
-        } catch (error) {
-          fail(error);
-          return false;
         }
       },
 
@@ -154,5 +126,5 @@ export function useActions() {
         }
       },
     };
-  }, [client, queryClient, t]);
+  }, [client, t]);
 }

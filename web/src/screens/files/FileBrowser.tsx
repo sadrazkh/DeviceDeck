@@ -28,6 +28,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode } from 'react';
 import type { AppDataAccess } from '../../bridge/appFiles';
+import type { FileDeleteItem } from '../../bridge/deleteTypes';
 import { isBridgeError } from '../../bridge/errors';
 import type { DeviceSummary, FileEntry } from '../../bridge/types';
 import { useActions } from '../../app/actions';
@@ -43,6 +44,7 @@ import { useI18n, type MessageKey } from '../../i18n';
 import { usePrefs } from '../../state/prefs';
 import { clickSelect, emptySelection, selectAll, type ClickModifiers, type Selection } from '../../state/selection';
 import { toast } from '../../state/toasts';
+import { announceDeleteStarted } from '../../shell/DeleteJobRow';
 import type { Crumb } from './Breadcrumbs';
 import { BrowserToolbar, type FolderSwitch } from './BrowserToolbar';
 import { DeleteDialog } from './DeleteDialog';
@@ -367,7 +369,8 @@ export function FileBrowser({
   /** Whether this Android phone lets adb into Android/data (from appFiles.list); greys those folders otherwise. */
   privateData?: AppDataAccess;
 }) {
-  const { t, bytes } = useI18n();
+  const i18n = useI18n();
+  const { t, bytes } = i18n;
   const client = useClient();
   const queryClient = useQueryClient();
   const actions = useActions();
@@ -495,20 +498,22 @@ export function FileBrowser({
     if (chosen.length > 0) setDeleting(chosen);
   };
 
-  const confirmDelete = async () => {
+  // v0.6: the delete goes to the Transfers drawer as a job; the dialog closes as soon as it is queued and the list
+  // is read again when the job ends.
+  const confirmDelete = async (items: FileDeleteItem[]) => {
     if (!deleting) return;
     setDeleteBusy(true);
     try {
-      const { deleted } = await client.call('files.delete', { deviceId: device.id, root, paths: deleting.map((e) => e.path), recursive: true });
+      const expectedBytes = items.reduce((n, i) => n + i.size, 0);
+      const started = await client.call('files.deleteItems', { deviceId: device.id, items, expectedBytes });
       setDeleting(null);
       setSelection(emptySelection);
-      toast({ tone: 'success', title: t('appFiles.deleted', { count: deleted }), duration: 3000 });
+      announceDeleteStarted(i18n, started, 'filesDelete');
     } catch (error) {
       setDeleting(null);
       actions.fail(error);
     } finally {
       setDeleteBusy(false);
-      await refreshAfterChange();
     }
   };
 
@@ -662,7 +667,7 @@ export function FileBrowser({
         ) : null}
       </Dialog>
 
-      <DeleteDialog device={device} root={root} entries={deleting} busy={deleteBusy} onCancel={() => setDeleting(null)} onConfirm={() => void confirmDelete()} />
+      <DeleteDialog device={device} root={root} entries={deleting} busy={deleteBusy} onCancel={() => setDeleting(null)} onConfirm={(items) => void confirmDelete(items)} />
     </div>
   );
 }

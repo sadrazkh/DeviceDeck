@@ -4,7 +4,8 @@ import type { TransferJob } from '../bridge/types';
 import { useI18n } from '../i18n';
 import { usePhotoBackupEvents } from '../screens/photos/backupQueries';
 import { copyDestinations, refreshAfterDelete } from '../screens/photos/photoDelete';
-import { announceDeleteFinished, deleteJobKey } from '../shell/DeleteJobRow';
+import { announceDeleteFinished, deleteItemsKey, deleteJobKey } from '../shell/DeleteJobRow';
+import { isDeleteJob } from '../bridge/deleteTypes';
 import type { DeviceSummary } from '../bridge/types';
 import { toast } from '../state/toasts';
 import { useUi } from '../state/ui';
@@ -35,6 +36,19 @@ function invalidateAfter(queryClient: ReturnType<typeof useQueryClient>, job: Tr
       break;
     case 'photosToApp':
       void queryClient.invalidateQueries({ queryKey: ['files.list', id] });
+      break;
+    // v0.6: a delete of files or apps ended (done, stopped or failed): what went leaves the lists.
+    case 'filesDelete':
+      void queryClient.invalidateQueries({ queryKey: ['files.list', id] });
+      void queryClient.invalidateQueries({ queryKey: keys.storage(id) });
+      void queryClient.invalidateQueries({ queryKey: ['appFiles.measure', id] });
+      void queryClient.invalidateQueries({ queryKey: ['appFiles.list', id] });
+      break;
+    case 'appsUninstall':
+      void queryClient.invalidateQueries({ queryKey: ['apps.list', id] });
+      void queryClient.invalidateQueries({ queryKey: keys.storage(id) });
+      void queryClient.invalidateQueries({ queryKey: keys.roots(id) });
+      void queryClient.invalidateQueries({ queryKey: ['appFiles.list', id] });
       break;
     case 'appInstall':
       void queryClient.invalidateQueries({ queryKey: ['apps.list', id] });
@@ -73,11 +87,16 @@ export function useLiveUpdates() {
           }
           if (!previous || previous.state === job.state) return;
           const { t } = latest.current.i18n;
-          if (job.kind === 'photosDelete') {
-            // v0.4.1: a delete ended: the photo lists, albums, storage and its results are read again.
+          if (isDeleteJob(job)) {
+            // v0.4.1: a delete ended: the photo lists, albums, storage and its results are read again (v0.6: files and apps too).
             if (job.state === 'done' || job.state === 'failed' || job.state === 'cancelled') {
-              refreshAfterDelete(queryClient, job.deviceId);
-              void queryClient.invalidateQueries({ queryKey: deleteJobKey(job.id) });
+              if (job.kind === 'photosDelete') {
+                refreshAfterDelete(queryClient, job.deviceId);
+                void queryClient.invalidateQueries({ queryKey: deleteJobKey(job.id) });
+              } else {
+                invalidateAfter(queryClient, job);
+                void queryClient.invalidateQueries({ queryKey: deleteItemsKey(job.id) });
+              }
               const device = queryClient.getQueryData<DeviceSummary[]>(keys.devices)?.find((d) => d.id === job.deviceId);
               announceDeleteFinished(latest.current.i18n, job, device);
             }

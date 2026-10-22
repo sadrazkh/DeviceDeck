@@ -144,15 +144,20 @@ describe('mock clean-up', () => {
     const { client, backend } = setup();
     const ios = await analyzed(client, backend, IPHONE_ID);
     const movie = ios.appFiles!.files[0]!;
+    // v0.6: a filesDelete job; it reports each item once it ran.
     const files = await client.call('cleanup.deleteFiles', { deviceId: IPHONE_ID, items: [{ root: movie.root, path: movie.path, size: movie.size }], expectedBytes: movie.size });
-    expect(files.deleted).toBe(1);
+    run(backend, 2_000);
+    expect((await client.call('transfers.items', { jobId: files.jobId })).map((i) => i.state)).toEqual(['done']);
+    expect((await client.call('cleanup.status', { deviceId: IPHONE_ID })).report!.appFiles!.files.map((f) => f.path)).not.toContain(movie.path);
     expect(await client.call('files.list', { deviceId: IPHONE_ID, root: movie.root, path: '/' })).not.toContainEqual(expect.objectContaining({ path: movie.path }));
 
     const android = await analyzed(client, backend, ANDROID_ID);
     const app = android.apps!.largest[0]!;
     const size = app.appBytes + app.dataBytes;
     const removed = await client.call('cleanup.uninstallApps', { deviceId: ANDROID_ID, items: [{ id: app.id, size }], expectedBytes: size });
-    expect(removed.deleted).toBe(1);
+    run(backend, 2_000);
+    const job = (await client.call('transfers.list', {})).find((j) => j.id === removed.jobId)!;
+    expect(job).toMatchObject({ kind: 'appsUninstall', state: 'done', doneItems: 1, doneBytes: size });
     expect((await client.call('apps.list', { deviceId: ANDROID_ID, includeSystem: true })).map((a) => a.id)).not.toContain(app.id);
 
     const trimmed = await client.call('cleanup.trimCaches', { deviceId: ANDROID_ID });

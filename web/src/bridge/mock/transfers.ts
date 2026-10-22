@@ -75,6 +75,8 @@ const SPEED: Record<TransferKind, number> = {
   localSend: 28 * MB,
   whatsAppMedia: 36 * MB, // round 4
   photosDelete: 0, // v0.4.1: staged, not by bytes
+  filesDelete: 0, // v0.6: every delete is staged
+  appsUninstall: 0,
 };
 
 export class TransferEngine {
