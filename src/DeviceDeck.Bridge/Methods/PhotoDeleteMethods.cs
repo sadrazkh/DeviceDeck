@@ -32,6 +32,20 @@ public static class PhotoDeleteMethods
             return service.StartAsync(p.DeviceId, p.Items ?? [], p.ExpectedBytes, p.CopyFirstTo, PhotoDeleteSource.Photos, 0, ct);
         });
         rpc.Register<PhotosDeleteJobParams, PhotoDeleteJobStatus>("photos.deleteJob", (p, _) => Task.FromResult(service.Status(p.JobId)));
+        // v0.4.2: which items the PC can't delete (Windows lists them nowhere), from a complete read only.
+        rpc.Register<DeviceParams, PhotoDeleteReach>("photos.deleteReach", async (p, ct) =>
+        {
+            var device = s.Hub.GetUsableDevice(p.DeviceId);
+            if (device is IPhotoDeletePrefetch reach)
+            {
+                return await reach.GetDeleteReachAsync(ct).ConfigureAwait(false);
+            }
+
+            // Android (MediaStore) deletes whatever it lists.
+            return new PhotoDeleteReach(p.DeviceId, device.Summary.Capabilities.HasFlag(DeviceCapability.PhotosDelete)
+                ? PhotoDeleteReachState.Ready : PhotoDeleteReachState.Unsupported, 0, 0, [], null);
+        });
+
         // v0.4.2: a delete is likely (selection mode, the delete dialog): an iPhone reads ahead. Always answers at once.
         rpc.Register<PhotosDeletePrepareParams, Empty>("photos.deletePrepare", (p, _) =>
         {

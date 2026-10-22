@@ -606,6 +606,107 @@ public sealed class WpdCameraRollTests
         Assert.Empty(device.DeleteCalls);
     }
 
+    // ---------- Which items the PC can't delete (v0.4.2) ----------
+
+    [Fact]
+    public async Task Nothing_is_marked_until_windows_view_is_read_completely_and_then_only_what_it_lists_nowhere()
+    {
+        var device = Library(6);
+        // Moved over from an earlier iPhone: in DCIM, in the library, not in Windows' view.
+        _roll.Add("DCIM/100APPLE/IMG_0020.MOV", 900_000_000).Add("DCIM/100APPLE/IMG_0021.HEIC", 3_000_000);
+        using var hold = new SemaphoreSlim(0);
+        var pause = true;
+        var held = false;
+        var deleter = Deleter();
+        // Held once it knows how much there is to read, before the files.
+        _wpd.BeforeRead = () =>
+        {
+            if (Volatile.Read(ref pause) && deleter.PrefetchProgress.Total > 0)
+            {
+                Volatile.Write(ref held, true);
+                hold.Wait(TimeSpan.FromSeconds(10));
+            }
+        };
+
+        var first = await deleter.ReachAsync("phone", Ct, Ct); // starts the read ahead
+        Assert.Equal((PhotoDeleteReachState.Checking, 0), (first.State, first.NotListed.Count));
+        await WaitUntil(() => Volatile.Read(ref held));
+        var midway = await deleter.ReachAsync("phone", Ct, Ct);
+        Assert.Equal(PhotoDeleteReachState.Checking, midway.State);
+        Assert.Empty(midway.NotListed); // never from a partial listing
+        Assert.Equal(6, midway.Total);
+
+        Volatile.Write(ref pause, false);
+        hold.Release(1000);
+        await ReadAheadFinished(deleter);
+        var ready = await deleter.ReachAsync("phone", Ct, Ct);
+
+        Assert.Equal(PhotoDeleteReachState.Ready, ready.State);
+        Assert.Equal(["DCIM/100APPLE/IMG_0020.MOV", "DCIM/100APPLE/IMG_0021.HEIC"], ready.NotListed.Order());
+        Assert.Equal((6, 6), (ready.Done, ready.Total));
+        Assert.Same(ready, await deleter.ReachAsync("phone", Ct, Ct)); // worked out once per listing
+        Assert.Empty(device.DeleteCalls);
+    }
+
+    [Fact]
+    public async Task Items_it_cant_tell_are_never_marked()
+    {
+        // A name the phone uses twice, and a picture Windows shows under a name of the phone's making.
+        var taken = new DateTimeOffset(2026, 10, 21, 13, 42, 44, TimeSpan.Zero);
+        _roll.Add("DCIM/107APPLE/IMG_7413.HEIC", 3_013_973).Add("DCIM/107APPLE/IMG_7414.PNG", 35_861);
+        _roll.Add("DCIM/108APPLE/IMG_7413.HEIC", 5_000); // IMG_7413.HEIC twice on the phone
+        _roll.Taken["DCIM/107APPLE/IMG_7414.PNG"] = taken;
+        var device = _wpd.AddIphone(Udid);
+        var month = device.AddFolder(device.AddStorage(), "202610_a");
+        device.AddFile(month, "IMG_7413.HEIC", 3_013_973, canDelete: null, "DCIM/107APPLE/IMG_7413.HEIC");
+        device.AddFile(month, "PZHI6539.PNG", 35_861, canDelete: null, "DCIM/107APPLE/IMG_7414.PNG", taken.ToOffset(TimeSpan.FromHours(3.5)));
+        var deleter = Deleter();
+        deleter.StartPrefetch("test", Ct);
+        await ReadAheadFinished(deleter);
+
+        var reach = await deleter.ReachAsync("phone", Ct, Ct);
+
+        Assert.Equal(PhotoDeleteReachState.Ready, reach.State);
+        Assert.Empty(reach.NotListed); // the renamed PNGs are found; the name used twice is ambiguous, not "nowhere"
+        Assert.Empty(device.DeleteCalls);
+
+        // Without Photos.sqlite no size is known: nothing is marked either.
+        _roll.WithDatabase = false;
+        _roll.Add("DCIM/100APPLE/IMG_0099.HEIC", 1_000);
+        await _roll.GetIndexAsync(refresh: true, Ct);
+        _time.Now += TimeSpan.FromMinutes(6);
+        deleter.StartPrefetch("again", Ct);
+        await ReadAheadFinished(deleter);
+        Assert.Empty((await deleter.ReachAsync("phone", Ct, Ct)).NotListed);
+    }
+
+    [Fact]
+    public async Task While_a_delete_runs_what_was_known_stands()
+    {
+        Library(4);
+        _roll.Add("DCIM/100APPLE/IMG_0020.MOV", 900_000_000);
+        var deleter = Deleter();
+        deleter.StartPrefetch("test", Ct);
+        await ReadAheadFinished(deleter);
+        var known = await deleter.ReachAsync("phone", Ct, Ct);
+        using var hold = new SemaphoreSlim(0);
+        var pause = true;
+        _wpd.BeforeRead = () =>
+        {
+            if (Volatile.Read(ref pause))
+            {
+                hold.Wait(TimeSpan.FromSeconds(10));
+            }
+        };
+        var deleting = Task.Run(() => deleter.DeleteAsync([Item(1)], Ct));
+        await WaitUntil(() => _wpd.ReadWriteOpens > 0);
+
+        Assert.Same(known, await deleter.ReachAsync("phone", Ct, Ct));
+        Volatile.Write(ref pause, false);
+        hold.Release(1000);
+        await deleting;
+    }
+
     private static async Task WaitUntil(Func<bool> condition)
     {
         var deadline = DateTime.UtcNow.AddSeconds(30);

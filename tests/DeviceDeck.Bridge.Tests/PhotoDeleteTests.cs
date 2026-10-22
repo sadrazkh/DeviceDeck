@@ -172,6 +172,20 @@ public sealed class PhotoDeleteTests
     }
 
     [Fact]
+    public async Task Which_items_the_PC_cant_delete_is_asked_per_phone()
+    {
+        await using var host = await TestHost.StartAsync(CleanupPhones.Android(), CleanupPhones.Iphone());
+
+        var android = (await host.ResultAsync("photos.deleteReach", new { deviceId = CleanupPhones.AndroidId }))!.AsObject();
+        Assert.Equal(["deviceId", "state", "done", "total", "notListed", "checkedAt"], android.Select(p => p.Key));
+        Assert.Equal("ready", (string?)android["state"]);
+        Assert.Empty(android["notListed"]!.AsArray()); // MediaStore deletes whatever it lists
+
+        var iphone = (await host.ResultAsync("photos.deleteReach", new { deviceId = CleanupPhones.IphoneId }))!.AsObject();
+        Assert.Equal("unsupported", (string?)iphone["state"]); // this one can't delete from the PC at all
+    }
+
+    [Fact]
     public async Task A_delete_job_cant_be_paused_resumed_or_retried()
     {
         await using var host = await TestHost.StartAsync(CleanupPhones.Android());
@@ -232,6 +246,12 @@ public sealed class PhotoDeleteTests
         public ConcurrentQueue<string> Prefetches { get; } = new();
 
         public void PrefetchForDelete(string reason) => Prefetches.Enqueue(reason);
+
+        /// <summary>What the phone says Windows lists nowhere (v0.4.2).</summary>
+        public PhotoDeleteReach? Reach { get; set; }
+
+        public Task<PhotoDeleteReach> GetDeleteReachAsync(CancellationToken ct) =>
+            Task.FromResult(Reach ?? new PhotoDeleteReach(Summary.Id, PhotoDeleteReachState.Checking, 0, 0, [], null));
 
         public Task<IReadOnlyDictionary<string, string>> HashAssetsAsync(IReadOnlyList<string> assetIds, long? prefixBytes, IProgress<long>? progress, CancellationToken ct) =>
             ((IMediaHashSource)inner).HashAssetsAsync(assetIds, prefixBytes, progress, ct);

@@ -157,11 +157,18 @@ public sealed class WpdPhotoDeleter
             }
 
             stats.FoldersInRoll = listing.Folders.Count;
+            // How much there is to read, for "Checking which items this PC can delete… N of M" (listing a folder is quick).
+            var todo = listing.Folders.Where(f => !listing.Has(f.Id)).OrderByDescending(f => WpdMonths.MonthOf(f.FileName) ?? (9999, 12)).ToList();
+            var already = listing.FileCount;
+            var total = already + todo.Sum(f => c.ChildIds(f.Id, ct).Count);
+            SetPrefetchProgress(already, total);
+            var progress = new WpdRollReader(c, stats, (done, _) => SetPrefetchProgress(already + done, total), ct);
+
             // Folder by folder, newest first (what Clean-up and Photos show first), each kept as soon as it is read.
-            foreach (var folder in listing.Folders.OrderByDescending(f => WpdMonths.MonthOf(f.FileName) ?? (9999, 12)))
+            foreach (var folder in todo)
             {
                 ct.ThrowIfCancellationRequested();
-                reader.Load(listing, [folder]);
+                progress.Load(listing, [folder]);
                 if (!_cache.Keep(listing, generation))
                 {
                     return; // the phone went away meanwhile
@@ -178,6 +185,87 @@ public sealed class WpdPhotoDeleter
         {
             Log($"read ahead ({reason}) failed: {ex.Message}");
         }
+    }
+
+    private long _prefetchProgress;
+
+    private void SetPrefetchProgress(int done, int total) => Interlocked.Exchange(ref _prefetchProgress, ((long)Math.Min(done, total) << 32) | (uint)total);
+
+    /// <summary>How far the read ahead got: objects read of all (0 of 0 before it has listed the folders).</summary>
+    public (int Done, int Total) PrefetchProgress
+    {
+        get
+        {
+            var value = Interlocked.Read(ref _prefetchProgress);
+            return ((int)(value >> 32), (int)(uint)value);
+        }
+    }
+
+    private PhotoDeleteReach? _reach;
+    private (DateTimeOffset ReadAt, int Files) _reachOf;
+
+    /// <summary>
+    /// Which of the phone's items Windows lists nowhere, from a complete, recent listing only: those can only be deleted
+    /// on the phone. Without one, how far the read ahead got (it is started when none runs). While a delete runs, what
+    /// was known before. "Nowhere" is what a delete itself finds: no object by name (or by the phone's made-up name,
+    /// size and time) in any folder. Items it can't tell (no size known, a name used twice) are never marked.
+    /// </summary>
+    public async Task<PhotoDeleteReach> ReachAsync(string deviceId, CancellationToken life, CancellationToken ct)
+    {
+        var deleting = _gate.CurrentCount == 0;
+        var reading = Prefetching is not null;
+        (WpdDcim Dcim, IReadOnlyList<string> FolderNames, DateTimeOffset ReadAt, int Files)? complete = null;
+        if (!deleting && !reading)
+        {
+            try
+            {
+                complete = _cache.Complete();
+            }
+            catch (InvalidOperationException)
+            {
+                // A delete started reading the same listing just now: as if it ran.
+                deleting = true;
+            }
+        }
+
+        if (complete is not { } listing)
+        {
+            if (deleting && Volatile.Read(ref _reach) is { } known)
+            {
+                return known;
+            }
+
+            if (!reading && !deleting)
+            {
+                StartPrefetch("checking which items this PC can delete", life);
+            }
+
+            var (done, total) = PrefetchProgress;
+            return new PhotoDeleteReach(deviceId, PhotoDeleteReachState.Checking, done, total, [], null);
+        }
+
+        if (Volatile.Read(ref _reach) is { } cached && _reachOf == (listing.ReadAt, listing.Files))
+        {
+            return cached;
+        }
+
+        var index = _phone.CachedIndex ?? await _phone.GetIndexAsync(refresh: false, ct).ConfigureAwait(false);
+        var phoneFiles = await _phone.ListDcimAsync(ct).ConfigureAwait(false);
+        var onDisk = phoneFiles.ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var phoneAssets = index.Mode == PhotoIndexMode.Database
+            ? index.Assets.Where(a => a.Size > 0).Select(a => new WpdPhoneAsset(a.Id, a.Size, a.TakenAt)).ToList()
+            : null;
+        var map = new WpdDcimMap(listing.Dcim, phoneFiles, phoneAssets, listing.FolderNames);
+        var notListed = index.Assets
+            .Where(a => !a.InCloudOnly && a.Size > 0 && onDisk.Contains(a.Id))
+            .Where(a => map.Find(a.Id, a.Size, a.TakenAt).Problem is WpdMapProblem.Absent or WpdMapProblem.NoFolder)
+            .Select(a => a.Id)
+            .ToList();
+        var reach = new PhotoDeleteReach(deviceId, PhotoDeleteReachState.Ready, listing.Files, listing.Files, notListed, listing.ReadAt);
+        _reachOf = (listing.ReadAt, listing.Files);
+        Volatile.Write(ref _reach, reach);
+        Log($"Windows lists {index.Assets.Count - notListed.Count:N0} of {index.Assets.Count:N0} items; {notListed.Count:N0} can only be deleted on the phone");
+        return reach;
     }
 
     private void CancelPrefetch()

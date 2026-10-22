@@ -51,6 +51,17 @@ public sealed partial class IosDevice : IPhotoDeleter, IPhotoDeletePrefetch
         }
     }
 
+    /// <summary>Which items Windows lists nowhere (v0.4.2), from a complete read of its view only.</summary>
+    public async Task<PhotoDeleteReach> GetDeleteReachAsync(CancellationToken ct)
+    {
+        if (!_photosDeletable || Summary.State != DeviceState.Ready)
+        {
+            return new PhotoDeleteReach(Summary.Id, PhotoDeleteReachState.Unsupported, 0, 0, [], null);
+        }
+
+        return await UseAsync(_ => PhotoDeleter.ReachAsync(Summary.Id, _life.Token, ct)).ConfigureAwait(false);
+    }
+
     /// <summary>IPhotoLibrary.DeleteAsync: the ids at the sizes the library lists now; throws at the first one not deleted.</summary>
     internal async Task DeleteThroughWindowsAsync(IReadOnlyList<string> assetIds, CancellationToken ct)
     {
