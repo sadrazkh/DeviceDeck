@@ -21,8 +21,11 @@ public sealed class WpdReadStats
 
     public int BulkRequests { get; set; }
 
-    /// <summary>The driver said it doesn't do bulk reads.</summary>
+    /// <summary>The driver said it doesn't do bulk reads, or a bulk read failed (<see cref="BulkError"/>).</summary>
     public bool NoBulk { get; set; }
+
+    /// <summary>Why a bulk read failed, when it did.</summary>
+    public string? BulkError { get; set; }
 
     /// <summary>Camera-roll folders Windows lists.</summary>
     public int FoldersInRoll { get; set; }
@@ -30,8 +33,11 @@ public sealed class WpdReadStats
     public int FoldersRead { get; set; }
     public int FoldersFromCache { get; set; }
 
-    /// <summary>Every folder had to be walked, fresh: a match was missing from the folders walked first, or the listing kept was out of date.</summary>
-    public string? FullWalkBecause { get; set; }
+    /// <summary>
+    /// Why Windows' view was read again, fresh: a match was missing from the folders read first (then every folder was
+    /// read), or the listing kept from earlier was out of date.
+    /// </summary>
+    public string? FreshBecause { get; set; }
 
     /// <summary>Objects kept from an earlier read, read again before anything was deleted.</summary>
     public int Verified { get; set; }
@@ -40,9 +46,9 @@ public sealed class WpdReadStats
 
     public override string ToString() =>
         FormattableString.Invariant($"{FoldersRead} of {FoldersInRoll} folders read, {FoldersFromCache} kept from earlier; {Bulk} objects in {BulkRequests} bulk requests, {OneByOne} one by one")
-        + (NoBulk ? " (no bulk reads)" : "")
+        + (NoBulk ? BulkError is { } error ? " (bulk read failed: " + error + ")" : " (no bulk reads)" : "")
         + (Verified > 0 ? FormattableString.Invariant($"; {Verified} kept objects checked again") : "")
-        + (FullWalkBecause is { } why ? "; full walk: " + why : "")
+        + (FreshBecause is { } why ? "; read again: " + why : "")
         + FormattableString.Invariant($"; {Elapsed.TotalSeconds:0.0} s");
 }
 
@@ -66,7 +72,16 @@ public static class WpdObjectReader
             IReadOnlyList<WpdObject>? answered = null;
             if (!stats.NoBulk)
             {
-                answered = c.GetMany(chunk, n => progress?.Invoke(start + Math.Min(n, chunk.Count)), ct);
+                try
+                {
+                    answered = c.GetMany(chunk, n => progress?.Invoke(start + Math.Min(n, chunk.Count)), ct);
+                }
+                catch (WpdException ex)
+                {
+                    // A bulk read that failed or stalled: one by one from here on (a phone that went away fails those too).
+                    stats.BulkError = ex.Message;
+                }
+
                 if (answered is null)
                 {
                     stats.NoBulk = true;

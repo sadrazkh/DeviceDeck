@@ -538,7 +538,7 @@ public sealed class WpdPhotoDeleter
             if (!(full && fresh) && plans.Any(p => p.Problem is WpdMapProblem.Absent or WpdMapProblem.NoFolder))
             {
                 // Not where its month (or folder) says, or not in the listing kept from earlier: look everywhere, fresh.
-                stats.FullWalkBecause = fresh ? "an item isn't in the folders its date points to" : "an item isn't in the listing kept from earlier";
+                stats.FreshBecause = fresh ? "an item isn't in the folders its date points to" : "an item isn't in the listing kept from earlier";
                 if (!fresh)
                 {
                     listing = reader.Structure(null, pnpId, _cache.Now, out _);
@@ -559,7 +559,7 @@ public sealed class WpdPhotoDeleter
 
             if (plans.All(p => p.Refusal is null) && !Verified(reader, listing, map, plans))
             {
-                stats.FullWalkBecause = "an object kept from earlier changed";
+                stats.FreshBecause = "an object kept from earlier changed";
                 listing = reader.Structure(null, pnpId, _cache.Now, out _);
                 fresh = true;
                 continue;

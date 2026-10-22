@@ -248,8 +248,31 @@ public sealed class ComWpdBackend : IWpdBackend
                     }
 
                     bulk.Start(ref context);
+                    var quiet = System.Diagnostics.Stopwatch.StartNew();
+                    var seen = 0;
                     while (!callback.Ended.Wait(TimeSpan.FromMilliseconds(100)))
                     {
+                        if (callback.Count != seen)
+                        {
+                            seen = callback.Count;
+                            quiet.Restart();
+                        }
+
+                        // A driver that stops answering: given up, and the objects are read one by one.
+                        if (quiet.Elapsed > BulkStall)
+                        {
+                            try
+                            {
+                                bulk.Cancel(ref context);
+                            }
+                            catch (COMException)
+                            {
+                            }
+
+                            callback.Ended.Wait(TimeSpan.FromSeconds(5));
+                            throw new WpdException("Windows stopped answering a bulk read of the iPhone's objects.", WpdErrors.Timeout);
+                        }
+
                         if (ct.IsCancellationRequested)
                         {
                             try
@@ -453,6 +476,9 @@ public sealed class ComWpdBackend : IWpdBackend
         }
     }
 
+    /// <summary>How long a bulk read may go without an answer before it is given up (then read one by one).</summary>
+    internal static readonly TimeSpan BulkStall = TimeSpan.FromSeconds(30);
+
     /// <summary>One object's properties as read back (a plain read or one entry of a bulk answer).</summary>
     private static WpdObject ObjectFrom(string objectId, IPortableDeviceValues values)
     {
@@ -483,6 +509,17 @@ public sealed class ComWpdBackend : IWpdBackend
     {
         private readonly Lock _gate = new();
         private readonly List<WpdObject> _objects = [];
+
+        public int Count
+        {
+            get
+            {
+                lock (_gate)
+                {
+                    return _objects.Count;
+                }
+            }
+        }
 
         public ManualResetEventSlim Ended { get; } = new(false);
 
@@ -554,11 +591,19 @@ public sealed class ComWpdBackend : IWpdBackend
         public void Dispose() => Ended.Dispose();
     }
 
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int ProgressSlot(IntPtr self, ref Guid context, IntPtr results);
+
+    [UnmanagedFunctionPointer(CallingConvention.StdCall)]
+    private delegate int EndSlot(IntPtr self, ref Guid context, int status);
+
     /// <summary>
-    /// Feeds a bulk answer built from WPD's in-process objects (no device needed) through <see cref="BulkCallback"/>, the
-    /// way Windows calls it back: one entry with an id, a name and a size, one without an id. Returns what it collected.
+    /// Feeds a bulk answer built from WPD's in-process objects (no device needed) through <see cref="BulkCallback"/> the
+    /// way Windows calls it back: from native code, through the callback's COM interface (QueryInterface on the object
+    /// Windows is handed, then OnProgress and OnEnd from its vtable). One entry with an id, a name and a size, one without
+    /// an id. Returns the QueryInterface result and what the callback collected.
     /// </summary>
-    internal static (IReadOnlyList<WpdObject> Objects, int Status, int Progress) BulkSelfTest()
+    internal static (int QueryInterface, IReadOnlyList<WpdObject> Objects, int Status, int Progress) BulkSelfTest()
     {
         var results = Create<IPortableDeviceValuesCollection>(WpdClsids.PortableDeviceValuesCollection);
         var withId = Create<IPortableDeviceValues>(WpdClsids.PortableDeviceValues);
@@ -578,10 +623,45 @@ public sealed class ComWpdBackend : IWpdBackend
         var seen = 0;
         using var callback = new BulkCallback(n => seen = n);
         var context = Guid.NewGuid();
-        callback.OnStart(ref context);
-        callback.OnProgress(ref context, results); // releases results
-        callback.OnEnd(ref context, 0);
-        return (callback.Objects, callback.Status, seen);
+        var unknown = Marshal.GetIUnknownForObject(callback);
+        var resultsPointer = Marshal.GetComInterfaceForObject(results, typeof(IPortableDeviceValuesCollection));
+        try
+        {
+            var iid = typeof(IPortableDevicePropertiesBulkCallback).GUID;
+            var hr = Marshal.QueryInterface(unknown, in iid, out var itf);
+            if (hr < 0)
+            {
+                return (hr, [], 0, 0);
+            }
+
+            try
+            {
+                // IUnknown's three slots, then OnStart (3), OnProgress (4), OnEnd (5).
+                var vtable = Marshal.ReadIntPtr(itf);
+                var progress = Marshal.GetDelegateForFunctionPointer<ProgressSlot>(Marshal.ReadIntPtr(vtable, 4 * IntPtr.Size));
+                var end = Marshal.GetDelegateForFunctionPointer<EndSlot>(Marshal.ReadIntPtr(vtable, 5 * IntPtr.Size));
+                var progressHr = progress(itf, ref context, resultsPointer);
+                end(itf, ref context, 0);
+                return (progressHr, callback.Objects, callback.Status, seen);
+            }
+            finally
+            {
+                Marshal.Release(itf);
+            }
+        }
+        finally
+        {
+            Marshal.Release(resultsPointer);
+            Marshal.Release(unknown);
+            try
+            {
+                Marshal.ReleaseComObject(results);
+            }
+            catch (InvalidComObjectException)
+            {
+                // The callback released the same object already (it releases what Windows hands it).
+            }
+        }
     }
 
     /// <summary>

@@ -99,6 +99,21 @@ public sealed class WpdCameraRollTests
     }
 
     [Fact]
+    public async Task A_bulk_read_that_fails_falls_back_to_one_by_one_and_the_delete_goes_on()
+    {
+        var device = Library(8);
+        _wpd.BulkFails = WpdErrors.Timeout;
+        var deleter = Deleter();
+
+        var results = await deleter.DeleteAsync([Item(3), Item(4)], Ct);
+
+        Assert.All(results, r => Assert.Equal(PhotoDeleteOutcome.Deleted, r.Outcome));
+        Assert.True(deleter.LastRead!.NoBulk);
+        Assert.Contains("bulk read failed", deleter.LastRead.ToString());
+        Assert.Single(device.DeleteCalls);
+    }
+
+    [Fact]
     public void Bulk_answers_come_back_through_windows_own_objects()
     {
         if (!OperatingSystem.IsWindows())
@@ -106,8 +121,9 @@ public sealed class WpdCameraRollTests
             return;
         }
 
-        var (objects, status, progress) = ComWpdBackend.BulkSelfTest();
+        var (hr, objects, status, progress) = ComWpdBackend.BulkSelfTest();
 
+        Assert.Equal(0, hr); // Windows can reach the callback through its COM interface
         var o = Assert.Single(objects); // the entry without an id can't be placed
         Assert.Equal(("o2A", "IMG_0002.MOV", 123_456L), (o.Id, o.FileName, o.Size));
         Assert.Equal(WpdObjectKind.File, o.Kind);
@@ -151,7 +167,7 @@ public sealed class WpdCameraRollTests
         var results = await deleter.DeleteAsync(items, Ct);
 
         Assert.All(results, r => Assert.Equal(PhotoDeleteOutcome.Deleted, r.Outcome));
-        Assert.Equal((1, 18, null), (deleter.LastRead!.FoldersRead, deleter.LastRead.FoldersInRoll, deleter.LastRead.FullWalkBecause));
+        Assert.Equal((1, 18, null), (deleter.LastRead!.FoldersRead, deleter.LastRead.FoldersInRoll, deleter.LastRead.FreshBecause));
         Assert.Contains(_log.Written, l => l.Contains("(by month)", StringComparison.Ordinal));
     }
 
@@ -185,7 +201,7 @@ public sealed class WpdCameraRollTests
 
         Assert.All(results, r => Assert.Equal(PhotoDeleteOutcome.Deleted, r.Outcome));
         Assert.Equal(18, deleter.LastRead!.FoldersRead);
-        Assert.Contains("isn't in the folders its date points to", deleter.LastRead.FullWalkBecause);
+        Assert.Contains("isn't in the folders its date points to", deleter.LastRead.FreshBecause);
     }
 
     [Fact]
@@ -296,7 +312,7 @@ public sealed class WpdCameraRollTests
         var results = await deleter.DeleteAsync([Item(4), Item(5)], Ct);
 
         Assert.All(results, r => Assert.Equal(PhotoDeleteOutcome.Deleted, r.Outcome));
-        Assert.Equal("an object kept from earlier changed", deleter.LastRead!.FullWalkBecause);
+        Assert.Equal("an object kept from earlier changed", deleter.LastRead!.FreshBecause);
         Assert.Contains(renewed, device.DeleteCalls[^1]);
         Assert.Equal(2, device.DeleteCalls.Count); // nothing went part-way on the out-of-date listing
     }
@@ -314,7 +330,7 @@ public sealed class WpdCameraRollTests
         var r = Assert.Single(await deleter.DeleteAsync([Item(9)], Ct));
 
         Assert.Equal(PhotoDeleteOutcome.Deleted, r.Outcome);
-        Assert.Equal("an item isn't in the listing kept from earlier", deleter.LastRead!.FullWalkBecause);
+        Assert.Equal("an item isn't in the listing kept from earlier", deleter.LastRead!.FreshBecause);
     }
 
     // ---------- Cancelling, and the stages a delete reports ----------

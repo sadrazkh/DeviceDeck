@@ -231,6 +231,15 @@ public sealed class TransferQueue : IAsyncDisposable
         var device = _hub.GetUsableDevice(deviceId);
         var json = JsonSerializer.SerializeToElement(request, request.GetType(), DeviceDeckJson.Options);
         var title = await handler.DescribeAsync(device, json, ct).ConfigureAwait(false);
+        var id = Guid.CreateVersion7().ToString("N");
+
+        // A whole job (a delete) is planned at once: the drawer shows how many items it holds while it waits its turn.
+        IReadOnlyList<TransferItemPlan>? plans = null;
+        if (handler is IWholeJobTransferHandler)
+        {
+            await using var context = new TransferWorkContext(id, device, json, rule, this);
+            plans = await handler.PlanAsync(context, ct).ConfigureAwait(false);
+        }
 
         lock (_gate)
         {
@@ -242,7 +251,7 @@ public sealed class TransferQueue : IAsyncDisposable
 
             var stored = new StoredJob
             {
-                Id = Guid.CreateVersion7().ToString("N"),
+                Id = id,
                 Seq = ++_seq,
                 DeviceId = deviceId,
                 Kind = kind,
@@ -252,8 +261,20 @@ public sealed class TransferQueue : IAsyncDisposable
                 Rule = rule,
                 CreatedAt = _time.GetLocalNow(),
             };
+            if (plans is not null)
+            {
+                stored.Items = plans.Select((p, i) => TransferItem.FromPlan(i, p)).ToList();
+                stored.Planned = true;
+            }
+
             _store.UpsertJob(stored);
+            if (plans is not null)
+            {
+                _store.ReplaceItems(stored.Id, stored.Items);
+            }
+
             var job = new Job(stored, handler, _options.SpeedWindow);
+            Recount(job);
             _jobs.Add(stored.Id, job);
             Emit(job);
             Pump();

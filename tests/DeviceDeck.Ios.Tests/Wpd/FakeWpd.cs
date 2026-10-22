@@ -21,6 +21,9 @@ internal sealed class FakeWpd : IWpdBackend
     /// <summary>Objects a bulk answer leaves out (by id), as a driver might; the reader then asks for them one by one.</summary>
     public Func<string, bool>? BulkLeavesOut { get; set; }
 
+    /// <summary>A bulk read fails with this HRESULT (a driver that breaks or stalls on it).</summary>
+    public int? BulkFails { get; set; }
+
     /// <summary>An iPhone the way Windows lists it: Apple's VID, the UDID (no dash) as the USB serial, Internal Storage.</summary>
     public FakeWpdDevice AddIphone(string udid, string? usbSerial = "", string? wpdSerial = null)
     {
@@ -68,6 +71,12 @@ internal sealed class FakeWpd : IWpdBackend
             if (!owner.BulkReads)
             {
                 return null;
+            }
+
+            if (owner.BulkFails is { } hr)
+            {
+                latency.Bulk(objectIds.Count);
+                throw new WpdException("Windows stopped answering a bulk read of the iPhone's objects.", hr);
             }
 
             ct.ThrowIfCancellationRequested();

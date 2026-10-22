@@ -166,6 +166,14 @@ public sealed class PhotoDeleteHandler : TransferHandler<PhotosDeleteRequest>, I
         }
 
         _jobs[context.JobId] = memory;
+        // What finished jobs the queue no longer lists knew can go.
+        if (context.Queue is { } listed)
+        {
+            foreach (var gone in _jobs.Keys.Where(id => listed.Get(id) is null).ToList())
+            {
+                _jobs.TryRemove(gone, out _);
+            }
+        }
         var observer = new Observer(report, memory);
         try
         {

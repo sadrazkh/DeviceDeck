@@ -115,6 +115,7 @@ public static class WpdErrors
     public const int NotSupported = unchecked((int)0x80070032);
     public const int NotImplemented = unchecked((int)0x80004001);
     public const int Cancelled = unchecked((int)0x800704C7);
+    public const int Timeout = unchecked((int)0x800705B4);
 
     public static string Describe(int hr) => hr switch
     {

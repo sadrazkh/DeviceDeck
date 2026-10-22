@@ -522,6 +522,7 @@ public sealed class PhotoDeleteTests
         var queued = await rig.Deletes.StartAsync(IphoneId, Twelve().Skip(6).ToList(), Twelve().Skip(6).Sum(i => i.Size), null, PhotoDeleteSource.Photos, 0, None);
         await rig.WaitForStageAsync(running.JobId!, PhotoDeleteHandler.Reading);
         Assert.Equal(TransferState.Queued, rig.Queue.Get(queued.JobId!)!.State); // deletes take turns on one phone
+        Assert.Equal(6, rig.Queue.Get(queued.JobId!)!.TotalItems); // planned when queued: the drawer shows how many
 
         rig.Provider.Unplug();
         var first = await rig.FinishedAsync(running);
