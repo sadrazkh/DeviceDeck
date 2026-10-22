@@ -17,6 +17,9 @@ public enum TransferKind
 
     /// <summary>Round 4: WhatsApp's media and its own encrypted backups copied off an Android phone (WhatsApp/WhatsAppMediaHandler).</summary>
     WhatsAppMedia,
+
+    /// <summary>v0.4.1: deleting the photos the user confirmed, from Photos or Clean-up, in stages (PhotoDelete/PhotoDeleteHandler).</summary>
+    PhotosDelete,
 }
 
 public enum TransferState { Queued, Running, Paused, WaitingForDevice, NeedsDecision, Done, Failed, Cancelled }
@@ -48,7 +51,15 @@ public sealed record TransferJob(
     TransferConflict? Conflict,
     TransferError? Error,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? FinishedAt);
+    DateTimeOffset? FinishedAt,
+    TransferStage? Stage = null);
+
+/// <summary>
+/// v0.4.1: where a job that runs in stages is (<see cref="IWholeJobTransferHandler"/>; deleting photos: "copying",
+/// "reading", "deleting", "checking"), <paramref name="Done"/> of <paramref name="Total"/> in that stage (0 of 0 while
+/// not known yet). Null for every other job, and once a job has finished.
+/// </summary>
+public sealed record TransferStage(string Name, int Done, int Total);
 
 public enum TransferItemState { Queued, Running, Done, Failed, Skipped }
 

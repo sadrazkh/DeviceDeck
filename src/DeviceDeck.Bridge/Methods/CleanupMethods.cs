@@ -28,7 +28,7 @@ public static class CleanupMethods
             cleanup.Cancel(p.DeviceId);
             return Task.FromResult(Empty.Value);
         });
-        rpc.Register<CleanupDeleteMediaParams, CleanupResult>("cleanup.deleteMedia", (p, ct) =>
+        rpc.Register<CleanupDeleteMediaParams, Core.PhotoDelete.PhotoDeleteStarted>("cleanup.deleteMedia", (p, ct) =>
             cleanup.DeleteMediaAsync(p.DeviceId, p.Items, p.ExpectedBytes, PcFolder(p.CopyFirstTo), ct));
         rpc.Register<CleanupDeleteFilesParams, CleanupResult>("cleanup.deleteFiles", (p, ct) =>
             cleanup.DeleteFilesAsync(p.DeviceId, p.Items, p.ExpectedBytes, PcFolder(p.CopyFirstTo), ct));

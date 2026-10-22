@@ -18,6 +18,7 @@ public sealed class CleanupService : IAsyncDisposable
     private readonly TransferQueue _transfers;
     private readonly SettingsStore _settings;
     private readonly StorageAnalyzer _analyzer;
+    private readonly PhotoDelete.PhotoDeleteService _deletes;
     private readonly Lock _gate = new();
     private readonly Dictionary<string, Entry> _entries = new(StringComparer.Ordinal);
     private bool _disposed;
@@ -28,7 +29,22 @@ public sealed class CleanupService : IAsyncDisposable
         _transfers = transfers;
         _settings = settings;
         _analyzer = new StorageAnalyzer(options);
+        _deletes = new PhotoDelete.PhotoDeleteService(hub, transfers, settings);
         _hub.DeviceChanged += OnDeviceChanged;
+        if (_deletes.Handler is { } handler)
+        {
+            handler.Finished += OnPhotosDeleted;
+        }
+    }
+
+    /// <summary>A delete job (from here or from Photos) finished: what went leaves the report.</summary>
+    private void OnPhotosDeleted(object? sender, PhotoDelete.PhotoDeleteFinished finished)
+    {
+        if (finished.Deleted.Count > 0)
+        {
+            var gone = finished.Deleted.ToHashSet(StringComparer.Ordinal);
+            Mutate(finished.DeviceId, r => WithoutMedia(r, gone, finished.FreedBytes));
+        }
     }
 
     /// <summary>Raised when a phone's status changes; progress is throttled to <see cref="ProgressInterval"/>.</summary>
@@ -195,10 +211,12 @@ public sealed class CleanupService : IAsyncDisposable
     // ---------- Confirmed actions ----------
 
     /// <summary>
-    /// Deletes photos and videos the analysis listed: Android through MediaStore, an iPhone through Windows' camera
-    /// connection when it allows it (round 4), item by item, stopping at the first one that doesn't match or fails.
+    /// Deletes photos and videos the analysis listed, as a transfer job (v0.4.1; the Transfers drawer shows it): Android
+    /// through MediaStore, an iPhone through Windows' camera connection when it allows it. Items that changed since the
+    /// analysis are left out and counted; the job matches the rest again and deletes nothing unless all of them match.
+    /// What went leaves the report when the job finishes. No job (a null id) when nothing is left to delete.
     /// </summary>
-    public Task<CleanupResult> DeleteMediaAsync(string deviceId, IReadOnlyList<CleanupItem> items, long expectedBytes, string? copyFirstTo, CancellationToken ct)
+    public Task<PhotoDelete.PhotoDeleteStarted> DeleteMediaAsync(string deviceId, IReadOnlyList<CleanupItem> items, long expectedBytes, string? copyFirstTo, CancellationToken ct)
     {
         RequireConfirmed(items.Select(i => i.Size), items.Select(i => i.Id), expectedBytes);
         return ActAsync(deviceId, async (device, report) =>
@@ -225,33 +243,11 @@ public sealed class CleanupService : IAsyncDisposable
             var skipped = items.Count - verified.Count;
             if (verified.Count == 0)
             {
-                return new CleanupResult(0, skipped, 0, [], false);
+                return new PhotoDelete.PhotoDeleteStarted(null, skipped);
             }
 
-            var jobs = new List<string>();
-            if (copyFirstTo is not null)
-            {
-                // A Live Photo's video is copied beside its still (round 4: iPhone media can be deleted too).
-                jobs.AddRange(await PhotoDelete.PhotoDeletes.EnqueueCopiesAsync(_transfers, device, verified.Select(i => i.Id).ToList(), copyFirstTo,
-                    _settings.Current.PhotoFolderPattern, ct).ConfigureAwait(false));
-                if (!await WaitForCopiesAsync(jobs, ct).ConfigureAwait(false))
-                {
-                    return new CleanupResult(0, skipped, 0, jobs, true);
-                }
-            }
-
-            // Item by item, checked against the library first; an iPhone goes through Windows' camera connection.
-            var results = await PhotoDelete.PhotoDeletes.DeleteItemsAsync(device, verified.Select(i => new PhotoDeleteItem(i.Id, i.Size)).ToList(), null, ct).ConfigureAwait(false);
-            var gone = results.Where(r => r.Outcome == PhotoDeleteOutcome.Deleted).ToList();
-            var freed = gone.Sum(r => r.Size);
-            var goneIds = gone.Select(r => r.Id).ToHashSet(StringComparer.Ordinal);
-            Mutate(deviceId, r => WithoutMedia(r, goneIds, freed));
-            var support = await PhotoDelete.PhotoDeletes.SupportOf(device, recheck: false, ct).ConfigureAwait(false);
-            return new CleanupResult(gone.Count, skipped + verified.Count - gone.Count, freed, jobs, false)
-            {
-                Items = results,
-                GoesTo = PhotoDelete.PhotoDeletes.WentTo(results, support.GoesTo),
-            };
+            return await _deletes.StartAsync(deviceId, verified.Select(i => new PhotoDeleteItem(i.Id, i.Size)).ToList(), verified.Sum(i => i.Size), copyFirstTo,
+                PhotoDelete.PhotoDeleteSource.Cleanup, skipped, ct).ConfigureAwait(false);
         }, ct);
     }
 
@@ -426,7 +422,7 @@ public sealed class CleanupService : IAsyncDisposable
             return new CleanupResult(apps, 0, freed, [], false);
         }, ct);
 
-    private async Task<CleanupResult> ActAsync(string deviceId, Func<IDevice, CleanupReport, Task<CleanupResult>> act, CancellationToken ct)
+    private async Task<T> ActAsync<T>(string deviceId, Func<IDevice, CleanupReport, Task<T>> act, CancellationToken ct)
     {
         var device = _hub.GetUsableDevice(deviceId);
         Entry entry;
@@ -686,6 +682,11 @@ public sealed class CleanupService : IAsyncDisposable
         }
 
         _hub.DeviceChanged -= OnDeviceChanged;
+        if (_deletes.Handler is { } handler)
+        {
+            handler.Finished -= OnPhotosDeleted;
+        }
+
         try
         {
             await Task.WhenAll(runs).WaitAsync(TimeSpan.FromSeconds(10)).ConfigureAwait(false);

@@ -500,8 +500,8 @@ public sealed class WpdPhotoDeleter
         return new WindowsRun(deleted, gone, clean);
     }
 
-    /// <summary>What an item not reached says after the user cancelled part-way (the same words as PhotoDeletes.Cancelled).</summary>
-    public const string CancelledNote = "Not tried: the delete was cancelled.";
+    /// <summary>What an item not reached says after a cancel part-way (the same words as PhotoDeletes.Cancelled).</summary>
+    public const string CancelledNote = "Not tried: the delete was stopped.";
 
     /// <summary>
     /// Maps every plan to what Windows lists, reading as little as it can: the listing kept from the last few minutes, else

@@ -66,13 +66,17 @@ public sealed class TransferWorkContext : IAsyncDisposable
 {
     private readonly Dictionary<string, IDeviceFileSystem> _fileSystems = new(StringComparer.Ordinal);
 
-    internal TransferWorkContext(string jobId, IDevice device, JsonElement request, ConflictRule rule)
+    internal TransferWorkContext(string jobId, IDevice device, JsonElement request, ConflictRule rule, TransferQueue? queue = null)
     {
         JobId = jobId;
         Device = device;
         Request = request;
         Rule = rule;
+        Queue = queue;
     }
+
+    /// <summary>The queue running the job (a delete queues its copy to the PC there first); null outside a queue.</summary>
+    public TransferQueue? Queue { get; }
 
     public string JobId { get; }
     public IDevice Device { get; }

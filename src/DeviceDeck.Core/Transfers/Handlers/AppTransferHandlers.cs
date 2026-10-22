@@ -121,5 +121,7 @@ public static class TransferHandlers
         new PhotosToAppHandler(),
         // Round 4, WhatsApp on Android.
         new WhatsApp.WhatsAppMediaHandler(),
+        // v0.4.1: deleting photos as a job of its own (Photos and Clean-up).
+        new PhotoDelete.PhotoDeleteHandler(),
     ];
 }

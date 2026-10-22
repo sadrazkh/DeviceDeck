@@ -122,8 +122,57 @@ public static class PhotoDeletes
         return Fill(items, results, library, "Not tried: the delete stopped at an earlier item.");
     }
 
-    /// <summary>What an item not reached says when the user cancelled the delete part-way.</summary>
-    public const string Cancelled = "Not tried: the delete was cancelled.";
+    /// <summary>What an item not reached says when the delete was cancelled part-way.</summary>
+    public const string Cancelled = "Not tried: the delete was stopped.";
+
+    /// <summary>
+    /// Waits for copy jobs to finish. True only when every job is done with every item copied; false as soon as one fails,
+    /// is cancelled, or waits for an unplugged phone (it carries on by itself when the phone is back, but nothing is
+    /// deleted). <paramref name="progress"/> hears items copied of all the jobs' items.
+    /// </summary>
+    public static async Task<bool> WaitForCopiesAsync(TransferQueue transfers, IReadOnlyList<string> jobIds, Action<int, int>? progress, CancellationToken ct)
+    {
+        using var signal = new SemaphoreSlim(0);
+        var watched = jobIds.ToHashSet(StringComparer.Ordinal);
+        void OnJob(object? sender, TransferJob job)
+        {
+            if (watched.Contains(job.Id))
+            {
+                try
+                {
+                    signal.Release();
+                }
+                catch (ObjectDisposedException)
+                {
+                }
+            }
+        }
+
+        transfers.JobUpdated += OnJob;
+        try
+        {
+            while (true)
+            {
+                var jobs = jobIds.Select(transfers.Get).ToList();
+                if (jobs.Any(j => j is null || j.State is TransferState.Failed or TransferState.Cancelled or TransferState.WaitingForDevice or TransferState.NeedsDecision))
+                {
+                    return false;
+                }
+
+                progress?.Invoke(jobs.Sum(j => j!.DoneItems), jobs.Sum(j => j!.TotalItems));
+                if (jobs.All(j => j!.State == TransferState.Done))
+                {
+                    return jobs.All(j => j!.FailedItems == 0 && j.DoneItems == j.TotalItems);
+                }
+
+                await signal.WaitAsync(TimeSpan.FromSeconds(1), ct).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            transfers.JobUpdated -= OnJob;
+        }
+    }
 
     /// <summary>
     /// Copies the photos to a PC folder before they are deleted: one photos.export job, plus, on an iPhone, a copy of each
