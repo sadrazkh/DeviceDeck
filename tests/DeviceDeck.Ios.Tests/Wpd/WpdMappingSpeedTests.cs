@@ -102,7 +102,9 @@ public sealed class WpdMappingSpeedTests(ITestOutputHelper output)
         var items = rig.Big.LargestVideos(39);
         rig.Wpd.Latency.Reset();
         Assert.True(rig.Deleter.StartPrefetch("Clean-up's analysis finished", Ct));
-        await rig.Deleter.Prefetching!.WaitAsync(TimeSpan.FromSeconds(30));
+        // Null once it finished: on a busy machine it can finish (the clock is simulated) before this line runs.
+        await (rig.Deleter.Prefetching ?? Task.CompletedTask).WaitAsync(TimeSpan.FromSeconds(30));
+        Assert.True(rig.Deleter.LastPrefetch is not null, "the read ahead ran");
         var ahead = rig.Wpd.Latency.Elapsed;
         output.WriteLine($"{"read ahead in the background (while the user chooses)",-66} {ahead.TotalSeconds,6:0.0} s  ({rig.Deleter.LastPrefetch})");
 
