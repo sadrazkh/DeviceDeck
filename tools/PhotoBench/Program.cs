@@ -59,7 +59,8 @@ internal static class Program
             {
                 var label = options.Repeat > 1 ? $"run-{run}" : "run";
                 var dest = Path.Combine(options.Dest!, label);
-                var fake = FakeIphone.Create(options.Items, options.Seed, options.Link, Path.Combine(options.Dest!, label + ".photobench"));
+                var fake = FakeIphone.Create(options.Items, options.Seed, options.Link, Path.Combine(options.Dest!, label + ".photobench"),
+                    hiddenEvery: options.Hidden is null ? 0 : 12);
                 if (run == 1)
                 {
                     Console.WriteLine(fake.Description);
@@ -122,7 +123,13 @@ internal static class Program
         Console.WriteLine($"into: {dest}");
         queue.Start();
         backup.Attach(queue);
-        backup.Configure(device.Id, dest, "yyyy/MM", convertHeic: false, includeHidden: false, range: options.Range, saveEdited: options.SaveEdited);
+        var hidden = options.Hidden ?? PhotoBackupHidden.Exclude;
+        backup.Configure(device.Id, dest, "yyyy/MM", convertHeic: false, includeHidden: null, range: options.Range, saveEdited: options.SaveEdited,
+            hidden: hidden, hiddenLayout: options.HiddenLayout, hiddenFolder: options.HiddenFolder);
+        var effective = backup.EffectiveOptions(hub.GetUsableDevice(device.Id)).Options;
+        var hiddenRoot = PhotoBackupHiddenRules.HiddenRoot(dest, effective.Hidden, effective.HiddenLayout, effective.HiddenFolder);
+        Console.WriteLine($"hidden: {effective.Hidden.ToString().ToLowerInvariant()}" + (effective.Hidden == PhotoBackupHidden.Exclude ? ""
+            : hiddenRoot is null ? ", together with the others" : $", into {hiddenRoot}"));
         if (options.Edits)
         {
             await ReportEditsAsync(hub.GetUsableDevice(device.Id), ct);
@@ -132,6 +139,7 @@ internal static class Program
         var count = await backup.CountNewAsync(device.Id, ct);
         Console.WriteLine($"new: {count.NewCount:N0} ({count.NewPhotos:N0} photos, {count.NewVideos:N0} videos, {count.NewBytes / 1e9:0.00} GB known) · " +
             $"{count.OutOfRange:N0} before the range · {count.CloudOnly:N0} only in iCloud · {count.HiddenLeftOut:N0} hidden left out · " +
+            $"{count.NewHidden:N0} hidden included · {count.NormalLeftOut:N0} not hidden left out · " +
             $"read the photo index in {clock.Elapsed.TotalSeconds:0.0} s");
 
         var connections = counting.Connections;
@@ -195,6 +203,13 @@ internal static class Program
 
         var again = await backup.CountNewAsync(device.Id, ct);
         Console.WriteLine($"second look: {again.NewCount:N0} new");
+        if (hiddenRoot is not null)
+        {
+            // Names only, read from the PC folder: how many files landed in the hidden tree and how many outside it.
+            var inHidden = Directory.Exists(hiddenRoot) ? Directory.EnumerateFiles(hiddenRoot, "*", SearchOption.AllDirectories).Count() : 0;
+            var all = Directory.Exists(dest) ? Directory.EnumerateFiles(dest, "*", SearchOption.AllDirectories).Count() : 0;
+            Console.WriteLine($"files: {inHidden:N0} under {hiddenRoot}, {all - inHidden:N0} elsewhere in {dest}");
+        }
         if (hub.TryGetDevice(device.Id, out var phone) && phone.Photos is DeviceDeck.Ios.Device.Photos.IosPhotoLibrary library)
         {
             Console.WriteLine($"originals: {library.OriginalConnectionsOpened} pooled AFC connections opened; reads ahead: {library.ReadsAhead}");
@@ -312,7 +327,10 @@ internal sealed record Options(
     bool Keep,
     FakeIphone.Link Link,
     bool Edits = false,
-    bool SaveEdited = false)
+    bool SaveEdited = false,
+    PhotoBackupHidden? Hidden = null,
+    PhotoBackupHiddenLayout? HiddenLayout = null,
+    string? HiddenFolder = null)
 {
     public const string Usage = """
         photobench — times DeviceDeck's photo backup.
@@ -335,6 +353,13 @@ internal sealed record Options(
         --edits                          also say, read-only, how many photos Photos.sqlite marks as edited and whether
                                          their rendered versions are where the backup looks
         --save-edited                    back up edited versions too ("IMG_1234 (edited).jpg"), as the panel's switch does
+        --hidden exclude|separate|together|only
+                                         the Hidden album, as the panel's choice: left out (the default), backed up into a
+                                         folder of their own (dated inside), backed up with the others, or backed up alone
+                                         (into their own folder unless --hidden-layout together). Fake mode: every 12th
+                                         photo is hidden when --hidden is given
+        --hidden-layout separate|together  where hidden photos go with --hidden only
+        --hidden-folder <name>           the hidden photos' folder under --dest (default Hidden)
 
         It only reads from the phone. Never point --dest at C: (the copies are real files).
         """;
@@ -361,6 +386,9 @@ internal sealed record Options(
                 case "--keep": o = o with { Keep = true }; break;
                 case "--edits": o = o with { Edits = true }; break;
                 case "--save-edited": o = o with { SaveEdited = true }; break;
+                case "--hidden": o = ParseHidden(o, Next()); break;
+                case "--hidden-layout": o = o with { HiddenLayout = ParseLayout(Next()) }; break;
+                case "--hidden-folder": o = o with { HiddenFolder = PhotoBackupHiddenRules.ValidateFolder(Next()) }; break;
                 case "--mbps": o = o with { Link = o.Link with { MegabytesPerSecond = Math.Max(0.1, Number()) } }; break;
                 case "--rtt-ms": o = o with { Link = o.Link with { RoundTripMs = Number() } }; break;
                 case "--connect-ms": o = o with { Link = o.Link with { ConnectMs = Number() } }; break;
@@ -397,6 +425,23 @@ internal sealed record Options(
 
         return o;
     }
+
+    /// <summary>--hidden: the panel's combinations. "separate" and "together" take the Hidden album as well as the others.</summary>
+    private static Options ParseHidden(Options o, string text) => text.ToLowerInvariant() switch
+    {
+        "exclude" => o with { Hidden = PhotoBackupHidden.Exclude },
+        "separate" => o with { Hidden = PhotoBackupHidden.Include, HiddenLayout = PhotoBackupHiddenLayout.Separate },
+        "together" => o with { Hidden = PhotoBackupHidden.Include, HiddenLayout = PhotoBackupHiddenLayout.Together },
+        "only" => o with { Hidden = PhotoBackupHidden.Only, HiddenLayout = o.HiddenLayout ?? PhotoBackupHiddenLayout.Separate },
+        _ => throw new ArgumentException($"--hidden takes exclude, separate, together or only; not '{text}'."),
+    };
+
+    private static PhotoBackupHiddenLayout ParseLayout(string text) => text.ToLowerInvariant() switch
+    {
+        "separate" => PhotoBackupHiddenLayout.Separate,
+        "together" => PhotoBackupHiddenLayout.Together,
+        _ => throw new ArgumentException($"--hidden-layout takes separate or together; not '{text}'."),
+    };
 
     private static PhotoBackupRange? ParseRange(string? text)
     {

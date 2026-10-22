@@ -30,7 +30,8 @@ internal sealed class FakeIphone
 
     public sealed record Link(double MegabytesPerSecond, double RoundTripMs, double ConnectMs, double SessionMs);
 
-    public static FakeIphone Create(int count, int seed, Link link, string scratch)
+    /// <param name="hiddenEvery">Every n-th photo is in the Hidden album (ZHIDDEN = 1); 0 for none.</param>
+    public static FakeIphone Create(int count, int seed, Link link, string scratch, int hiddenEvery = 0)
     {
         var simulated = new SimulatedLink(link.MegabytesPerSecond * 1_000_000, TimeSpan.FromMilliseconds(link.RoundTripMs / 2));
         var usbmux = new FakeUsbmux
@@ -46,6 +47,7 @@ internal sealed class FakeIphone
         var rows = new List<Row>(count);
         long bytes = 0;
         var files = 0;
+        var hidden = 0;
         for (var i = 0; i < count; i++)
         {
             var taken = now - TimeSpan.FromDays(60.0 * i / count) - TimeSpan.FromMinutes(random.Next(0, 60));
@@ -70,20 +72,24 @@ internal sealed class FakeIphone
                 files++;
             }
 
-            rows.Add(new Row(i + 1, folder, name, kind, subtype, taken, size, $"BENCH-{seed}-{i:D6}"));
+            var isHidden = hiddenEvery > 0 && i % hiddenEvery == hiddenEvery - 1;
+            hidden += isHidden ? 1 : 0;
+            rows.Add(new Row(i + 1, folder, name, kind, subtype, taken, size, $"BENCH-{seed}-{i:D6}", isHidden));
         }
 
         Directory.CreateDirectory(scratch);
         phone.Media.AddFile("/PhotoData/Photos.sqlite", PhotosDatabase(rows, Path.Combine(scratch, "fake-Photos.sqlite")));
         usbmux.Attach(1, phone);
         return new FakeIphone(usbmux, count, bytes,
-            $"fake iPhone: {count:N0} photos and videos in {files:N0} files, {bytes / 1e9:0.00} GB; link {link.MegabytesPerSecond:0.#} MB/s shared, " +
+            $"fake iPhone: {count:N0} photos and videos in {files:N0} files, {bytes / 1e9:0.00} GB{(hidden > 0 ? $", {hidden:N0} of them hidden" : "")}; " +
+            $"link {link.MegabytesPerSecond:0.#} MB/s shared, " +
             $"round trip {link.RoundTripMs:0.##} ms, {link.ConnectMs:0.#} ms per connection, {link.SessionMs:0.#} ms per lockdown session");
     }
 
     private static long Mb(Random random, double min, double max) => (long)((min + random.NextDouble() * (max - min)) * 1_000_000);
 
-    private sealed record Row(long Pk, string Directory, string FileName, int Kind, int Subtype, DateTimeOffset Taken, long Size, string Uuid);
+    private sealed record Row(long Pk, string Directory, string FileName, int Kind, int Subtype, DateTimeOffset Taken, long Size, string Uuid,
+        bool Hidden = false);
 
     /// <summary>A Photos.sqlite in the iOS 14+ layout with the columns DeviceDeck reads.</summary>
     private static byte[] PhotosDatabase(IReadOnlyList<Row> rows, string path)
@@ -112,10 +118,10 @@ internal sealed class FakeIphone
             using var asset = db.CreateCommand();
             asset.Transaction = tx;
             asset.CommandText = """
-                INSERT INTO ZASSET VALUES ($pk, 3, 1, 0, 0, $kind, $subtype, 0, $shot, 4032, 3024, $created, $duration, $dir, $file, $uuid);
+                INSERT INTO ZASSET VALUES ($pk, 3, 1, 0, $hidden, $kind, $subtype, 0, $shot, 4032, 3024, $created, $duration, $dir, $file, $uuid);
                 INSERT INTO ZADDITIONALASSETATTRIBUTES VALUES ($pk, 33, 1, $pk, $size, $file);
                 """;
-            foreach (var name in new[] { "$pk", "$kind", "$subtype", "$shot", "$created", "$duration", "$dir", "$file", "$uuid", "$size" })
+            foreach (var name in new[] { "$pk", "$hidden", "$kind", "$subtype", "$shot", "$created", "$duration", "$dir", "$file", "$uuid", "$size" })
             {
                 asset.Parameters.Add(new SqliteParameter(name, null));
             }
@@ -124,6 +130,7 @@ internal sealed class FakeIphone
             foreach (var row in rows)
             {
                 asset.Parameters["$pk"].Value = row.Pk;
+                asset.Parameters["$hidden"].Value = row.Hidden ? 1 : 0;
                 asset.Parameters["$kind"].Value = row.Kind;
                 asset.Parameters["$subtype"].Value = row.Subtype;
                 asset.Parameters["$shot"].Value = row.Subtype == 10 ? 1 : 0;
