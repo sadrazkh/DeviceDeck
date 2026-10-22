@@ -13,6 +13,8 @@ export default defineConfig({
   fullyParallel: true,
   workers: 4,
   reporter: [['list']],
+  // One page load before the tests, so the first ones don't all wait for the dev server to compile the app.
+  globalSetup: './tests/warmup.ts',
   timeout: 60_000,
   // Auto-waiting assertions get 15 s instead of 5: with 4 workers on a busy PC (or GitHub's slower runner) a screen
   // can take longer than 5 s to load its mock data. A test that passes fast is not slowed down by this.

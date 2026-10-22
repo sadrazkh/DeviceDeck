@@ -47,7 +47,8 @@ test('Update ready: the title-bar button opens What’s new; Later keeps it; Res
   await button.click();
   await page.getByTestId('whats-new-restart').click();
   await expect(page.getByTestId('whats-new-restart')).toHaveText('Restarting…');
-  expect((await mockUpdates(page)).applied).toBe(1);
+  // Polled: the button says "Restarting…" before the call that restarts has reached the host (a slow runner sees 0).
+  await expect.poll(async () => (await mockUpdates(page)).applied).toBe(1);
   consoleWatch.assertClean();
 });
 
@@ -145,7 +146,7 @@ test('Portable zip: “v0.4.0 on GitHub”, Download opens only its release page
   await shot(page, 'updates-portable-dialog-en');
   await page.getByTestId('whats-new-download').click();
   await expect(dialog).toBeHidden();
-  expect((await mockUpdates(page)).opened).toEqual(['0.4.0']);
+  await expect.poll(async () => (await mockUpdates(page)).opened).toEqual(['0.4.0']);
   consoleWatch.assertClean();
 });
 
