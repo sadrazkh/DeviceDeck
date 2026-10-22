@@ -237,6 +237,44 @@ public sealed class ComWpdBackend : IWpdBackend
             }
         }, "read an object's properties");
 
+        public byte[]? ReadAll(string objectId, int maxBytes) => Guard(() =>
+        {
+            _content.Transfer(out var resources);
+            System.Runtime.InteropServices.ComTypes.IStream? stream = null;
+            var read = Marshal.AllocCoTaskMem(sizeof(int));
+            try
+            {
+                var key = WpdKeys.ResourceDefault;
+                uint optimal = 0;
+                resources.GetStream(objectId, ref key, WpdKeys.StgmRead, ref optimal, out stream);
+                using var data = new MemoryStream();
+                var buffer = new byte[Math.Clamp((int)optimal, 64 * 1024, 1024 * 1024)];
+                while (data.Length <= maxBytes)
+                {
+                    stream.Read(buffer, buffer.Length, read);
+                    var n = Marshal.ReadInt32(read);
+                    if (n <= 0)
+                    {
+                        break;
+                    }
+
+                    data.Write(buffer, 0, n);
+                }
+
+                return data.Length > maxBytes ? null : data.ToArray();
+            }
+            finally
+            {
+                Marshal.FreeCoTaskMem(read);
+                if (stream is not null)
+                {
+                    Marshal.ReleaseComObject(stream);
+                }
+
+                Marshal.ReleaseComObject(resources);
+            }
+        }, "read an object on the iPhone");
+
         private static List<(Guid, uint)> KeysOf(IPortableDeviceKeyCollection keys)
         {
             keys.GetCount(out var count);

@@ -69,6 +69,9 @@ public interface IWpdConnection : IDisposable
 
     /// <summary>The property keys an object supports; empty when unknown (diagnostics).</summary>
     IReadOnlyList<(Guid FormatId, uint Pid)> SupportedProperties(string objectId) => [];
+
+    /// <summary>An object's bytes (its default resource), read-only, up to <paramref name="maxBytes"/>; null when it can't be read.</summary>
+    byte[]? ReadAll(string objectId, int maxBytes) => null;
 }
 
 public static class WpdCommands

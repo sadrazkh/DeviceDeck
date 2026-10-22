@@ -189,7 +189,8 @@ internal static class PhotoDeleteProbe
                 : new[] { w.Name, hits[0].AssetId, hits[0].Size.ToString("N0"), hits[0].How };
         }));
 
-        // How each maps to what Windows lists (read-only).
+        // How each maps to what Windows lists (read-only), and whether the object's own bytes are the picture's.
+        var bytesMatch = new Dictionary<string, bool>(StringComparer.Ordinal);
         var wpd = WpdBackends.ForThisPc();
         var support = await device.GetDeleteSupportAsync(recheck: true, ct);
         Console.WriteLine("\nThe app's verdict:");
@@ -209,14 +210,23 @@ internal static class PhotoDeleteProbe
                     var taken = index.Assets.ToDictionary(a => a.Id, a => a.Size > 0 ? a.TakenAt : null, StringComparer.Ordinal);
                     var map = new WpdDcimMap(dcim, phoneFiles, assetsWithSizes);
                     Console.WriteLine($"\nIn Windows' view ({(map.ByFolder ? "folder + name + size" : "name + size")}):");
-                    Out.Table(["on the phone", "Windows object", "folder", "bytes", "can delete", "problem"], found.Select(f =>
+                    Out.Table(["on the phone", "Windows object", "folder", "bytes", "can delete", "its bytes (WPD read)", "problem"], found.Select(f =>
                     {
                         var m = map.Find(f.AssetId, f.Size, taken.GetValueOrDefault(f.AssetId));
                         var o = m.Object ?? dcim.Folders.SelectMany(x => x.Files).FirstOrDefault(x => string.Equals(x.FileName, Path.GetFileName(f.AssetId), StringComparison.OrdinalIgnoreCase));
+                        var same = "—";
+                        if (m.Ok && m.Object is { } obj)
+                        {
+                            var data = c.ReadAll(obj.Id, 64 * 1024 * 1024);
+                            var match = data is not null && Sha256(data) == f.Local.Hash;
+                            bytesMatch[f.AssetId] = match;
+                            same = data is null ? "couldn't read" : match ? "same SHA-256 as the picture" : $"DIFFERENT ({data.Length:N0} bytes)";
+                        }
+
                         return new[]
                         {
                             f.AssetId, o?.FileName ?? "—", o is null ? "—" : map.FolderOf(o)?.Name ?? "—", o?.Size?.ToString("N0") ?? "—",
-                            o?.CanDelete switch { true => "yes", false => "no", null => "doesn't say" }, m.Ok ? "" : $"{m.Problem}: {m.Message}",
+                            o?.CanDelete switch { true => "yes", false => "no", null => "doesn't say" }, same, m.Ok ? "" : $"{m.Problem}: {m.Message}",
                         };
                     }));
                 }
@@ -245,6 +255,8 @@ internal static class PhotoDeleteProbe
             throw new CliException("Some matches are by name/size/date, not content; add --allow-fallback to delete them anyway.");
         if (!support.CanDelete)
             throw new DeviceException(DeviceErrorCodes.NotSupported, $"The app wouldn't delete on this phone now: {support.Reason} ({support.Detail}).");
+        if (exact.Any(h => !bytesMatch.GetValueOrDefault(h[0].AssetId)))
+            throw new CliException("Each Windows object's own bytes must have the picture's SHA-256 before anything is deleted; see the table above.");
 
         var assets = index.Assets.ToDictionary(a => a.Id, StringComparer.Ordinal);
         var items = exact.Select(h => new PhotoDeleteItem(h[0].AssetId, assets[h[0].AssetId].Size > 0 ? assets[h[0].AssetId].Size : h[0].Size)).ToList();
