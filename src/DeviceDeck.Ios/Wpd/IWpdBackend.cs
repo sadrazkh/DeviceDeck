@@ -63,6 +63,20 @@ public interface IWpdConnection : IDisposable
     /// Throws <see cref="WpdException"/> when the device refused the whole call.
     /// </summary>
     IReadOnlyList<int> Delete(IReadOnlyList<string> objectIds);
+
+    /// <summary>The commands the device says it supports (category + id, as WPD's PROPERTYKEYs); empty when unknown.</summary>
+    IReadOnlyList<(Guid Category, uint Id)> SupportedCommands() => [];
+
+    /// <summary>The property keys an object supports; empty when unknown (diagnostics).</summary>
+    IReadOnlyList<(Guid FormatId, uint Pid)> SupportedProperties(string objectId) => [];
+}
+
+public static class WpdCommands
+{
+    private static readonly Guid ObjectManagement = new("EF1E43DD-A9ED-4341-8BCC-186192AEA089");
+
+    /// <summary>WPD_COMMAND_OBJECT_MANAGEMENT_DELETE_OBJECTS, what IPortableDeviceContent::Delete sends.</summary>
+    public static readonly (Guid Category, uint Id) DeleteObjects = (ObjectManagement, 7);
 }
 
 /// <summary>A WPD call failed; <see cref="Exception.HResult"/> says how.</summary>

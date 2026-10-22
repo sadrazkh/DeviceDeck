@@ -203,6 +203,54 @@ public sealed class ComWpdBackend : IWpdBackend
             }
         }, "read an object on the iPhone");
 
+        public IReadOnlyList<(Guid Category, uint Id)> SupportedCommands() => Guard<IReadOnlyList<(Guid, uint)>>(() =>
+        {
+            _device.Capabilities(out var capabilities);
+            try
+            {
+                capabilities.GetSupportedCommands(out var commands);
+                try
+                {
+                    return KeysOf(commands);
+                }
+                finally
+                {
+                    Marshal.ReleaseComObject(commands);
+                }
+            }
+            finally
+            {
+                Marshal.ReleaseComObject(capabilities);
+            }
+        }, "read what the iPhone's camera connection supports");
+
+        public IReadOnlyList<(Guid FormatId, uint Pid)> SupportedProperties(string objectId) => Guard<IReadOnlyList<(Guid, uint)>>(() =>
+        {
+            _properties.GetSupportedProperties(objectId, out var keys);
+            try
+            {
+                return KeysOf(keys);
+            }
+            finally
+            {
+                Marshal.ReleaseComObject(keys);
+            }
+        }, "read an object's properties");
+
+        private static List<(Guid, uint)> KeysOf(IPortableDeviceKeyCollection keys)
+        {
+            keys.GetCount(out var count);
+            var list = new List<(Guid, uint)>((int)count);
+            for (uint i = 0; i < count; i++)
+            {
+                var key = default(PropertyKey);
+                keys.GetAt(i, ref key);
+                list.Add((key.FormatId, key.Pid));
+            }
+
+            return list;
+        }
+
         public IReadOnlyList<int> Delete(IReadOnlyList<string> objectIds) => Guard(() =>
         {
             var ids = Create<IPortableDevicePropVariantCollection>(WpdClsids.PortableDevicePropVariantCollection);

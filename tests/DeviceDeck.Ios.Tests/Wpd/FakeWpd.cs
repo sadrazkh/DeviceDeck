@@ -60,6 +60,8 @@ internal sealed class FakeWpd : IWpdBackend
 
         public IReadOnlyList<int> Delete(IReadOnlyList<string> objectIds) => device.Delete(objectIds, readOnly);
 
+        public IReadOnlyList<(Guid Category, uint Id)> SupportedCommands() => device.Commands;
+
         public void Dispose()
         {
         }
@@ -102,9 +104,12 @@ internal sealed class FakeWpdDevice(string pnpId, string? usbSerial, WpdDevicePr
 
     public string AddFolder(string parentId, string name) => Add(parentId, name, WpdObjectKind.Folder, null, null);
 
-    public string AddFile(string folderId, string name, long size, bool? canDelete = true, string? dcimPath = null)
+    /// <summary>What the device says it supports (DELETE_OBJECTS on a phone that doesn't mark its files).</summary>
+    public List<(Guid Category, uint Id)> Commands { get; } = [];
+
+    public string AddFile(string folderId, string name, long size, bool? canDelete = true, string? dcimPath = null, DateTimeOffset? created = null)
     {
-        var id = Add(folderId, name, WpdObjectKind.File, size, canDelete);
+        var id = Add(folderId, name, WpdObjectKind.File, size, canDelete, created);
         if (dcimPath is not null)
         {
             _paths[id] = dcimPath;
@@ -242,12 +247,12 @@ internal sealed class FakeWpdDevice(string pnpId, string? usbSerial, WpdDevicePr
         gone.Add((o, _paths.GetValueOrDefault(o.Id) ?? ""));
     }
 
-    private string Add(string parentId, string name, WpdObjectKind kind, long? size, bool? canDelete)
+    private string Add(string parentId, string name, WpdObjectKind kind, long? size, bool? canDelete, DateTimeOffset? created = null)
     {
         lock (_gate)
         {
             var id = $"o{++_next:X}";
-            _objects[id] = new WpdObject(id, parentId, name, kind, size, canDelete, null, "pid-" + id);
+            _objects[id] = new WpdObject(id, parentId, name, kind, size, canDelete, created, "pid-" + id);
             _children[id] = [];
             _children[parentId].Add(id);
             return id;

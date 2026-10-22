@@ -101,9 +101,15 @@ internal interface IPortableDevice
     void Open([MarshalAs(UnmanagedType.LPWStr)] string pnpDeviceId, IPortableDeviceValues clientInfo);
     void SendCommand(uint flags, IPortableDeviceValues parameters, out IPortableDeviceValues results);
     void Content(out IPortableDeviceContent content);
-    void Capabilities(out IntPtr capabilities);
+    void Capabilities(out IPortableDeviceCapabilities capabilities);
     void Cancel();
     void Close();
+}
+
+[ComImport, Guid("2c8c6dbf-e3dc-4061-becc-8542e810d126"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IPortableDeviceCapabilities
+{
+    void GetSupportedCommands(out IPortableDeviceKeyCollection commands);
 }
 
 [ComImport, Guid("6a96ed84-7c73-4480-9938-bf5af477d426"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]

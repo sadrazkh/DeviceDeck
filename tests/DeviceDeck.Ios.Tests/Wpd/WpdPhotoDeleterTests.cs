@@ -80,6 +80,81 @@ public sealed class WpdPhotoDeleterTests
         Assert.Equal(WpdMapProblem.Ambiguous, map.Find("DCIM/101APPLE/IMG_0002.HEIC", 30).Problem);
     }
 
+    /// <summary>
+    /// As seen on an iPhone 16 with iOS 27: pictures saved into Photos from elsewhere (LocalSend) are IMG_7414.PNG… on the
+    /// phone but PZHI6539.PNG… to Windows, in month folders straight under the storage, with no can-delete flag.
+    /// </summary>
+    private (FakeWpdDevice Device, DateTimeOffset Taken) RenamedImports(bool twin = false)
+    {
+        var taken = new DateTimeOffset(2026, 10, 21, 13, 42, 44, TimeSpan.Zero);
+        var shown = taken.ToOffset(TimeSpan.FromHours(3.5));
+        _roll.Add("DCIM/107APPLE/IMG_7413.HEIC", 3_013_973).Add("DCIM/107APPLE/IMG_7414.PNG", 35_861).Add("DCIM/107APPLE/IMG_7415.PNG", 36_216);
+        _roll.Taken["DCIM/107APPLE/IMG_7414.PNG"] = taken;
+        _roll.Taken["DCIM/107APPLE/IMG_7415.PNG"] = taken;
+        var device = _wpd.AddIphone(Udid);
+        device.Commands.Add(WpdCommands.DeleteObjects);
+        var storage = device.AddStorage();
+        var month = device.AddFolder(storage, "202610_a");
+        device.AddFile(month, "IMG_7413.HEIC", 3_013_973, canDelete: null, "DCIM/107APPLE/IMG_7413.HEIC");
+        device.AddFile(month, "PZHI6539.PNG", 35_861, canDelete: null, "DCIM/107APPLE/IMG_7414.PNG", shown);
+        device.AddFile(month, "HGGS6324.PNG", 36_216, canDelete: null, "DCIM/107APPLE/IMG_7415.PNG", shown);
+        if (twin)
+        {
+            device.AddFile(month, "QQQQ0001.PNG", 35_861, canDelete: null, "DCIM/107APPLE/IMG_9999.PNG", shown);
+        }
+
+        device.Deleted = (_, path) => _roll.Disk.Remove(path);
+        return (device, taken);
+    }
+
+    [Fact]
+    public async Task A_picture_windows_shows_under_another_name_maps_by_type_size_and_time_and_is_deleted()
+    {
+        var (device, _) = RenamedImports();
+        var deleter = Deleter();
+        Assert.True((await deleter.CheckAsync(DeviceState.Ready, Ct)).CanDelete); // no can-delete flag, but the phone deletes objects
+
+        var results = await deleter.DeleteAsync([new PhotoDeleteItem("DCIM/107APPLE/IMG_7414.PNG", 35_861), new PhotoDeleteItem("DCIM/107APPLE/IMG_7415.PNG", 36_216)], Ct);
+
+        Assert.All(results, r => Assert.Equal(PhotoDeleteOutcome.Deleted, r.Outcome));
+        Assert.Contains("Windows calls it PZHI6539.PNG", results[0].Message);
+        Assert.Equal(["DCIM/107APPLE/IMG_7413.HEIC"], _roll.Disk.Keys);
+        Assert.True(device.Has("IMG_7413.HEIC"));
+        Assert.Empty(device.Forbidden);
+    }
+
+    [Fact]
+    public async Task A_renamed_picture_that_another_object_could_be_is_refused()
+    {
+        var (device, _) = RenamedImports(twin: true);
+
+        var results = await Deleter().DeleteAsync([new PhotoDeleteItem("DCIM/107APPLE/IMG_7414.PNG", 35_861), new PhotoDeleteItem("DCIM/107APPLE/IMG_7415.PNG", 36_216)], Ct);
+
+        Assert.Equal([PhotoDeleteOutcome.Mismatch, PhotoDeleteOutcome.NotTried], results.Select(r => r.Outcome));
+        Assert.Contains("2 objects", results[0].Message);
+        Assert.Empty(device.DeleteCalls);
+    }
+
+    [Fact]
+    public async Task Without_photos_sqlite_a_renamed_picture_is_not_matched()
+    {
+        var (device, _) = RenamedImports();
+        _roll.WithDatabase = false;
+
+        var r = Assert.Single(await Deleter().DeleteAsync([new PhotoDeleteItem("DCIM/107APPLE/IMG_7414.PNG", 35_861)], Ct));
+
+        Assert.Equal(PhotoDeleteOutcome.Mismatch, r.Outcome);
+        Assert.Empty(device.DeleteCalls);
+    }
+
+    [Fact]
+    public async Task A_phone_that_doesnt_mark_its_files_and_doesnt_say_it_deletes_stays_read_only()
+    {
+        var (device, _) = RenamedImports();
+        device.Commands.Clear();
+        Assert.Equal(PhotoDeleteBlock.ReadOnly, (await Deleter().CheckAsync(DeviceState.Ready, Ct)).Reason);
+    }
+
     [Fact]
     public void Camera_folders_straight_under_the_storage_are_the_camera_roll()
     {

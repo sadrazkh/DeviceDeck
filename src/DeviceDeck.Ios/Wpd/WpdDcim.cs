@@ -124,20 +124,32 @@ public sealed record WpdMapResult(WpdObject? Object, WpdMapProblem Problem, stri
     public bool Ok => Problem == WpdMapProblem.None;
 }
 
+/// <summary>A photo-library asset as the renamed match needs it: its file, its size and when it was taken.</summary>
+public sealed record WpdPhoneAsset(string Path, long Size, DateTimeOffset? Taken);
+
 /// <summary>
 /// Maps the phone's DCIM paths ("DCIM/100APPLE/IMG_0001.HEIC", the asset ids) to the objects Windows lists, exactly
 /// or not at all. When Windows shows the phone's own folders, a file maps by folder + name + size. When it shows other
 /// folders (month folders), by name + size, and only when the name is unique both on the phone and in Windows' list.
+/// A picture saved into Photos from elsewhere is shown to the PC under a name of the phone's making ("PZHI6539.PNG" for
+/// IMG_7414.PNG, seen on iOS 27): it maps by extension + size + the time it was taken, when exactly one object and
+/// exactly one asset share those, and that object's name is no file of the phone's.
 /// </summary>
 public sealed class WpdDcimMap
 {
     private readonly WpdDcim _dcim;
     private readonly Dictionary<string, int> _phoneNames;
+    private readonly IReadOnlyCollection<WpdPhoneAsset>? _phoneAssets;
+
+    /// <summary>How far apart the phone's "taken" and Windows' "created" may be: PTP dates are whole seconds.</summary>
+    private static readonly TimeSpan SameTime = TimeSpan.FromSeconds(1);
 
     /// <param name="phoneFiles">Every media file in the phone's DCIM (AFC), as "DCIM/&lt;folder&gt;/&lt;name&gt;".</param>
-    public WpdDcimMap(WpdDcim dcim, IReadOnlyCollection<string> phoneFiles)
+    /// <param name="phoneAssets">The library's assets with known sizes, for the renamed match; null turns it off.</param>
+    public WpdDcimMap(WpdDcim dcim, IReadOnlyCollection<string> phoneFiles, IReadOnlyCollection<WpdPhoneAsset>? phoneAssets = null)
     {
         _dcim = dcim;
+        _phoneAssets = phoneAssets;
         _phoneNames = phoneFiles
             .GroupBy(f => f[(f.LastIndexOf('/') + 1)..], StringComparer.OrdinalIgnoreCase)
             .ToDictionary(g => g.Key, g => g.Count(), StringComparer.OrdinalIgnoreCase);
@@ -150,7 +162,8 @@ public sealed class WpdDcimMap
 
     public WpdDcim Dcim => _dcim;
 
-    public WpdMapResult Find(string path, long diskSize)
+    /// <param name="takenAt">When the library says it was taken; null (or no assets given) keeps to names.</param>
+    public WpdMapResult Find(string path, long diskSize, DateTimeOffset? takenAt = null)
     {
         var parts = path.Split('/');
         if (parts.Length != 3 || !parts[0].Equals("DCIM", StringComparison.OrdinalIgnoreCase)
@@ -172,7 +185,7 @@ public sealed class WpdDcimMap
             var named = folders.SelectMany(f => f.Files).Where(o => Named(o, name)).ToList();
             if (named.Count == 0)
             {
-                return Problem(WpdMapProblem.Absent, $"Windows doesn't list {folderName}/{name}.");
+                return Renamed(name, diskSize, takenAt) ?? Problem(WpdMapProblem.Absent, $"Windows doesn't list {folderName}/{name}.");
             }
 
             if (named.Count > 1)
@@ -197,7 +210,7 @@ public sealed class WpdDcimMap
             var named = _dcim.Folders.SelectMany(f => f.Files).Where(o => Named(o, name)).ToList();
             if (named.Count == 0)
             {
-                return Problem(WpdMapProblem.Absent, $"Windows doesn't list {name}.");
+                return Renamed(name, diskSize, takenAt) ?? Problem(WpdMapProblem.Absent, $"Windows doesn't list {name}.");
             }
 
             var sized = named.Where(o => o.Size == diskSize).ToList();
@@ -214,17 +227,65 @@ public sealed class WpdDcimMap
             candidate = sized[0];
         }
 
+        return Checked(candidate, name, "");
+    }
+
+    /// <summary>A file Windows may delete: a file, and not marked read-only (a phone that doesn't say is asked by the delete itself).</summary>
+    private static WpdMapResult Checked(WpdObject candidate, string name, string note)
+    {
         if (candidate.Kind != WpdObjectKind.File)
         {
             return Problem(WpdMapProblem.NotAFile, $"Windows lists {name} as something other than a file.");
         }
 
-        if (candidate.CanDelete != true)
+        if (candidate.CanDelete == false)
         {
             return new WpdMapResult(null, WpdMapProblem.ReadOnly, $"The iPhone marks {name} as read-only for this PC.");
         }
 
-        return new WpdMapResult(candidate, WpdMapProblem.None, "");
+        return new WpdMapResult(candidate, WpdMapProblem.None, note);
+    }
+
+    /// <summary>
+    /// The object Windows shows under a name of the phone's making: same extension, same size, created when the asset
+    /// was taken, a name that is no file of the phone's, and the only one on both sides. Null when there is none.
+    /// </summary>
+    private WpdMapResult? Renamed(string name, long diskSize, DateTimeOffset? takenAt)
+    {
+        if (takenAt is not { } taken || _phoneAssets is null)
+        {
+            return null;
+        }
+
+        var ext = Path.GetExtension(name);
+        bool Same(DateTimeOffset? t) => t is { } x && (x - taken).Duration() <= SameTime;
+        var objects = _dcim.Folders.SelectMany(f => f.Files)
+            .Where(o => o.Size == diskSize && Same(o.Created)
+                        && string.Equals(Path.GetExtension(o.FileName), ext, StringComparison.OrdinalIgnoreCase)
+                        && _phoneNames.GetValueOrDefault(o.FileName ?? "") == 0)
+            .ToList();
+        if (objects.Count == 0)
+        {
+            return null;
+        }
+
+        var twins = _phoneAssets.Count(a => a.Size == diskSize && Same(a.Taken)
+                                            && string.Equals(Path.GetExtension(a.Path), ext, StringComparison.OrdinalIgnoreCase));
+        if (objects.Count > 1 || twins != 1)
+        {
+            return Problem(WpdMapProblem.Ambiguous,
+                $"Windows doesn't list {name} by name; {objects.Count} objects and {twins} phone files share its size, type and time.");
+        }
+
+        return Checked(objects[0], name, $"Windows calls it {objects[0].FileName}.");
+    }
+
+    /// <summary>The video Windows lists beside a still under the still's name ("PZHI6539.MOV" beside "PZHI6539.HEIC"), at that size.</summary>
+    public WpdObject? CompanionOf(WpdObject still, string companionPath, long size)
+    {
+        var name = Path.GetFileNameWithoutExtension(still.FileName ?? "") + Path.GetExtension(companionPath);
+        var found = FolderOf(still)?.Files.Where(o => Named(o, name) && o.Size == size).ToList();
+        return found is { Count: 1 } && found[0].CanDelete != false ? found[0] : null;
     }
 
     /// <summary>

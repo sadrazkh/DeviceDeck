@@ -203,11 +203,15 @@ internal static class PhotoDeleteProbe
                 if (WpdDcimWalker.Walk(c, ct, out var missing) is { } dcim)
                 {
                     var phoneFiles = await device.UseMediaAfcAsync(afc => IosPhotoLibrary.ListDcimFilesAsync(afc, ct), ct);
-                    var map = new WpdDcimMap(dcim, phoneFiles);
+                    var assetsWithSizes = index.Mode == PhotoIndexMode.Database
+                        ? index.Assets.Where(a => a.Size > 0).Select(a => new WpdPhoneAsset(a.Id, a.Size, a.TakenAt)).ToList()
+                        : null;
+                    var taken = index.Assets.ToDictionary(a => a.Id, a => a.Size > 0 ? a.TakenAt : null, StringComparer.Ordinal);
+                    var map = new WpdDcimMap(dcim, phoneFiles, assetsWithSizes);
                     Console.WriteLine($"\nIn Windows' view ({(map.ByFolder ? "folder + name + size" : "name + size")}):");
                     Out.Table(["on the phone", "Windows object", "folder", "bytes", "can delete", "problem"], found.Select(f =>
                     {
-                        var m = map.Find(f.AssetId, f.Size);
+                        var m = map.Find(f.AssetId, f.Size, taken.GetValueOrDefault(f.AssetId));
                         var o = m.Object ?? dcim.Folders.SelectMany(x => x.Files).FirstOrDefault(x => string.Equals(x.FileName, Path.GetFileName(f.AssetId), StringComparison.OrdinalIgnoreCase));
                         return new[]
                         {

@@ -156,6 +156,14 @@ public sealed class WpdPhotoDeleter
             var deletable = sample.Count(o => o.CanDelete == true);
             var flags = $"{deletable} of {sample.Count} sampled files say they can be deleted ({sample.Count(o => o.CanDelete is null)} don't say)";
             var hint = _phone.ICloudPhotosHint(index);
+            // iOS 27 doesn't report WPD_OBJECT_CAN_DELETE at all: then the device's own word, that it deletes objects, counts.
+            var unmarked = deletable == 0 && sample.All(o => o.CanDelete is null);
+            if (unmarked && c.SupportedCommands().Contains(WpdCommands.DeleteObjects))
+            {
+                deletable = sample.Count;
+                flags = $"none of {sample.Count} sampled files says whether it can be deleted (the phone doesn't report it); the phone supports deleting objects";
+            }
+
             if (deletable == 0)
             {
                 var icloud = hint == true;
@@ -350,9 +358,13 @@ public sealed class WpdPhotoDeleter
 
         var phoneFiles = await _phone.ListDcimAsync(ct).ConfigureAwait(false);
         var edited = items.Where(i => index.EditStampOf(i.Id) is not null).Select(i => i.Id).ToHashSet(StringComparer.Ordinal);
+        // Sizes and dates come from Photos.sqlite: without it the renamed match stays off.
+        var phoneAssets = index.Mode == PhotoIndexMode.Database
+            ? index.Assets.Where(a => a.Size > 0).Select(a => new WpdPhoneAsset(a.Id, a.Size, a.TakenAt)).ToList()
+            : null;
 
         // 2. Windows' side, then 3. the deletes: blocking COM calls, off the caller's thread.
-        var deleted = await Task.Run(() => DeleteWithWindows(items, plans!, results, phoneFiles, edited, ct), ct).ConfigureAwait(false);
+        var deleted = await Task.Run(() => DeleteWithWindows(items, plans!, results, phoneFiles, edited, phoneAssets, ct), ct).ConfigureAwait(false);
 
         // 4. Where they went: the photo index is rebuilt, and the phone's disk says whether the files stayed.
         if (deleted.Count > 0)
@@ -365,7 +377,7 @@ public sealed class WpdPhotoDeleter
 
     /// <summary>Maps every item, then deletes batch by batch. Returns the indexes of the items deleted.</summary>
     private List<int> DeleteWithWindows(IReadOnlyList<PhotoDeleteItem> items, Plan[] plans, PhotoDeleteResult?[] results, IReadOnlyList<string> phoneFiles,
-        HashSet<string> edited, CancellationToken ct)
+        HashSet<string> edited, IReadOnlyCollection<WpdPhoneAsset>? phoneAssets, CancellationToken ct)
     {
         var deleted = new List<int>();
         IWpdConnection? c = null;
@@ -386,11 +398,11 @@ public sealed class WpdPhotoDeleter
                 return deleted;
             }
 
-            var map = new WpdDcimMap(dcim, phoneFiles);
+            var map = new WpdDcimMap(dcim, phoneFiles, phoneAssets);
             for (var i = 0; i < plans.Length; i++)
             {
                 var plan = plans[i];
-                var still = map.Find(plan.Item.Id, plan.DiskSize);
+                var still = map.Find(plan.Item.Id, plan.DiskSize, plan.Asset.Size > 0 ? plan.Asset.TakenAt : null);
                 if (!still.Ok)
                 {
                     results[i] = Mismatch(plan.Item, plan.Asset, still.Message);
@@ -398,6 +410,12 @@ public sealed class WpdPhotoDeleter
                 }
 
                 plan.Still = still.Object;
+                var renamed = still.Message.Length > 0;
+                if (renamed)
+                {
+                    plan.Note = still.Message;
+                }
+
                 if (plan.PairPath is not null)
                 {
                     var pair = plan.PairDiskSize is { } pairSize ? map.Find(plan.PairPath, pairSize) : null;
@@ -408,6 +426,11 @@ public sealed class WpdPhotoDeleter
                     else if (pair.Ok)
                     {
                         plan.Pair = pair.Object;
+                    }
+                    else if (renamed && pair.Problem == WpdMapProblem.Absent && map.CompanionOf(plan.Still!, plan.PairPath, plan.PairDiskSize!.Value) is { } companion)
+                    {
+                        // The still is shown under a name of the phone's making; its video carries the same name.
+                        plan.Pair = companion;
                     }
                     else if (pair.Problem == WpdMapProblem.Absent)
                     {
