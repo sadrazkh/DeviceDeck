@@ -8,6 +8,7 @@ import { Switch } from '../../components/ui';
 import { useI18n, type MessageKey } from '../../i18n';
 import styles from './Cleanup.module.css';
 import type { CleanupKind, CleanupRequest } from './useCleanup';
+import { LeftOutList, ReachChecking, usePhotoDeleteReach } from '../photos/DeleteReach';
 
 export interface PlanRow {
   key: string;
@@ -32,6 +33,12 @@ export interface CleanupPlan {
   /** Round 4: the items can be brought back (an iPhone's Recently Deleted), so no "can't be undone". */
   reversible?: boolean;
   request(copyFirstTo: string | null): CleanupRequest;
+  /**
+   * v0.4.2, photos and videos: `rows` are everything selected. Those only the iPhone can delete (Windows lists them
+   * nowhere) move to a list of their own as soon as that is known, even while the dialog is open, and the delete
+   * leaves them out: the title and the request then come from what is left.
+   */
+  byReach?: { title(count: number): string; request(copyFirstTo: string | null, ids: ReadonlySet<string>): CleanupRequest };
 }
 
 /**
@@ -56,6 +63,7 @@ export function ConfirmCleanup({
   const [copy, setCopy] = useState(true);
   const [folder, setFolder] = useState('');
   const [busy, setBusy] = useState(false);
+  const reach = usePhotoDeleteReach(device, !!plan?.byReach);
 
   useEffect(() => {
     if (plan) {
@@ -66,12 +74,17 @@ export function ConfirmCleanup({
   }, [plan]);
 
   if (!plan) return null;
-  const total = plan.rows.reduce((n, r) => n + r.size, 0);
+  const split = plan.byReach;
+  const rows = split ? plan.rows.filter((r) => !reach.phoneOnly(r.key)) : plan.rows;
+  const leftOut = split ? plan.rows.filter((r) => reach.phoneOnly(r.key)) : [];
+  const title = split ? split.title(rows.length) : plan.title;
+  const total = rows.reduce((n, r) => n + r.size, 0);
   const copying = plan.copy !== null && copy && folder.length > 0;
 
   const confirm = async () => {
     setBusy(true);
-    const result = await run(plan.request(copying ? folder : null));
+    const copyTo = copying ? folder : null;
+    const result = await run(split ? split.request(copyTo, new Set(rows.map((r) => r.key))) : plan.request(copyTo));
     setBusy(false);
     if (result) onClose();
   };
@@ -82,24 +95,31 @@ export function ConfirmCleanup({
       wide
       dismissible={!busy}
       onOpenChange={(open) => (open ? undefined : onClose())}
-      title={plan.title}
+      title={title}
       description={plan.description ?? t(plan.approximate ? 'cleanup.confirm.freesAbout' : 'cleanup.confirm.frees', { size: bytes(total) })}
       footer={
         <>
           <Button onClick={onClose} disabled={busy}>
             {t('common.cancel')}
           </Button>
-          <Button variant="dangerSolid" onClick={() => void confirm()} loading={busy} data-testid="cleanup-confirm" autoFocus>
+          <Button
+            variant="dangerSolid"
+            onClick={() => void confirm()}
+            loading={busy}
+            disabled={!!split && rows.length === 0}
+            data-testid="cleanup-confirm"
+            autoFocus
+          >
             {busy ? t(copying ? 'cleanup.confirm.busyCopy' : 'cleanup.confirm.busy') : plan.confirmLabel}
           </Button>
         </>
       }
     >
       <div className={styles.confirmBody} data-testid="cleanup-confirm-dialog" data-device={device.id}>
-        {plan.rows.length > 0 ? (
+        {rows.length > 0 ? (
           <div>
-            <ul className={styles.confirmList} aria-label={plan.title}>
-              {plan.rows.map((row) => (
+            <ul className={styles.confirmList} aria-label={title}>
+              {rows.map((row) => (
                 <li key={row.key} className={styles.confirmRow} data-testid="cleanup-confirm-row">
                   <span className={styles.text}>
                     <span className={styles.name}>{row.label}</span>
@@ -110,7 +130,7 @@ export function ConfirmCleanup({
               ))}
             </ul>
             <div className={styles.confirmTotal} data-testid="cleanup-confirm-total">
-              <span>{t('common.items', { count: plan.rows.length })}</span>
+              <span>{t('common.items', { count: rows.length })}</span>
               <span>{bytes(total)}</span>
             </div>
           </div>
@@ -140,6 +160,9 @@ export function ConfirmCleanup({
             ) : null}
           </div>
         ) : null}
+
+        {split && reach.checking ? <ReachChecking checking={reach.checking} /> : null}
+        <LeftOutList rows={leftOut.map((row) => ({ key: row.key, label: row.label, detail: row.detail, size: bytes(row.size) }))} />
 
         {plan.notes.map((note) => (
           <p key={note} className={styles.hint}>

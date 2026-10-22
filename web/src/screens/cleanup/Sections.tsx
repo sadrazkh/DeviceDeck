@@ -15,6 +15,8 @@ import type { CleanupPlan } from './ConfirmCleanup';
 // Deleting an iPhone's photos too (round 4, photodelete).
 import { whereTheyGoNotes } from '../photos/PhotoDeleteDialog';
 import { usePhotoDeleteSupport } from '../photos/photoDelete';
+// Items only the iPhone can delete (v0.4.2): Windows lists them nowhere.
+import { ReachBadge, ReachChecking, usePhotoDeleteReach, type DeleteReach } from '../photos/DeleteReach';
 
 const COLLAPSED = 8;
 const GROUPS_COLLAPSED = 6;
@@ -61,6 +63,7 @@ function Row({
   detail,
   size,
   testId,
+  badge,
 }: {
   checked?: boolean;
   onToggle?(on: boolean): void;
@@ -70,14 +73,17 @@ function Row({
   detail?: ReactNode;
   size: string;
   testId?: string;
+  /** v0.4.2: "Delete on the iPhone". */
+  badge?: ReactNode;
 }) {
   return (
-    <li className={cx(styles.row, !onToggle && styles.rowNoCheck)} aria-selected={onToggle ? checked : undefined} data-testid={testId}>
+    <li className={cx(styles.row, !onToggle && styles.rowNoCheck)} aria-selected={onToggle ? checked : undefined} data-testid={testId} data-phone-only={badge ? true : undefined}>
       {onToggle ? <Checkbox checked={!!checked} onChange={onToggle} label={label} /> : null}
       {media}
       <span className={styles.text}>
         <span className={styles.name}>{name}</span>
         {detail ? <span className={styles.detail}>{detail}</span> : null}
+        {badge ? <span className={styles.badgeLine}>{badge}</span> : null}
       </span>
       <span className={styles.size}>{size}</span>
     </li>
@@ -174,7 +180,14 @@ export function DuplicatesCard({ data, ...props }: SectionProps & { data: Cleanu
   // Round 4: what the phone allows now (an iPhone through its camera connection), not what it allowed at the analysis.
   const canDelete = device.capabilities.includes('photosDelete');
   const support = usePhotoDeleteSupport(device).data;
+  // v0.4.2: copies only the iPhone can delete stay out of the delete (they can still be copied).
+  const reach = usePhotoDeleteReach(device);
+  const deletable = picked.filter(({ asset }) => !reach.phoneOnly(asset.id));
+  const onPhone = picked.filter(({ asset }) => reach.phoneOnly(asset.id));
+  const phoneOnlyCount = data.groups.reduce((n, g) => n + g.assets.filter((a) => reach.phoneOnly(a.id)).length, 0);
 
+  const items = (ids?: ReadonlySet<string>) =>
+    picked.filter(({ asset }) => !ids || ids.has(asset.id)).map(({ asset, size }) => ({ id: asset.id, size }));
   const plan = (): CleanupPlan => ({
     kind: 'media',
     title: t('cleanup.confirm.media', { count: picked.length, device: device.name }),
@@ -183,13 +196,19 @@ export function DuplicatesCard({ data, ...props }: SectionProps & { data: Cleanu
     notes: [t('cleanup.duplicates.keepHint'), ...whereTheyGoNotes(t, device, support)],
     reversible: support?.goesTo === 'recentlyDeleted',
     copy: { label: 'cleanup.confirm.copyFirst', folder: folders.photos },
-    request: (copyFirstTo) => ({ kind: 'media', items: picked.map(({ asset, size }) => ({ id: asset.id, size })), copyFirstTo }),
+    request: (copyFirstTo) => ({ kind: 'media', items: items(), copyFirstTo }),
+    byReach: {
+      title: (count) => t('cleanup.confirm.media', { count, device: device.name }),
+      request: (copyFirstTo, ids) => ({ kind: 'media', items: items(ids), copyFirstTo }),
+    },
   });
+  const copies = data.groups.reduce((n, g) => n + g.assets.length, 0);
+  const summary = t('cleanup.duplicates.summary', { count: data.groups.length, size: bytes(data.reclaimableBytes) });
 
   return (
     <SectionCard
       title={t('cleanup.duplicates.title')}
-      summary={t('cleanup.duplicates.summary', { count: data.groups.length, size: bytes(data.reclaimableBytes) })}
+      summary={canDelete && phoneOnlyCount > 0 ? `${summary} · ${t('reach.summary', { count: phoneOnlyCount, total: copies })}` : summary}
       actions={
         data.groups.length > 0 ? (
           <Button size="small" onClick={() => selection.set(data.groups.flatMap((g) => g.assets.slice(1).map((a) => a.id)))}>
@@ -220,7 +239,10 @@ export function DuplicatesCard({ data, ...props }: SectionProps & { data: Cleanu
                         <span className={styles.name}>
                           {asset.fileName} <span className={styles.detail}>{when(i18n, asset.takenAt)}</span>
                         </span>
-                        {index === 0 ? <Badge>{t('cleanup.duplicates.keep')}</Badge> : <span />}
+                        <span className={styles.copyBadges}>
+                          {canDelete && reach.phoneOnly(asset.id) ? <ReachBadge /> : null}
+                          {index === 0 ? <Badge>{t('cleanup.duplicates.keep')}</Badge> : null}
+                        </span>
                       </li>
                     ))}
                   </ul>
@@ -234,8 +256,17 @@ export function DuplicatesCard({ data, ...props }: SectionProps & { data: Cleanu
             </Button>
           ) : null}
           {wholeGroup ? <Banner tone="warning">{t('cleanup.duplicates.allSelected')}</Banner> : null}
+          {canDelete ? <ReachLine reach={reach} /> : null}
           <SelectionBar count={picked.length} size={total} onClear={selection.clear}>
-            <MediaAction {...props} canDelete={canDelete} disabled={locked || wholeGroup} onDelete={() => confirm(plan())} ids={picked.map((p) => p.asset.id)} />
+            <MediaAction
+              {...props}
+              canDelete={canDelete}
+              disabled={locked || wholeGroup}
+              onDelete={() => confirm(plan())}
+              ids={picked.map((p) => p.asset.id)}
+              deletable={deletable.length}
+              onPhone={onPhone.length}
+            />
           </SelectionBar>
         </>
       )}
@@ -243,15 +274,38 @@ export function DuplicatesCard({ data, ...props }: SectionProps & { data: Cleanu
   );
 }
 
-/** Delete when the phone allows it (Android; an iPhone whose camera connection does); otherwise copy to the PC. */
+/** The quiet "checking" line until Windows' view is read completely; nothing is marked before that. */
+function ReachLine({ reach }: { reach: DeleteReach }) {
+  return reach.checking ? <ReachChecking checking={reach.checking} className={styles.reachLine} /> : null;
+}
+
+/**
+ * Delete when the phone allows it (Android; an iPhone whose camera connection does); otherwise copy to the PC.
+ * v0.4.2: when every selected item can only be deleted on the iPhone, it says so and offers the copy instead; when
+ * some can, the delete leaves the others out (the confirmation lists them).
+ */
 function MediaAction({
   canDelete,
   disabled,
   onDelete,
   ids,
   copyMedia,
-}: SectionProps & { canDelete: boolean; disabled: boolean; onDelete(): void; ids: string[] }) {
+  deletable,
+  onPhone,
+}: SectionProps & { canDelete: boolean; disabled: boolean; onDelete(): void; ids: string[]; deletable: number; onPhone: number }) {
   const { t } = useI18n();
+  if (canDelete && deletable === 0 && onPhone > 0) {
+    return (
+      <>
+        <span className={styles.reachReason} title={t('reach.badgeWhy')} data-testid="cleanup-phone-only">
+          {t('reach.onlyOnPhone')}
+        </span>
+        <Button variant="accent" icon={<ArrowDownloadRegular />} disabled={disabled} onClick={() => copyMedia(ids)} data-testid="cleanup-copy">
+          {t('cleanup.action.copy')}
+        </Button>
+      </>
+    );
+  }
   return canDelete ? (
     <Button variant="danger" icon={<DeleteRegular />} disabled={disabled} onClick={onDelete} data-testid="cleanup-delete">
       {t('cleanup.action.delete')}
@@ -278,7 +332,13 @@ export function MediaCard({ data, kind, ...props }: SectionProps & { data: Clean
   // Round 4: what the phone allows now (an iPhone through its camera connection), not what it allowed at the analysis.
   const canDelete = device.capabilities.includes('photosDelete');
   const support = usePhotoDeleteSupport(device).data;
+  // v0.4.2: items only the iPhone can delete stay out of the delete (they can still be copied).
+  const reach = usePhotoDeleteReach(device);
+  const deletable = picked.filter((a) => !reach.phoneOnly(a.id));
+  const onPhone = picked.filter((a) => reach.phoneOnly(a.id));
+  const phoneOnlyCount = list.filter((a) => reach.phoneOnly(a.id)).length;
 
+  const items = (ids?: ReadonlySet<string>) => picked.filter((a) => !ids || ids.has(a.id)).map((a) => ({ id: a.id, size: a.size }));
   const plan = (): CleanupPlan => ({
     kind: 'media',
     title: t('cleanup.confirm.media', { count: picked.length, device: device.name }),
@@ -287,13 +347,19 @@ export function MediaCard({ data, kind, ...props }: SectionProps & { data: Clean
     notes: whereTheyGoNotes(t, device, support),
     reversible: support?.goesTo === 'recentlyDeleted',
     copy: { label: 'cleanup.confirm.copyFirst', folder: folders.photos },
-    request: (copyFirstTo) => ({ kind: 'media', items: picked.map((a) => ({ id: a.id, size: a.size })), copyFirstTo }),
+    request: (copyFirstTo) => ({ kind: 'media', items: items(), copyFirstTo }),
+    // v0.4.2: the confirmation lists what only the iPhone can delete apart and deletes the rest, as soon as it's known.
+    byReach: {
+      title: (count) => t('cleanup.confirm.media', { count, device: device.name }),
+      request: (copyFirstTo, ids) => ({ kind: 'media', items: items(ids), copyFirstTo }),
+    },
   });
 
-  const summary =
+  const base =
     kind === 'videos'
       ? t('cleanup.videos.summary', { count: data.videoCount, size: bytes(data.videoBytes) })
       : t('cleanup.photos.summary', { count: data.photoCount, size: bytes(data.photoBytes) });
+  const summary = canDelete && phoneOnlyCount > 0 ? `${base} · ${t('reach.summary', { count: phoneOnlyCount, total: list.length })}` : base;
 
   return (
     <SectionCard title={t(kind === 'videos' ? 'cleanup.videos.title' : 'cleanup.photos.title')} summary={summary} testId={`cleanup-${kind}`}>
@@ -311,12 +377,22 @@ export function MediaCard({ data, kind, ...props }: SectionProps & { data: Clean
             detail={mediaDetail(i18n, a)}
             size={bytes(a.size)}
             testId="cleanup-media-row"
+            badge={canDelete && reach.phoneOnly(a.id) ? <ReachBadge /> : undefined}
           />
         )}
       />
       {kind === 'photos' && data.cloudOnlyCount > 0 ? <p className={styles.hint}>{t('cleanup.media.cloudOnly', { count: data.cloudOnlyCount })}</p> : null}
+      {canDelete ? <ReachLine reach={reach} /> : null}
       <SelectionBar count={picked.length} size={total} onClear={selection.clear}>
-        <MediaAction {...props} canDelete={canDelete} disabled={locked} onDelete={() => confirm(plan())} ids={picked.map((a) => a.id)} />
+        <MediaAction
+          {...props}
+          canDelete={canDelete}
+          disabled={locked}
+          onDelete={() => confirm(plan())}
+          ids={picked.map((a) => a.id)}
+          deletable={deletable.length}
+          onPhone={onPhone.length}
+        />
       </SelectionBar>
     </SectionCard>
   );

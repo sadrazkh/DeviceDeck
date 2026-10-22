@@ -45,7 +45,7 @@ import { MockToolbox } from './toolbox';
 import { MockLocalSend, type MockLocalSendScenario } from './localSend';
 import { MockUpdates, type MockNotesScenario, type MockUpdateScenario } from './updates';
 import { MockWhatsApp } from './whatsApp';
-import { MockPhotoDelete, type MockDeleteSpeed, type MockPhotoDeleteScenario } from './photoDelete';
+import { MockPhotoDelete, type MockDeleteSpeed, type MockPhotoDeleteScenario, type MockReachScenario } from './photoDelete';
 
 export type MockScenario = 'ready' | 'empty' | 'trust' | 'limited' | 'driverMissing' | 'iphoneOnly';
 
@@ -69,6 +69,8 @@ export interface MockOptions {
   photoDelete?: MockPhotoDeleteScenario;
   /** A delete job's pace (v0.4.1): ?deletespeed=slow. Default "normal". */
   deleteSpeed?: MockDeleteSpeed;
+  /** Items Windows doesn't list (v0.4.2): ?reach=some. Default "all" listed. */
+  reach?: MockReachScenario;
 }
 
 /** A JSON-RPC error raised by a mock handler. */
@@ -143,6 +145,7 @@ export class MockBackend {
     this.updates.configure(options.update ?? 'idle', options.notes ?? 'owner');
     this.photoDelete.scenario = options.photoDelete ?? 'ok';
     this.photoDelete.speed = options.deleteSpeed ?? 'normal';
+    this.photoDelete.reach = options.reach ?? 'all';
     const scenario = options.scenario ?? 'ready';
     this.driverList = scenario === 'limited' || scenario === 'driverMissing' ? driversIosMissing : drivers;
 

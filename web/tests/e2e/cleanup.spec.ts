@@ -27,8 +27,9 @@ for (const variant of VARIANTS) {
       await expect(page.getByTestId('cleanup-duplicate-group').first()).toBeVisible();
       await settle(page);
       await shot(page, `cleanup-${device}-${variant}`);
-      // Text contrast (WCAG AA) in both themes; Persian uses the light colours (desktop session's check).
-      if (variant !== 'rtl') expect(await contrastProblems(page)).toEqual([]);
+      // Text contrast (WCAG AA) in both themes; Persian uses the light colours (desktop session's check). Polled: an
+      // iPhone's cards still say "Checking which items this PC can delete…" for a moment after the analysis (v0.4.2).
+      if (variant !== 'rtl') await expect.poll(() => contrastProblems(page)).toEqual([]);
       consoleWatch.assertClean();
     });
 

@@ -103,4 +103,5 @@ export function refreshAfterDelete(queryClient: ReturnType<typeof useQueryClient
   void queryClient.invalidateQueries({ queryKey: keys.storage(deviceId) });
   void queryClient.invalidateQueries({ queryKey: backupKeys.status(deviceId) });
   void queryClient.invalidateQueries({ queryKey: photoDeleteKey(deviceId) });
+  void queryClient.invalidateQueries({ queryKey: ['photos.deleteReach', deviceId] });
 }

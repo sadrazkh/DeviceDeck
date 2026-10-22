@@ -7,7 +7,7 @@
 // ?deletespeed=slow: a slow camera roll (reading takes about 15 s, a batch 4 s), for watching the stages.
 
 import type { DeviceCapability, DeviceSummary, TransferJob } from '../types';
-import type { PhotoDeleteBlock, PhotoDeleteDestination, PhotoDeleteJobStatus, PhotoDeleteResult, PhotoDeleteSupport } from '../photoDeleteTypes';
+import type { PhotoDeleteBlock, PhotoDeleteDestination, PhotoDeleteJobStatus, PhotoDeleteReach, PhotoDeleteResult, PhotoDeleteSupport } from '../photoDeleteTypes';
 import type { MethodName, MethodParams, MethodResult } from '../methods';
 import { assetsInAlbum, type MockLibrary } from './photos';
 import type { JobItem, NewJob, StagedRun } from './transfers';
@@ -16,6 +16,10 @@ export const MOCK_PHOTODELETE_SCENARIOS = ['ok', 'iCloudPhotos', 'readOnly', 'lo
 export type MockPhotoDeleteScenario = (typeof MOCK_PHOTODELETE_SCENARIOS)[number];
 
 export const MOCK_DELETE_SPEEDS = ['normal', 'slow'] as const;
+
+/** v0.4.2, ?reach=some: every fourth iPhone item (4th, 8th, …, newest first) is one Windows doesn't list. */
+export const MOCK_REACH_SCENARIOS = ['all', 'some'] as const;
+export type MockReachScenario = (typeof MOCK_REACH_SCENARIOS)[number];
 export type MockDeleteSpeed = (typeof MOCK_DELETE_SPEEDS)[number];
 
 const BATCH = 5;
@@ -65,6 +69,7 @@ interface StartOptions {
 export class MockPhotoDelete {
   scenario: MockPhotoDeleteScenario = 'ok';
   speed: MockDeleteSpeed = 'normal';
+  reach: MockReachScenario = 'all';
   /** Where deletes went on each phone this session (what a real iPhone shows after its first delete). */
   private readonly observed = new Map<string, PhotoDeleteDestination>();
   private readonly runs = new Map<string, DeleteRun>();
@@ -99,9 +104,48 @@ export class MockPhotoDelete {
     return state.read;
   }
 
+  /** A delete read the whole view: what it read stands, as the host's listing cache does. */
+  readAll(deviceId: string): void {
+    this.ahead.set(deviceId, { read: ROLL_OBJECTS, running: false });
+  }
+
   /** The phone went away or locked: what was read ahead is gone. */
   forget(deviceId: string): void {
     this.ahead.delete(deviceId);
+  }
+
+  /** The items Windows doesn't list (?reach=some), fixed when the library is first read so deletes don't shift them. */
+  private readonly unlisted = new Map<string, Set<string>>();
+
+  private notListed(deviceId: string): Set<string> {
+    let set = this.unlisted.get(deviceId);
+    if (!set) {
+      const library = this.ctx.library(deviceId);
+      // By place in the All album (what Photos shows, newest first): the 4th, 8th, … item, unless it is in iCloud only.
+      set = new Set(this.reach === 'some' ? assetsInAlbum(library, null).filter((a, i) => i % 4 === 3 && !a.inCloudOnly).map((a) => a.id) : []);
+      this.unlisted.set(deviceId, set);
+    }
+    return set;
+  }
+
+  /** Whether Windows lists this item (a delete of one it doesn't is refused, as on the host). */
+  listed(deviceId: string, id: string): boolean {
+    return this.ctx.device(deviceId)?.platform !== 'ios' || !this.notListed(deviceId).has(id);
+  }
+
+  /** photos.deleteReach: from a complete read ahead only; starting one when none runs. */
+  reachOf(deviceId: string): PhotoDeleteReach {
+    const device = this.ctx.requireReady(deviceId, 'photosRead');
+    const none = (state: PhotoDeleteReach['state'], done = 0, total = 0): PhotoDeleteReach => ({ deviceId, state, done, total, notListed: [], checkedAt: null });
+    if (!device.capabilities.includes('photosDelete')) return none('unsupported');
+    if (device.platform !== 'ios') return none('ready');
+    const state = this.ahead.get(deviceId);
+    if (state?.read === ROLL_OBJECTS) {
+      const library = this.ctx.library(deviceId);
+      return { deviceId, state: 'ready', done: ROLL_OBJECTS, total: ROLL_OBJECTS, notListed: [...this.notListed(deviceId)].filter((id) => library.byId.has(id)), checkedAt: new Date().toISOString() };
+    }
+    if (!state?.running) this.prefetch(deviceId);
+    return none('checking', this.ahead.get(deviceId)?.read ?? 0, ROLL_OBJECTS);
   }
 
   /** The reason the iPhone can't delete in this scenario, or null when it can. */
@@ -144,6 +188,9 @@ export class MockPhotoDelete {
     const results: (PhotoDeleteResult | null)[] = items.map((item) => {
       const asset = library.byId.get(item.id);
       if (!asset) return result(item, item.id.split('/').pop() ?? item.id, 'mismatch', 'path_not_found', 'It’s no longer on the phone.');
+      if (!this.listed(deviceId, item.id)) {
+        return result(item, asset.fileName, 'mismatch', 'path_not_found', `Windows doesn’t list ${asset.fileName} anywhere in the iPhone’s camera roll, so this PC can’t delete it. Delete it in the Photos app on the iPhone.`);
+      }
       if (asset.size !== item.size) return result(item, asset.fileName, 'mismatch', 'path_not_found', 'It changed since it was selected.');
       if (asset.inCloudOnly) return result(item, asset.fileName, 'mismatch', 'path_not_found', 'Its original is in iCloud only, not on the iPhone.');
       return null;
@@ -236,6 +283,7 @@ export class MockPhotoDelete {
     'photos.deleteItems': Handler<'photos.deleteItems'>;
     'photos.deleteJob': Handler<'photos.deleteJob'>;
     'photos.deletePrepare': Handler<'photos.deletePrepare'>;
+    'photos.deleteReach': Handler<'photos.deleteReach'>;
   } = {
     'photos.deleteSupport': ({ deviceId, recheck }) => {
       const device = this.ctx.requireReady(deviceId, 'photosRead');
@@ -264,6 +312,8 @@ export class MockPhotoDelete {
       this.prefetch(deviceId);
       return {};
     },
+
+    'photos.deleteReach': ({ deviceId }) => this.reachOf(deviceId),
   };
 }
 
@@ -332,6 +382,7 @@ class DeleteRun implements StagedRun {
         // It carries on from what a read ahead read (v0.4.2).
         const read = Math.min(this.readTotal, this.readFrom + Math.round(this.clock * this.speed.objectsPerSecond));
         if (read < this.readTotal) return { stage: { name: 'reading', done: read, total: this.readTotal } };
+        if (this.ios) this.owner.readAll(this.deviceId);
         this.planned = this.owner.plan(this.deviceId, this.items);
         this.goesTo = this.planned.goesTo;
         if (!this.planned.matched) {

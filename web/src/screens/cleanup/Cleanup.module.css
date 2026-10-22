@@ -272,6 +272,31 @@
   white-space: normal;
 }
 
+/* v0.4.2: "Delete on the iPhone" — items Windows doesn't show this PC. */
+.badgeLine {
+  display: flex;
+  margin-top: 2px;
+}
+
+.copyBadges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: var(--space-1);
+}
+
+.reachLine {
+  margin-top: var(--space-1);
+}
+
+/* Every selected item can only be deleted on the iPhone: why there's no Delete, next to the Copy it offers. */
+.reachReason {
+  min-width: 0;
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+}
+
 /* ---------- Caches ---------- */
 .caches {
   display: flex;

@@ -1208,6 +1208,7 @@ type PhotoBackupHiddenLayout = "separate" | "together";
 | Method | Params | Result |
 | --- | --- | --- |
 | `photos.deletePrepare` | `{ deviceId, reason? }` | `{}` at once, always (also for a phone that can't delete, or an unknown id) |
+| `photos.deleteReach` | `{ deviceId }` | `PhotoDeleteReach`: which items this PC can't delete (below) |
 
 An iPhone that can delete reads Windows' view of its whole camera roll ahead, in the background: read-only, on a
 low-priority thread, cancelable, into the per-phone listing a delete uses. It starts when Clean-up's analysis finishes,
@@ -1231,3 +1232,36 @@ Measured on the owner's iPhone 16 (iOS 27, read-only probes `wpd-dates`, `wpd-dr
   deleted from a PC. The delete now says so once it has read every folder: "Windows doesn't list … anywhere in the
   iPhone's camera roll, so this PC can't delete it. Delete it in the Photos app on the iPhone."
 
+### Items only the iPhone can delete (v0.4.2, deletejob2)
+
+`photos.deleteReach` answers from the read ahead above, so the page can mark these items before anyone selects them:
+
+```ts
+interface PhotoDeleteReach {
+  deviceId: string;
+  state: 'unsupported' | 'checking' | 'ready';
+  done: number;          // objects read of all, while checking (0 of 0 before the folders are listed)
+  total: number;
+  notListed: string[];   // ready: the asset ids Windows lists nowhere
+  checkedAt: string | null;
+}
+```
+
+- **Never a guess.** `ready` only from a complete listing of Windows' view (the kept listing, read through, less than
+  5 minutes old). Until then `checking` with how far the read got, and `notListed` is empty. Asking while no read
+  ahead runs starts one, so the page asks only where a delete is near: Clean-up's results, a selection on Photos,
+  the delete's confirmation. It polls once a second while `checking`.
+- **What is listed:** assets on the phone (not iCloud-only, not empty) that the same mapping a delete uses finds in no
+  folder at all. An item it can't tell (a name used twice, no Photos.sqlite size) is never listed. Worked out once
+  per listing.
+- While a delete runs, the last answer stands. A delete that read every folder leaves a complete listing too.
+- `unsupported` for a phone that can't delete from the PC (or isn't ready). Android with `photosDelete`: `ready` with
+  nothing listed (MediaStore deletes what it shows).
+
+The page: Clean-up marks each such item "Delete on the iPhone" (why in a tooltip) and adds "N of M can only be deleted
+on the iPhone" to the section's summary; the checkbox stays, so the item can still be copied. Delete acts on the
+others; the confirmation lists the rest apart ("can't be deleted from this PC — delete them in the Photos app"); with
+only such items selected there is no Delete, the reason and Copy instead. Photos does the same from the selection:
+the confirmation lists them apart and deletes the rest; with nothing else selected, Delete is off with the reason.
+While checking, a quiet "Checking which items this PC can delete…" with a bar. Mock: `?reach=some` (every fourth
+iPhone item), with `?deletespeed=slow` for a read ahead of about 15 s.
