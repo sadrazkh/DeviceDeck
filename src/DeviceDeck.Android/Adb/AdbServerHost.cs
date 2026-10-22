@@ -13,18 +13,28 @@ internal sealed partial class AdbServerHost
 {
     private readonly SemaphoreSlim _startGate = new(1, 1);
     private readonly Func<CancellationToken, Task>? _starter;
+    private readonly Func<string, CancellationToken, Task>? _pathStarter;
     private readonly bool _enableMdns;
+    private Task<string?>? _toolsVersion;
 
     /// <param name="starter">Replaces running `adb start-server` (tests start a fake server this way).</param>
     /// <param name="enableMdns">Let the server run adb's mDNS discovery (off: see <see cref="ServerEnvironment"/>).</param>
-    public AdbServerHost(string? adbPath, int port, Func<CancellationToken, Task>? starter = null, bool enableMdns = false)
+    /// <param name="source">Where <paramref name="adbPath"/> was found (DriverSources).</param>
+    /// <param name="pathStarter">Tests: replaces `adb start-server` only once an adb.exe was found (a downloaded fake one).</param>
+    public AdbServerHost(string? adbPath, int port, Func<CancellationToken, Task>? starter = null, bool enableMdns = false,
+        string? source = null, Func<string, CancellationToken, Task>? pathStarter = null)
     {
         AdbPath = adbPath;
         Port = port;
         EndPoint = new IPEndPoint(IPAddress.Loopback, port);
         _starter = starter;
         _enableMdns = enableMdns;
+        Source = source;
+        _pathStarter = pathStarter;
     }
+
+    /// <summary>Where <see cref="AdbPath"/> came from: bundled, downloaded, environment or configured (DriverSources).</summary>
+    public string? Source { get; }
 
     /// <summary>
     /// The environment adb.exe runs with; null removes an inherited variable. The server forked by
@@ -83,22 +93,22 @@ internal sealed partial class AdbServerHost
     public IPEndPoint EndPoint { get; }
 
     /// <summary>
-    /// The configured path when given (null if that file is missing); otherwise third_party/platform-tools/adb.exe
-    /// next to the app or in any parent folder (the dev layout), or the DEVICEDECK_ADB_PATH variable.
+    /// The configured path when given (null if that file is missing); otherwise, in this order, the bundled tools
+    /// (platform-tools next to the app, or third_party/platform-tools in any parent folder: the dev layout), the tools
+    /// DeviceDeck downloaded into its data folder, then the DEVICEDECK_ADB_PATH variable.
     /// </summary>
-    public static string? Locate(string? configuredPath)
+    public static string? Locate(string? configuredPath) =>
+        Locate(configuredPath, AppContext.BaseDirectory, null, Environment.GetEnvironmentVariable("DEVICEDECK_ADB_PATH")).Path;
+
+    /// <param name="downloadedTools">DeviceDeck's tools folder (its platform-tools subfolder is what a download installs).</param>
+    internal static AdbLocation Locate(string? configuredPath, string baseDirectory, string? downloadedTools, string? environmentPath)
     {
         if (!string.IsNullOrWhiteSpace(configuredPath))
         {
-            return File.Exists(configuredPath) ? Path.GetFullPath(configuredPath) : null;
-        }
-        string? fromEnvironment = Environment.GetEnvironmentVariable("DEVICEDECK_ADB_PATH");
-        if (!string.IsNullOrWhiteSpace(fromEnvironment) && File.Exists(fromEnvironment))
-        {
-            return Path.GetFullPath(fromEnvironment);
+            return new AdbLocation(File.Exists(configuredPath) ? Path.GetFullPath(configuredPath) : null, Core.Abstractions.DriverSources.Configured);
         }
         string exe = OperatingSystem.IsWindows() ? "adb.exe" : "adb";
-        for (var dir = new DirectoryInfo(AppContext.BaseDirectory); dir != null; dir = dir.Parent)
+        for (var dir = new DirectoryInfo(baseDirectory); dir != null; dir = dir.Parent)
         {
             foreach (string candidate in new[]
             {
@@ -108,11 +118,19 @@ internal sealed partial class AdbServerHost
             {
                 if (File.Exists(candidate))
                 {
-                    return candidate;
+                    return new AdbLocation(candidate, Core.Abstractions.DriverSources.Bundled);
                 }
             }
         }
-        return null;
+        if (!string.IsNullOrWhiteSpace(downloadedTools) && Path.Combine(downloadedTools, "platform-tools", exe) is var downloaded && File.Exists(downloaded))
+        {
+            return new AdbLocation(Path.GetFullPath(downloaded), Core.Abstractions.DriverSources.Downloaded);
+        }
+        if (!string.IsNullOrWhiteSpace(environmentPath) && File.Exists(environmentPath))
+        {
+            return new AdbLocation(Path.GetFullPath(environmentPath), Core.Abstractions.DriverSources.Environment);
+        }
+        return new AdbLocation(null, null);
     }
 
     /// <summary>The adb server's protocol version (41 for current platform-tools), or null when nothing answers on the port.</summary>
@@ -157,7 +175,17 @@ internal sealed partial class AdbServerHost
             }
             if (AdbPath == null)
             {
-                throw new FileNotFoundException("adb.exe wasn't found; run tools/fetch-platform-tools.ps1.");
+                throw new FileNotFoundException("adb.exe wasn't found; download Android tools from the Drivers card.");
+            }
+            if (_pathStarter != null)
+            {
+                await _pathStarter(AdbPath, ct).ConfigureAwait(false);
+                if (await GetServerVersionAsync(ct).ConfigureAwait(false) == null)
+                {
+                    throw new InvalidOperationException($"The adb server on port {Port} didn't come up.");
+                }
+                StartedServer = true;
+                return;
             }
             // adb itself restarts an older server it finds on the port ("server version doesn't match").
             var (exitCode, output) = await RunAdbAsync(["-P", Port.ToString(), "start-server"], TimeSpan.FromSeconds(30), ct).ConfigureAwait(false);
@@ -199,6 +227,31 @@ internal sealed partial class AdbServerHost
         for (int i = 0; i < 20 && await GetServerVersionAsync(ct).ConfigureAwait(false) != null; i++)
         {
             await Task.Delay(100, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// <see cref="GetToolsVersionAsync"/>, read once per adb.exe (the Drivers card asks every few seconds; `adb version`
+    /// is a process each time). Null when it can't be read.
+    /// </summary>
+    public async Task<string?> GetToolsVersionCachedAsync(CancellationToken ct)
+    {
+        var read = _toolsVersion ??= ReadToolsVersionAsync();
+        return await read.WaitAsync(ct).ConfigureAwait(false);
+
+        async Task<string?> ReadToolsVersionAsync()
+        {
+            try
+            {
+                using var timeout = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                return await GetToolsVersionAsync(timeout.Token).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (ex is OperationCanceledException or TimeoutException or IOException or UnauthorizedAccessException
+                or System.ComponentModel.Win32Exception or InvalidOperationException)
+            {
+                _toolsVersion = null; // try again next time
+                return null;
+            }
         }
     }
 
@@ -284,3 +337,6 @@ internal sealed partial class AdbServerHost
         }
     }
 }
+
+/// <summary>Where adb.exe was found; Path is null when it wasn't (Source then says where it was looked for, if configured).</summary>
+internal readonly record struct AdbLocation(string? Path, string? Source);

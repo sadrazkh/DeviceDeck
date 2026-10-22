@@ -8,8 +8,23 @@ The Android provider: `AndroidDeviceProvider` (`IDeviceProvider`, id `"android"`
 - `tools/fetch-platform-tools.ps1` downloads Google's `platform-tools-latest-windows.zip` into the git-ignored
   `third_party/platform-tools/`, checks adb.exe's Authenticode signature (Google LLC) and prints the version.
   Run it again with `-Force` to update.
-- adb.exe is looked up in `AndroidProviderOptions.AdbPath`, then `DEVICEDECK_ADB_PATH`, then
-  `third_party/platform-tools/adb.exe` (or `platform-tools/adb.exe`) next to the app or in any parent folder.
+- adb.exe is looked up in `AndroidProviderOptions.AdbPath` (when set, only there); otherwise, in this order
+  (v0.6): the **bundled** tools, `third_party/platform-tools/adb.exe` (or `platform-tools/adb.exe`) next to the app
+  or in any parent folder; the tools DeviceDeck **downloaded** itself, `tools\platform-tools\adb.exe` in its data
+  folder (`DEVICEDECK_DATA`, else `%LOCALAPPDATA%\DeviceDeck`); then `DEVICEDECK_ADB_PATH`.
+- **Download Android tools** (Drivers card, when no adb.exe is found): `platform-tools-latest-windows.zip` from
+  `AndroidProviderOptions.PlatformToolsSource` (Google's URL; tests use a local fake server) into
+  `tools\platform-tools.zip.part`, renamed only when complete; the zip must hold `platform-tools/adb.exe`,
+  `AdbWinApi.dll` and `AdbWinUsbApi.dll` with every entry inside `platform-tools/`; it is unpacked into
+  `tools\platform-tools.new`, where the three files must carry a valid Authenticode signature from **Google LLC**
+  (WinVerifyTrust, no revocation lookups) and `adb.exe version` must answer; only then does it become
+  `tools\platform-tools` and the private server starts from it. A failure or Cancel leaves only the previous install.
+- **Status** (`GetDriverStatusAsync`): Ready when the server answers; Missing without adb.exe; Idle before the
+  provider started ("not started yet", grey on the card); Starting while the tracker starts the server, also after it
+  went away (never "Stopped": v0.5.3 showed "Stopped" while adb ran); Error with adb's own words when it won't start.
+  Start/Restart on the card is `IDriverControl.StartDriverAsync`. Phones Windows sees that adb can't use (USB
+  debugging off, no USB driver, unauthorized, offline) come from Windows' USB list (cfgmgr32, read only) and adb's
+  device list, as `DriverStatus.Phones`.
 - DeviceDeck runs **its own adb server on port 5137** (`adb -P 5137 start-server` with
   `ANDROID_ADB_SERVER_PORT=5137`). The default server on 5037 (Android Studio, scrcpy, another tool) is never
   touched, so the two can't kill each other over a version mismatch.

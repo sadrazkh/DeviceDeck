@@ -19,6 +19,7 @@ public sealed partial class AndroidDeviceProvider : IDeviceProvider
     private readonly Dictionary<string, AndroidDevice> _devices = new(StringComparer.Ordinal);
     private AdbServerHost? _host;
     private DeviceTracker? _tracker;
+    private bool _disposed;
 
     public AndroidDeviceProvider(AndroidProviderOptions? options = null)
     {
@@ -46,48 +47,55 @@ public sealed partial class AndroidDeviceProvider : IDeviceProvider
 
     public int ServerPort => _options.ServerPort;
 
-    internal AdbServerHost Host => _host ??= new AdbServerHost(
-        AdbServerHost.Locate(_options.AdbPath), _options.ServerPort, _options.ServerStarter, _options.EnableMdns);
+    /// <summary>The adb server DeviceDeck talks to; replaced once (Drivers card) when adb.exe turns up after it was missing.</summary>
+    internal AdbServerHost Host
+    {
+        get
+        {
+            lock (_gate)
+            {
+                return _host ??= CreateHost();
+            }
+        }
+    }
 
     /// <summary>
     /// Starts the adb server (if adb is present) and device tracking, and waits up to a few seconds for the first
     /// device list so <see cref="Devices"/> is filled for callers that look right away.
     /// </summary>
-    public async Task StartAsync(CancellationToken ct)
+    public Task StartAsync(CancellationToken ct)
     {
+        Interlocked.Increment(ref _startCalls);
+        return EnsureTrackingAsync(ct);
+    }
+
+    /// <summary>
+    /// Starts tracking (and with it the server) unless it runs already; returns after the first device list or 10 s.
+    /// Without adb, and with no server answering on the port, it returns at once: the Drivers card says Missing.
+    /// </summary>
+    private async Task EnsureTrackingAsync(CancellationToken ct)
+    {
+        var host = UseToolsIfFound();
         if (_tracker != null)
         {
             return;
         }
-        if (!Host.CanStart && await Host.GetServerVersionAsync(ct).ConfigureAwait(false) == null)
+        if (!host.CanStart && await host.GetServerVersionAsync(ct).ConfigureAwait(false) == null)
         {
             return; // no adb to start a server with; GetDriverStatusAsync reports Missing
         }
-        _tracker = new DeviceTracker(Host, OnSnapshotAsync);
-        _tracker.Start();
-        await Task.WhenAny(_tracker.FirstSnapshot, Task.Delay(TimeSpan.FromSeconds(10), ct)).ConfigureAwait(false);
-    }
-
-    public async Task<DriverStatus> GetDriverStatusAsync(CancellationToken ct)
-    {
-        int? protocol = await Host.GetServerVersionAsync(ct).ConfigureAwait(false);
-        string? version = await Host.GetToolsVersionAsync(ct).ConfigureAwait(false);
-        if (protocol != null)
+        DeviceTracker tracker;
+        lock (_gate)
         {
-            return new DriverStatus(Id, DriverState.Ready, version ?? $"adb protocol {protocol}", null);
+            if (_tracker != null || _disposed)
+            {
+                return;
+            }
+            tracker = _tracker = new DeviceTracker(host, OnSnapshotAsync, RaiseDriverStatusChanged);
         }
-        if (Host.AdbPath == null)
-        {
-            return new DriverStatus(Id, DriverState.Missing, null,
-                _options.AdbPath != null
-                    ? $"adb wasn't found at {_options.AdbPath}."
-                    : "adb isn't installed; run tools/fetch-platform-tools.ps1 to download Google's platform-tools.");
-        }
-        if (_tracker?.LastError is { } error)
-        {
-            return new DriverStatus(Id, DriverState.Error, version, $"The adb server on port {_options.ServerPort} won't start: {AdbErrors.FirstLine(error.Message)}");
-        }
-        return new DriverStatus(Id, DriverState.Stopped, version, $"The adb server on port {_options.ServerPort} isn't running yet.");
+        tracker.Start();
+        RaiseDriverStatusChanged();
+        await Task.WhenAny(tracker.FirstSnapshot, Task.Delay(TimeSpan.FromSeconds(10), ct)).ConfigureAwait(false);
     }
 
     internal IAdbChannel CreateChannel(AdbDeviceEntry entry) =>
@@ -99,6 +107,7 @@ public sealed partial class AndroidDeviceProvider : IDeviceProvider
         var toLoad = new List<AndroidDevice>();
         lock (_gate)
         {
+            _lastEntries = entries;
             var current = entries.Where(e => e.State is not "host" and not "unknown")
                 .GroupBy(e => e.Serial).Select(g => g.First()).ToDictionary(e => e.Serial, StringComparer.Ordinal);
 
@@ -205,10 +214,17 @@ public sealed partial class AndroidDeviceProvider : IDeviceProvider
 
     public async ValueTask DisposeAsync()
     {
-        if (_tracker != null)
+        DeviceTracker? tracker;
+        lock (_gate)
         {
-            await _tracker.DisposeAsync().ConfigureAwait(false);
+            _disposed = true;
+            tracker = _tracker;
             _tracker = null;
+        }
+        await StopDownloadAsync().ConfigureAwait(false);
+        if (tracker != null)
+        {
+            await tracker.DisposeAsync().ConfigureAwait(false);
         }
         lock (_gate)
         {
