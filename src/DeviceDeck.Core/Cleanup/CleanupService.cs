@@ -241,7 +241,7 @@ public sealed class CleanupService : IAsyncDisposable
             }
 
             // Item by item, checked against the library first; an iPhone goes through Windows' camera connection.
-            var results = await PhotoDelete.PhotoDeletes.DeleteItemsAsync(device, verified.Select(i => new PhotoDeleteItem(i.Id, i.Size)).ToList(), ct).ConfigureAwait(false);
+            var results = await PhotoDelete.PhotoDeletes.DeleteItemsAsync(device, verified.Select(i => new PhotoDeleteItem(i.Id, i.Size)).ToList(), null, ct).ConfigureAwait(false);
             var gone = results.Where(r => r.Outcome == PhotoDeleteOutcome.Deleted).ToList();
             var freed = gone.Sum(r => r.Size);
             var goneIds = gone.Select(r => r.Id).ToHashSet(StringComparer.Ordinal);

@@ -47,17 +47,21 @@ public sealed class WpdPhotoDeleter
     private readonly IPhoneCameraRoll _phone;
     private readonly PhotoDeleteLog _log;
     private readonly Func<TimeSpan, CancellationToken, Task> _delay;
+    private readonly WpdListingCache _cache;
     private readonly SemaphoreSlim _gate = new(1, 1);
     private PhotoDeleteSupport _support = PhotoDeleteSupport.No(PhotoDeleteBlock.Checking);
     private PhotoDeleteDestination _observed = PhotoDeleteDestination.Unknown;
 
-    public WpdPhotoDeleter(IWpdBackend? wpd, string udid, IPhoneCameraRoll phone, PhotoDeleteLog log, Func<TimeSpan, CancellationToken, Task>? delay = null)
+    /// <param name="cache">The listing kept between deletes (5 minutes by default; tests give their own clock).</param>
+    public WpdPhotoDeleter(IWpdBackend? wpd, string udid, IPhoneCameraRoll phone, PhotoDeleteLog log, Func<TimeSpan, CancellationToken, Task>? delay = null,
+        WpdListingCache? cache = null)
     {
         _wpd = wpd;
         _udid = udid;
         _phone = phone;
         _log = log;
         _delay = delay ?? Task.Delay;
+        _cache = cache ?? new WpdListingCache();
     }
 
     /// <summary>The log lines written in this process (the probe prints them).</summary>
@@ -66,8 +70,12 @@ public sealed class WpdPhotoDeleter
     /// <summary>The last answer of <see cref="CheckAsync"/>, with what deletes on this phone have shown since.</summary>
     public PhotoDeleteSupport Current => WithDestination(Volatile.Read(ref _support));
 
-    /// <summary>Forgets the last check (the phone was locked or went away).</summary>
-    public void Reset(PhotoDeleteBlock reason, string? detail = null) => Volatile.Write(ref _support, PhotoDeleteSupport.No(reason, detail));
+    /// <summary>Forgets the last check and the kept listing (the phone was locked or went away).</summary>
+    public void Reset(PhotoDeleteBlock reason, string? detail = null)
+    {
+        _cache.Invalidate();
+        Volatile.Write(ref _support, PhotoDeleteSupport.No(reason, detail));
+    }
 
     // ---------- Can this phone's photos be deleted from the PC? ----------
 
@@ -265,10 +273,34 @@ public sealed class WpdPhotoDeleter
         public IReadOnlyList<WpdObject> Edits = [];
         public int PairHr;
         public string? Note;
+
+        /// <summary>Why it doesn't map to what Windows lists (null when it does).</summary>
+        public string? Refusal;
+        public WpdMapProblem Problem;
+
+        public void Clear()
+        {
+            Still = null;
+            Pair = null;
+            Edits = [];
+            PairHr = 0;
+            Note = null;
+            Refusal = null;
+            Problem = WpdMapProblem.None;
+        }
     }
 
+    /// <summary>How the last delete read Windows' view of the camera roll (the probe prints it).</summary>
+    public WpdReadStats? LastRead { get; private set; }
+
+    /// <summary>The listing of this phone's camera roll kept between deletes.</summary>
+    public WpdListingCache Listing => _cache;
+
     /// <summary>See <see cref="IPhotoDeleter.DeleteConfirmedAsync"/>.</summary>
-    public async Task<IReadOnlyList<PhotoDeleteResult>> DeleteAsync(IReadOnlyList<PhotoDeleteItem> items, CancellationToken ct)
+    public Task<IReadOnlyList<PhotoDeleteResult>> DeleteAsync(IReadOnlyList<PhotoDeleteItem> items, CancellationToken ct) => DeleteAsync(items, null, ct);
+
+    /// <summary>See <see cref="IPhotoDeleter.DeleteConfirmedAsync"/>.</summary>
+    public async Task<IReadOnlyList<PhotoDeleteResult>> DeleteAsync(IReadOnlyList<PhotoDeleteItem> items, IPhotoDeleteObserver? observer, CancellationToken ct)
     {
         if (items.Count == 0)
         {
@@ -288,7 +320,7 @@ public sealed class WpdPhotoDeleter
         await _gate.WaitAsync(ct).ConfigureAwait(false);
         try
         {
-            return await DeleteLockedAsync(items, ct).ConfigureAwait(false);
+            return await DeleteLockedAsync(items, observer ?? NoPhotoDeleteObserver.Instance, ct).ConfigureAwait(false);
         }
         finally
         {
@@ -296,9 +328,10 @@ public sealed class WpdPhotoDeleter
         }
     }
 
-    private async Task<IReadOnlyList<PhotoDeleteResult>> DeleteLockedAsync(IReadOnlyList<PhotoDeleteItem> items, CancellationToken ct)
+    private async Task<IReadOnlyList<PhotoDeleteResult>> DeleteLockedAsync(IReadOnlyList<PhotoDeleteItem> items, IPhotoDeleteObserver observer, CancellationToken ct)
     {
         var results = new PhotoDeleteResult?[items.Count];
+        observer.Stage(PhotoDeleteStage.Reading, 0, 0);
 
         // 1. The phone's side: still in the library at the confirmed size, and its file is in DCIM at that size.
         var index = await _phone.GetIndexAsync(refresh: true, ct).ConfigureAwait(false);
@@ -365,22 +398,33 @@ public sealed class WpdPhotoDeleter
             : null;
 
         // 2. Windows' side, then 3. the deletes: blocking COM calls, off the caller's thread.
-        var deleted = await Task.Run(() => DeleteWithWindows(items, plans!, results, phoneFiles, edited, phoneAssets, ct), ct).ConfigureAwait(false);
+        var run = await Task.Run(() => DeleteWithWindows(items, plans!, results, phoneFiles, edited, phoneAssets, observer, ct), ct).ConfigureAwait(false);
 
         // 4. Where they went: the photo index is rebuilt, and the phone's disk says whether the files stayed.
-        if (deleted.Count > 0)
+        var confirmed = run.Deleted.Count == 0 || await ClassifyAsync(items, plans!, results, run.Deleted, edited, observer).ConfigureAwait(false);
+
+        // The kept listing: without what went when everything went as Windows said, else read again next time.
+        if (run.Clean && confirmed)
         {
-            await ClassifyAsync(items, plans!, results, deleted, edited, ct).ConfigureAwait(false);
+            _cache.Forget(run.Gone);
+        }
+        else
+        {
+            _cache.Invalidate();
         }
 
         return results.Select((r, i) => r ?? NotTried(items[i], plans[i]?.Asset, "Not tried.")).ToList();
     }
 
-    /// <summary>Maps every item, then deletes batch by batch. Returns the indexes of the items deleted.</summary>
-    private List<int> DeleteWithWindows(IReadOnlyList<PhotoDeleteItem> items, Plan[] plans, PhotoDeleteResult?[] results, IReadOnlyList<string> phoneFiles,
-        HashSet<string> edited, IReadOnlyCollection<WpdPhoneAsset>? phoneAssets, CancellationToken ct)
+    private sealed record WindowsRun(List<int> Deleted, HashSet<string> Gone, bool Clean);
+
+    /// <summary>Maps every item, then deletes batch by batch. Returns the indexes of the items deleted and the objects that went.</summary>
+    private WindowsRun DeleteWithWindows(IReadOnlyList<PhotoDeleteItem> items, Plan[] plans, PhotoDeleteResult?[] results, IReadOnlyList<string> phoneFiles,
+        HashSet<string> edited, IReadOnlyCollection<WpdPhoneAsset>? phoneAssets, IPhotoDeleteObserver observer, CancellationToken ct)
     {
         var deleted = new List<int>();
+        var gone = new HashSet<string>(StringComparer.Ordinal);
+        var clean = true;
         IWpdConnection? c = null;
         try
         {
@@ -388,88 +432,59 @@ public sealed class WpdPhotoDeleter
             if (device is null)
             {
                 FailAll(items, plans, results, DeviceErrorCodes.NotSupported, "Windows doesn't list the iPhone as a camera now. " + why);
-                return deleted;
+                return new WindowsRun(deleted, gone, false);
             }
 
             c = _wpd!.Open(device.PnpId, readOnly: false);
-            var dcim = WpdDcimWalker.Walk(c, ct, out _);
-            if (dcim is null)
+            if (MapWithWindows(c, device.PnpId, plans, phoneFiles, phoneAssets, edited, observer, ct) is not { } map)
             {
                 FailAll(items, plans, results, DeviceErrorCodes.Locked, "Windows doesn't show the iPhone's DCIM folder now. Unlock the iPhone and try again.");
-                return deleted;
+                return new WindowsRun(deleted, gone, false);
             }
 
-            var map = new WpdDcimMap(dcim, phoneFiles, phoneAssets);
             for (var i = 0; i < plans.Length; i++)
             {
-                var plan = plans[i];
-                var still = map.Find(plan.Item.Id, plan.DiskSize, plan.Asset.Size > 0 ? plan.Asset.TakenAt : null);
-                if (!still.Ok)
+                if (plans[i].Refusal is { } refusal)
                 {
-                    results[i] = Mismatch(plan.Item, plan.Asset, still.Message);
-                    continue;
-                }
-
-                plan.Still = still.Object;
-                var renamed = still.Message.Length > 0;
-                if (renamed)
-                {
-                    plan.Note = still.Message;
-                }
-
-                if (plan.PairPath is not null)
-                {
-                    var pair = plan.PairDiskSize is { } pairSize ? map.Find(plan.PairPath, pairSize) : null;
-                    if (pair is null)
-                    {
-                        plan.Note = "Its Live Photo video isn't in DCIM.";
-                    }
-                    else if (pair.Ok)
-                    {
-                        plan.Pair = pair.Object;
-                    }
-                    else if (renamed && pair.Problem == WpdMapProblem.Absent && map.CompanionOf(plan.Still!, plan.PairPath, plan.PairDiskSize!.Value) is { } companion)
-                    {
-                        // The still is shown under a name of the phone's making; its video carries the same name.
-                        plan.Pair = companion;
-                    }
-                    else if (pair.Problem == WpdMapProblem.Absent)
-                    {
-                        // Windows doesn't list the video half: the phone shows Live Photos as stills only. The still goes;
-                        // whether its video went with it is checked on the phone afterwards.
-                        plan.Note = "Windows doesn't list its Live Photo video.";
-                    }
-                    else
-                    {
-                        results[i] = Mismatch(plan.Item, plan.Asset, "Its Live Photo video doesn't match: " + pair.Message);
-                        continue;
-                    }
-                }
-
-                if (edited.Contains(plan.Item.Id))
-                {
-                    plan.Edits = map.EditsOf(plan.Still!);
+                    results[i] = Mismatch(plans[i].Item, plans[i].Asset, refusal);
                 }
             }
 
             if (results.Any(r => r is not null))
             {
                 Refuse(items, results, plans, "Nothing was deleted, because another selected item didn't match.");
-                return deleted;
+                return new WindowsRun(deleted, gone, true);
             }
 
+            // The last moment a cancel stops everything: from the first batch on, it stops between batches.
+            ct.ThrowIfCancellationRequested();
+            observer.Stage(PhotoDeleteStage.Deleting, 0, plans.Length);
             for (var start = 0; start < plans.Length; start += BatchSize)
             {
-                ct.ThrowIfCancellationRequested();
-                var batch = Enumerable.Range(start, Math.Min(BatchSize, plans.Length - start)).ToList();
-                if (!DeleteBatch(c, map, plans, results, batch, deleted))
+                if (start > 0 && ct.IsCancellationRequested)
                 {
+                    Log($"stopped: cancelled after {deleted.Count} of {plans.Length}");
+                    for (var i = start; i < plans.Length; i++)
+                    {
+                        results[i] ??= NotTried(items[i], plans[i].Asset, CancelledNote);
+                    }
+
+                    break;
+                }
+
+                var batch = Enumerable.Range(start, Math.Min(BatchSize, plans.Length - start)).ToList();
+                var ok = DeleteBatch(c, map, plans, results, batch, deleted, gone, observer);
+                observer.Stage(PhotoDeleteStage.Deleting, start + batch.Count, plans.Length);
+                if (!ok)
+                {
+                    clean = false;
                     break;
                 }
             }
         }
         catch (WpdException ex)
         {
+            clean = false;
             FailAll(items, plans, results, Code(ex.HResult), ex.Message);
         }
         finally
@@ -482,11 +497,186 @@ public sealed class WpdPhotoDeleter
             results[i] ??= NotTried(items[i], plans[i].Asset, "Not tried: the delete stopped at an earlier item.");
         }
 
-        return deleted;
+        return new WindowsRun(deleted, gone, clean);
     }
 
+    /// <summary>What an item not reached says after the user cancelled part-way (the same words as PhotoDeletes.Cancelled).</summary>
+    public const string CancelledNote = "Not tried: the delete was cancelled.";
+
+    /// <summary>
+    /// Maps every plan to what Windows lists, reading as little as it can: the listing kept from the last few minutes, else
+    /// only the folders that can hold the items (their own folder, or the month they were taken in); every folder, read
+    /// fresh, when a match is missing; objects kept from earlier read again before they are used. Null when Windows
+    /// shows no camera roll.
+    /// </summary>
+    private WpdDcimMap? MapWithWindows(IWpdConnection c, string pnpId, Plan[] plans, IReadOnlyList<string> phoneFiles,
+        IReadOnlyCollection<WpdPhoneAsset>? phoneAssets, HashSet<string> edited, IPhotoDeleteObserver observer, CancellationToken ct)
+    {
+        var stats = new WpdReadStats();
+        LastRead = stats;
+        var reader = new WpdRollReader(c, stats, (done, total) => observer.Stage(PhotoDeleteStage.Reading, done, total), ct);
+        var kept = _cache.Take(pnpId, out var generation);
+        var listing = reader.Structure(kept, pnpId, _cache.Now, out _);
+        var fresh = kept is null;
+        var full = false;
+        while (true)
+        {
+            if (listing is null)
+            {
+                _cache.Invalidate();
+                return null;
+            }
+
+            var names = listing.Folders.Select(f => f.FileName ?? "").ToList();
+            var byFolder = WpdDcimMap.ShowsPhoneFolders(names, phoneFiles);
+            var folders = full ? listing.Folders : Narrow(listing, byFolder, plans);
+            stats.FoldersInRoll = listing.Folders.Count;
+            reader.Load(listing, folders, fresh);
+            var map = new WpdDcimMap(listing.ToDcim(), phoneFiles, phoneAssets, names);
+            MapAll(map, plans, edited);
+
+            if (!(full && fresh) && plans.Any(p => p.Problem is WpdMapProblem.Absent or WpdMapProblem.NoFolder))
+            {
+                // Not where its month (or folder) says, or not in the listing kept from earlier: look everywhere, fresh.
+                stats.FullWalkBecause = fresh ? "an item isn't in the folders its date points to" : "an item isn't in the listing kept from earlier";
+                if (!fresh)
+                {
+                    listing = reader.Structure(null, pnpId, _cache.Now, out _);
+                    fresh = true;
+                }
+
+                full = true;
+                continue;
+            }
+
+            if (!fresh && plans.Any(p => p.Refusal is not null))
+            {
+                // A refusal on what was read earlier may only be out of date: read those folders again before refusing.
+                listing = reader.Structure(null, pnpId, _cache.Now, out _);
+                fresh = true;
+                continue;
+            }
+
+            if (plans.All(p => p.Refusal is null) && !Verified(reader, listing, map, plans))
+            {
+                stats.FullWalkBecause = "an object kept from earlier changed";
+                listing = reader.Structure(null, pnpId, _cache.Now, out _);
+                fresh = true;
+                continue;
+            }
+
+            Log($"read Windows' view for {plans.Length} item(s) ({(byFolder ? "by folder" : "by month")}): {stats}");
+            _cache.Keep(listing, generation);
+            return map;
+        }
+    }
+
+    /// <summary>
+    /// The folders that can hold the items: when Windows shows the phone's own folders, theirs; when it shows month folders
+    /// ("202610_a"), the month each was taken in (two at a month's edge, for any time zone), plus every folder not named
+    /// after a month. Every folder when an item's date isn't known.
+    /// </summary>
+    private static IReadOnlyList<WpdObject> Narrow(WpdListing listing, bool byFolder, Plan[] plans)
+    {
+        if (byFolder)
+        {
+            var names = plans.SelectMany(p => new[] { p.Item.Id, p.PairPath }).Where(x => x is not null)
+                .Select(x => x!.Split('/')).Where(x => x.Length == 3).Select(x => x[1]).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return listing.Folders.Where(f => names.Contains(f.FileName ?? "")).ToList();
+        }
+
+        if (plans.Any(p => p.Asset.TakenAt is null))
+        {
+            return listing.Folders;
+        }
+
+        var months = plans.SelectMany(p => WpdMonths.MonthsFor(p.Asset.TakenAt!.Value)).ToHashSet();
+        return listing.Folders.Where(f => WpdMonths.MonthOf(f.FileName) is not { } month || months.Contains(month)).ToList();
+    }
+
+    /// <summary>Maps each plan to its still (and Live Photo video, and edits) in this map, or says why not.</summary>
+    private static void MapAll(WpdDcimMap map, Plan[] plans, HashSet<string> edited)
+    {
+        foreach (var plan in plans)
+        {
+            plan.Clear();
+            var still = map.Find(plan.Item.Id, plan.DiskSize, plan.Asset.Size > 0 ? plan.Asset.TakenAt : null);
+            if (!still.Ok)
+            {
+                plan.Refusal = still.Message;
+                plan.Problem = still.Problem;
+                continue;
+            }
+
+            plan.Still = still.Object;
+            var renamed = still.Message.Length > 0;
+            if (renamed)
+            {
+                plan.Note = still.Message;
+            }
+
+            if (plan.PairPath is not null)
+            {
+                var pair = plan.PairDiskSize is { } pairSize ? map.Find(plan.PairPath, pairSize) : null;
+                if (pair is null)
+                {
+                    plan.Note = "Its Live Photo video isn't in DCIM.";
+                }
+                else if (pair.Ok)
+                {
+                    plan.Pair = pair.Object;
+                }
+                else if (renamed && pair.Problem == WpdMapProblem.Absent && map.CompanionOf(plan.Still!, plan.PairPath, plan.PairDiskSize!.Value) is { } companion)
+                {
+                    // The still is shown under a name of the phone's making; its video carries the same name.
+                    plan.Pair = companion;
+                }
+                else if (pair.Problem == WpdMapProblem.Absent)
+                {
+                    // Windows doesn't list the video half: the phone shows Live Photos as stills only. The still goes;
+                    // whether its video went with it is checked on the phone afterwards.
+                    plan.Note = "Windows doesn't list its Live Photo video.";
+                }
+                else
+                {
+                    plan.Refusal = "Its Live Photo video doesn't match: " + pair.Message;
+                    plan.Problem = pair.Problem;
+                    continue;
+                }
+            }
+
+            if (edited.Contains(plan.Item.Id))
+            {
+                plan.Edits = map.EditsOf(plan.Still!);
+            }
+        }
+    }
+
+    /// <summary>Objects the plans use that were read on an earlier connection are read again; false when one changed or is gone.</summary>
+    private static bool Verified(WpdRollReader reader, WpdListing listing, WpdDcimMap map, Plan[] plans)
+    {
+        var used = plans.SelectMany(p => new[] { p.Still, p.Pair }).Where(o => o is not null).Select(o => o!)
+            .Where(o => map.FolderOf(o) is { } folder && !listing.IsFresh(folder.Id))
+            .ToList();
+        if (used.Count == 0)
+        {
+            return true;
+        }
+
+        var now = reader.ReadAgain(used.Select(o => o.Id).ToList()).ToDictionary(o => o.Id, StringComparer.Ordinal);
+        return used.All(o => now.TryGetValue(o.Id, out var again) && SameFile(o, again, map.FolderOf(o)));
+    }
+
+    /// <summary>The object read now is still the file the map found: a file, the same name and size, in the same folder, the same persistent id.</summary>
+    private static bool SameFile(WpdObject expected, WpdObject? now, WpdFolder? folder) =>
+        now is not null && now.Kind == WpdObjectKind.File && now.Size == expected.Size
+        && string.Equals(now.FileName, expected.FileName, StringComparison.OrdinalIgnoreCase)
+        && folder is not null && (now.ParentId is null || now.ParentId == folder.Id)
+        && (now.PersistentId is null || expected.PersistentId is null || now.PersistentId == expected.PersistentId);
+
     /// <summary>Re-checks and deletes one batch. False when it stopped (a mismatch or an error).</summary>
-    private bool DeleteBatch(IWpdConnection c, WpdDcimMap map, Plan[] plans, PhotoDeleteResult?[] results, List<int> batch, List<int> deleted)
+    private bool DeleteBatch(IWpdConnection c, WpdDcimMap map, Plan[] plans, PhotoDeleteResult?[] results, List<int> batch, List<int> deleted,
+        HashSet<string> gone, IPhotoDeleteObserver observer)
     {
         // Just before deleting: each object is still the same file in the same DCIM folder.
         foreach (var i in batch)
@@ -494,13 +684,10 @@ public sealed class WpdPhotoDeleter
             var plan = plans[i];
             foreach (var expected in new[] { plan.Still, plan.Pair }.Where(o => o is not null).Select(o => o!))
             {
-                var now = c.Get(expected.Id);
-                var folder = map.FolderOf(expected);
-                if (now is null || now.Kind != WpdObjectKind.File || now.Size != expected.Size
-                    || !string.Equals(now.FileName, expected.FileName, StringComparison.OrdinalIgnoreCase)
-                    || folder is null || (now.ParentId is not null && now.ParentId != folder.Id))
+                if (!SameFile(expected, c.Get(expected.Id), map.FolderOf(expected)))
                 {
                     results[i] = Mismatch(plan.Item, plan.Asset, $"{expected.FileName} changed on the iPhone just before the delete.");
+                    observer.Result(i, results[i]!);
                     Log($"refused {plan.Item.Id}: {expected.FileName} changed just before the delete");
                     return false;
                 }
@@ -520,6 +707,7 @@ public sealed class WpdPhotoDeleter
             }
         }
 
+        observer.Deleting(batch);
         var outcome = c.Delete(ids);
         var stop = false;
         foreach (var i in batch)
@@ -530,6 +718,7 @@ public sealed class WpdPhotoDeleter
             {
                 results[i] = new PhotoDeleteResult(plan.Item.Id, plan.Asset.FileName, plan.Item.Size, PhotoDeleteOutcome.Failed, Code(stillHr),
                     Sentence(WpdErrors.Describe(stillHr)), [], PhotoDeleteDestination.Unknown);
+                observer.Result(i, results[i]!);
                 Log($"failed {plan.Item.Id} ({Bytes(plan.DiskSize)}): {WpdErrors.Describe(stillHr)}");
                 stop = true;
                 continue;
@@ -538,11 +727,14 @@ public sealed class WpdPhotoDeleter
             // Windows said it's done. Reading the object back on this connection isn't proof either way: on iOS 27 the
             // driver still answered with the deleted objects' properties. What the phone itself shows decides (ClassifyAsync).
             Log($"deleted {plan.Item.Id} ({Bytes(plan.DiskSize)}) through Windows, object {plan.Still!.Id} ({plan.Still.FileName})");
+            gone.Add(plan.Still.Id);
+            gone.UnionWith(plan.Edits.Select(o => o.Id));
             var also = new List<string>();
             var freed = plan.Item.Size;
             if (plan.Pair is { } pair)
             {
                 plan.PairHr = outcome[owner.FindIndex(o => o.Item == i && !o.IsStill)];
+                gone.Add(pair.Id);
                 if (plan.PairHr == 0)
                 {
                     also.Add(pair.FileName ?? Path.GetFileName(plan.PairPath!));
@@ -552,6 +744,7 @@ public sealed class WpdPhotoDeleter
             }
 
             results[i] = new PhotoDeleteResult(plan.Item.Id, plan.Asset.FileName, freed, PhotoDeleteOutcome.Deleted, null, plan.Note, also, PhotoDeleteDestination.Unknown);
+            observer.Result(i, results[i]!);
             deleted.Add(i);
         }
 
@@ -561,40 +754,71 @@ public sealed class WpdPhotoDeleter
     /// <summary>
     /// What the phone shows after the delete: the file gone from DCIM (deleted for good), or kept but no longer in the
     /// library (Recently Deleted). A photo the phone still has and still lists, after a few tries, wasn't deleted.
-    /// Live Photo videos and edits are told from the same view.
+    /// Live Photo videos and edits are told from the same view. It runs to the end even after a cancel (it only reads);
+    /// when the phone can't be asked, Windows' word stands. False when the phone showed otherwise or couldn't be asked.
     /// </summary>
-    private async Task ClassifyAsync(IReadOnlyList<PhotoDeleteItem> items, Plan?[] plans, PhotoDeleteResult?[] results, List<int> deleted, HashSet<string> edited, CancellationToken ct)
+    private async Task<bool> ClassifyAsync(IReadOnlyList<PhotoDeleteItem> items, Plan?[] plans, PhotoDeleteResult?[] results, List<int> deleted, HashSet<string> edited,
+        IPhotoDeleteObserver observer)
     {
+        using var limit = new CancellationTokenSource(TimeSpan.FromMinutes(2));
+        var ct = limit.Token;
+        observer.Stage(PhotoDeleteStage.Checking, 0, deleted.Count);
         IReadOnlyDictionary<string, long?> disk = new Dictionary<string, long?>();
+        string? notChecked = null;
         for (var attempt = 0; attempt < 3; attempt++)
         {
-            var index = await _phone.GetIndexAsync(refresh: true, ct).ConfigureAwait(false);
-            var listed = index.Assets.Select(a => a.Id).ToHashSet(StringComparer.Ordinal);
-            var paths = deleted.SelectMany(i => plans[i]!.PairPath is { } pair ? new[] { items[i].Id, pair } : [items[i].Id]).ToList();
-            disk = await _phone.StatAsync(paths, ct).ConfigureAwait(false);
-            var pending = 0;
-            foreach (var i in deleted)
+            int pending;
+            try
             {
-                var id = items[i].Id;
-                var wentTo = disk.GetValueOrDefault(id) is null ? PhotoDeleteDestination.Permanent
-                    : !listed.Contains(id) ? PhotoDeleteDestination.RecentlyDeleted
-                    : PhotoDeleteDestination.Unknown;
-                if (wentTo == PhotoDeleteDestination.Unknown)
+                var index = await _phone.GetIndexAsync(refresh: true, ct).ConfigureAwait(false);
+                var listed = index.Assets.Select(a => a.Id).ToHashSet(StringComparer.Ordinal);
+                var paths = deleted.SelectMany(i => plans[i]!.PairPath is { } pair ? new[] { items[i].Id, pair } : [items[i].Id]).ToList();
+                disk = await _phone.StatAsync(paths, ct).ConfigureAwait(false);
+                pending = 0;
+                foreach (var i in deleted)
                 {
-                    pending++;
-                }
+                    var id = items[i].Id;
+                    var wentTo = disk.GetValueOrDefault(id) is null ? PhotoDeleteDestination.Permanent
+                        : !listed.Contains(id) ? PhotoDeleteDestination.RecentlyDeleted
+                        : PhotoDeleteDestination.Unknown;
+                    if (wentTo == PhotoDeleteDestination.Unknown)
+                    {
+                        pending++;
+                    }
 
-                results[i] = results[i]! with { WentTo = wentTo };
+                    results[i] = results[i]! with { WentTo = wentTo };
+                }
+            }
+            catch (Exception ex) when (ex is DeviceException or IOException or OperationCanceledException)
+            {
+                notChecked = ex is OperationCanceledException ? "the iPhone took too long to answer" : ex.Message;
+                break;
             }
 
+            observer.Stage(PhotoDeleteStage.Checking, deleted.Count - pending, deleted.Count);
             if (pending == 0)
             {
                 break;
             }
 
-            await _delay(TimeSpan.FromSeconds(2), ct).ConfigureAwait(false);
+            await _delay(TimeSpan.FromSeconds(2), CancellationToken.None).ConfigureAwait(false);
         }
 
+        if (notChecked is not null)
+        {
+            // Windows said each of these went; the phone couldn't be asked, so where they went stays unknown.
+            Log($"couldn't check on the phone after the delete: {notChecked}");
+            foreach (var i in deleted)
+            {
+                var r = results[i]!;
+                results[i] = r with { WentTo = PhotoDeleteDestination.Unknown, Message = Join(r.Message, "DeviceDeck couldn't check on the iPhone afterwards.") };
+            }
+
+            observer.Stage(PhotoDeleteStage.Checking, deleted.Count, deleted.Count);
+            return false;
+        }
+
+        var confirmed = true;
         foreach (var i in deleted.ToList())
         {
             var r = results[i]!;
@@ -610,6 +834,8 @@ public sealed class WpdPhotoDeleter
                     Size = plan.Item.Size,
                 };
                 deleted.Remove(i);
+                confirmed = false;
+                observer.Result(i, results[i]!);
                 Log($"not deleted after all, {r.Id}: the phone still has the file and still lists it");
                 continue;
             }
@@ -648,6 +874,7 @@ public sealed class WpdPhotoDeleter
             }
 
             results[i] = r with { Also = also, Size = freed, Message = notes.Count == 0 ? null : string.Join(" ", notes) };
+            observer.Result(i, results[i]!);
             Log($"after the delete, {r.Id}: " + (r.WentTo == PhotoDeleteDestination.Permanent
                 ? "the file is gone from DCIM"
                 : "the file is still in DCIM and the library no longer lists it (Recently Deleted)"));
@@ -658,6 +885,8 @@ public sealed class WpdPhotoDeleter
         {
             _observed = seen[0];
         }
+
+        return confirmed;
     }
 
     private PhotoDeleteResult[] Refuse(IReadOnlyList<PhotoDeleteItem> items, PhotoDeleteResult?[] results, Plan?[] plans, string why)

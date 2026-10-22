@@ -262,7 +262,7 @@ internal static class PhotoDeleteProbe
         var items = exact.Select(h => new PhotoDeleteItem(h[0].AssetId, assets[h[0].AssetId].Size > 0 ? assets[h[0].AssetId].Size : h[0].Size)).ToList();
         Console.WriteLine($"\nDeleting exactly {items.Count} file(s) through Windows: {string.Join(", ", items.Select(i => i.Id))}");
         clock.Restart();
-        var results = await device.DeleteConfirmedAsync(items, ct);
+        var results = await device.DeleteConfirmedAsync(items, null, ct);
         Console.WriteLine($"({clock.Elapsed.TotalSeconds:0.0} s)");
         Out.Table(["file", "outcome", "went to", "also", "note"], results.Select(r => new[]
         {

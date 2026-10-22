@@ -78,7 +78,7 @@ public sealed class PhotoDeleteService(DeviceHub hub, TransferQueue transfers, S
                 }
             }
 
-            var results = await PhotoDeletes.DeleteItemsAsync(device, items, ct).ConfigureAwait(false);
+            var results = await PhotoDeletes.DeleteItemsAsync(device, items, null, ct).ConfigureAwait(false);
             var deleted = results.Where(r => r.Outcome == PhotoDeleteOutcome.Deleted).ToList();
             return new PhotoDeleteReport(results, deleted.Count, deleted.Sum(r => r.Size), jobs, false, PhotoDeletes.WentTo(results, before.GoesTo));
         }

@@ -59,6 +59,14 @@ public interface IWpdConnection : IDisposable
     WpdObject? Get(string objectId);
 
     /// <summary>
+    /// Many objects' properties in one bulk request (IPortableDevicePropertiesBulk::QueueGetValuesByObjectList), with
+    /// <paramref name="progress"/> told how many have come back so far. Null when the device or its driver doesn't do
+    /// bulk reads: the caller then reads them one by one with <see cref="Get"/>. An object the answer leaves out is
+    /// missing from the list (the caller reads it with Get). Cancelling stops the request and throws.
+    /// </summary>
+    IReadOnlyList<WpdObject>? GetMany(IReadOnlyList<string> objectIds, Action<int>? progress, CancellationToken ct) => null;
+
+    /// <summary>
     /// Deletes these objects, never recursively. Returns one HRESULT per id, in order: 0 deleted, anything else not.
     /// Throws <see cref="WpdException"/> when the device refused the whole call.
     /// </summary>
@@ -105,6 +113,8 @@ public static class WpdErrors
     public const int GenFailure = unchecked((int)0x8007001F);
     public const int Busy = unchecked((int)0x800700AA);
     public const int NotSupported = unchecked((int)0x80070032);
+    public const int NotImplemented = unchecked((int)0x80004001);
+    public const int Cancelled = unchecked((int)0x800704C7);
 
     public static string Describe(int hr) => hr switch
     {

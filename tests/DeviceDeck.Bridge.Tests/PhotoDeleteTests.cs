@@ -166,7 +166,7 @@ public sealed class PhotoDeleteTests
         public Task<PhotoDeleteSupport> GetDeleteSupportAsync(bool recheck, CancellationToken ct) =>
             Task.FromResult(new PhotoDeleteSupport(true, PhotoDeleteBlock.None, "fake", PhotoDeleteDestination.Permanent, false, T, ICloudPhotos: true));
 
-        public async Task<IReadOnlyList<PhotoDeleteResult>> DeleteConfirmedAsync(IReadOnlyList<PhotoDeleteItem> items, CancellationToken ct)
+        public async Task<IReadOnlyList<PhotoDeleteResult>> DeleteConfirmedAsync(IReadOnlyList<PhotoDeleteItem> items, IPhotoDeleteObserver? observer, CancellationToken ct)
         {
             Calls.Add(items);
             await inner.Photos.DeleteAsync(items.Select(i => i.Id).ToList(), ct);

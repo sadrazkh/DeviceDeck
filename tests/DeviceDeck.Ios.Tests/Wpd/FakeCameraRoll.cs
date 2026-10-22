@@ -29,6 +29,9 @@ internal sealed class FakeCameraRoll : IPhoneCameraRoll
 
     public int Refreshes { get; private set; }
 
+    /// <summary>After this many index reads, the next ones fail as if the cable came out.</summary>
+    public int? FailIndexAfter { get; set; }
+
     public FakeCameraRoll Add(string path, long size)
     {
         Disk[path] = size;
@@ -37,6 +40,11 @@ internal sealed class FakeCameraRoll : IPhoneCameraRoll
 
     public Task<PhotoIndex> GetIndexAsync(bool refresh, CancellationToken ct)
     {
+        if (FailIndexAfter is { } limit && Refreshes >= limit)
+        {
+            throw new DeviceDeck.Core.Abstractions.DeviceException(DeviceDeck.Core.Abstractions.DeviceErrorCodes.Disconnected, "The iPhone was disconnected.");
+        }
+
         if (refresh || _index is null)
         {
             Refreshes++;
