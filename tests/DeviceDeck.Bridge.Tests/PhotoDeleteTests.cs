@@ -158,6 +158,34 @@ public sealed class PhotoDeleteTests
     }
 
     [Fact]
+    public async Task Preparing_a_delete_always_answers_at_once()
+    {
+        await using var host = await TestHost.StartAsync(CleanupPhones.Android(), CleanupPhones.Iphone());
+
+        foreach (var deviceId in new[] { CleanupPhones.AndroidId, CleanupPhones.IphoneId, "no-such-phone" })
+        {
+            var answer = await host.ResultAsync("photos.deletePrepare", new { deviceId, reason = "Photos: selection" });
+            Assert.Empty(answer!.AsObject());
+        }
+
+        Assert.Empty(host.Queue.List()); // a read ahead is no transfer
+    }
+
+    [Fact]
+    public async Task Which_items_the_PC_cant_delete_is_asked_per_phone()
+    {
+        await using var host = await TestHost.StartAsync(CleanupPhones.Android(), CleanupPhones.Iphone());
+
+        var android = (await host.ResultAsync("photos.deleteReach", new { deviceId = CleanupPhones.AndroidId }))!.AsObject();
+        Assert.Equal(["deviceId", "state", "done", "total", "notListed", "checkedAt"], android.Select(p => p.Key));
+        Assert.Equal("ready", (string?)android["state"]);
+        Assert.Empty(android["notListed"]!.AsArray()); // MediaStore deletes whatever it lists
+
+        var iphone = (await host.ResultAsync("photos.deleteReach", new { deviceId = CleanupPhones.IphoneId }))!.AsObject();
+        Assert.Equal("unsupported", (string?)iphone["state"]); // this one can't delete from the PC at all
+    }
+
+    [Fact]
     public async Task A_delete_job_cant_be_paused_resumed_or_retried()
     {
         await using var host = await TestHost.StartAsync(CleanupPhones.Android());
@@ -212,8 +240,19 @@ public sealed class PhotoDeleteTests
     /// The fake iPhone with an <see cref="IPhotoDeleter"/> that reads, deletes in batches of five through the library and
     /// checks, telling the job each stage; tests can hold it while it reads, or before a batch goes.
     /// </summary>
-    private sealed class DeletingIphone(IDevice inner) : IDevice, IPhotoDeleter, IMediaHashSource
+    private sealed class DeletingIphone(IDevice inner) : IDevice, IPhotoDeleter, IMediaHashSource, IPhotoDeletePrefetch
     {
+        /// <summary>Each read ahead asked for (v0.4.2), with its reason.</summary>
+        public ConcurrentQueue<string> Prefetches { get; } = new();
+
+        public void PrefetchForDelete(string reason) => Prefetches.Enqueue(reason);
+
+        /// <summary>What the phone says Windows lists nowhere (v0.4.2).</summary>
+        public PhotoDeleteReach? Reach { get; set; }
+
+        public Task<PhotoDeleteReach> GetDeleteReachAsync(CancellationToken ct) =>
+            Task.FromResult(Reach ?? new PhotoDeleteReach(Summary.Id, PhotoDeleteReachState.Checking, 0, 0, [], null));
+
         public Task<IReadOnlyDictionary<string, string>> HashAssetsAsync(IReadOnlyList<string> assetIds, long? prefixBytes, IProgress<long>? progress, CancellationToken ct) =>
             ((IMediaHashSource)inner).HashAssetsAsync(assetIds, prefixBytes, progress, ct);
 
@@ -425,6 +464,17 @@ public sealed class PhotoDeleteTests
         Assert.True(rig.Phone.Calls.TryPeek(out var call));
         Assert.Equal(copy.Id, Assert.Single(call).Id);
         Assert.Empty(rig.Cleanup.GetStatus(IphoneId).Report!.Duplicates!.Groups);
+    }
+
+    [Fact]
+    public async Task Clean_ups_analysis_has_the_iPhone_read_its_camera_roll_ahead()
+    {
+        await using var rig = await Rig.StartAsync();
+        rig.Cleanup.Analyze(IphoneId);
+        await Wait.UntilAsync(() => rig.Cleanup.GetStatus(IphoneId).State is not CleanupState.Running, "the analysis");
+
+        await Wait.UntilAsync(() => rig.Phone.Prefetches.Contains("Clean-up's analysis finished"), "a read ahead");
+        Assert.Single(rig.Phone.Prefetches);
     }
 
     [Fact]

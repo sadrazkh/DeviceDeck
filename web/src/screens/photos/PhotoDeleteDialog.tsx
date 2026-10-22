@@ -13,7 +13,8 @@ import { Switch } from '../../components/ui';
 import { useI18n, type I18n } from '../../i18n';
 import { announceDeleteStarted } from '../../shell/DeleteJobRow';
 import styles from './PhotoDelete.module.css';
-import { COPY_FIRST_ABOVE, useDeletePhotos } from './photoDelete';
+import { COPY_FIRST_ABOVE, useDeletePhotos, usePrepareDelete } from './photoDelete';
+import { LeftOutList, ReachChecking, usePhotoDeleteReach } from './DeleteReach';
 
 /** Rows listed in the confirmation; the rest are counted. */
 const LISTED = 200;
@@ -62,9 +63,15 @@ export function PhotoDeleteDialog({
   const actions = useActions();
   const settings = useSettings().data;
   const deletePhotos = useDeletePhotos(device);
+  const prepare = usePrepareDelete(device);
+  // While the user reads the dialog, an iPhone reads its camera roll's view ahead (v0.4.2).
+  useEffect(() => prepare('Photos: delete dialog'), [prepare]);
   // Originals in iCloud only aren't on the phone: nothing of theirs to delete, so they stay out.
   const cloudOnly = assets.filter((a) => a.inCloudOnly);
-  const items = useMemo(() => assets.filter((a) => !a.inCloudOnly), [assets]);
+  // v0.4.2: so do the items Windows lists nowhere (only the Photos app can delete them), once that is known.
+  const reach = usePhotoDeleteReach(device);
+  const onPhone = useMemo(() => assets.filter((a) => !a.inCloudOnly && reach.phoneOnly(a.id)), [assets, reach]);
+  const items = useMemo(() => assets.filter((a) => !a.inCloudOnly && !reach.phoneOnly(a.id)), [assets, reach]);
   const [copy, setCopy] = useState(items.length > COPY_FIRST_ABOVE);
   const [folder, setFolder] = useState('');
   const [busy, setBusy] = useState(false);
@@ -138,6 +145,12 @@ export function PhotoDeleteDialog({
         </div>
 
         {cloudOnly.length > 0 ? <p className={styles.hint}>{t('photoDelete.cloudOnly', { count: cloudOnly.length })}</p> : null}
+
+        {reach.checking ? <ReachChecking checking={reach.checking} /> : null}
+        <LeftOutList
+          count={onPhone.length}
+          rows={onPhone.slice(0, LISTED).map((a) => ({ key: a.id, label: a.fileName, detail: a.takenAt ? date(a.takenAt, 'short') : undefined, size: bytes(a.size) }))}
+        />
 
         <WhereTheyGo device={device} support={support} />
 

@@ -53,6 +53,22 @@ export interface PhotoDeleteStarted {
   skipped: number;
 }
 
+/**
+ * v0.4.2: which items this PC can't delete because Windows lists them nowhere (photos moved over from another iPhone,
+ * older imports): photos.deleteReach. Known only once Windows' view was read completely ("ready"); "checking" says how
+ * far that got and marks nothing. Android: "ready" with nothing listed.
+ */
+export interface PhotoDeleteReach {
+  deviceId: string;
+  state: 'unsupported' | 'checking' | 'ready';
+  /** Objects read of all while checking (0 of 0 before the folders are listed). */
+  done: number;
+  total: number;
+  /** Ready: the asset ids to delete on the phone itself. */
+  notListed: string[];
+  checkedAt: string | null;
+}
+
 /** A delete job's results so far (all of them once it finished): photos.deleteJob. */
 export interface PhotoDeleteJobStatus {
   jobId: string;

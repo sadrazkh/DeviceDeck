@@ -29,6 +29,7 @@ internal struct PropVariant
     public const ushort VtEmpty = 0;
     public const ushort VtI4 = 3;
     public const ushort VtDate = 7;
+    public const ushort VtFiletime = 64;
     public const ushort VtError = 10;
     public const ushort VtBool = 11;
     public const ushort VtUi4 = 19;

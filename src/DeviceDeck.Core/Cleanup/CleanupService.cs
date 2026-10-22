@@ -155,6 +155,12 @@ public sealed class CleanupService : IAsyncDisposable
         {
             Updated?.Invoke(this, publish);
         }
+
+        // v0.4.2: a delete of what the report lists may follow: an iPhone reads its camera roll's view ahead.
+        if (final.State == CleanupState.Done && final.Report?.Media?.CanDelete == true && device is IPhotoDeletePrefetch prefetch)
+        {
+            prefetch.PrefetchForDelete("Clean-up's analysis finished");
+        }
     }
 
     private void Progress(Entry entry, CancellationTokenSource cts, CleanupReport partial, CleanupProgress progress)

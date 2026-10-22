@@ -10,6 +10,7 @@ import { updatesFa } from '../shell/updateStrings';
 import { whatsAppFa } from '../screens/contacts/whatsAppStrings';
 import { photoDeleteFa } from '../screens/photos/deleteStrings';
 import { deleteJobFa } from '../shell/deleteJobStrings';
+import { reachFa } from '../screens/photos/reachStrings';
 import { hiddenBackupFa } from '../screens/photos/hiddenBackupStrings';
 import type { MessageKey } from './en';
 
@@ -626,4 +627,6 @@ export const fa: Record<MessageKey, string> = {
   ...deleteJobFa,
   // Hidden photos in the photo backup (round 4, hiddenbackup)
   ...hiddenBackupFa,
+  // Items this PC can't delete (v0.4.2, deletejob2)
+  ...reachFa,
 };

@@ -226,6 +226,34 @@ public sealed class WpdListingCache(TimeProvider? time = null, TimeSpan? lifetim
         }
     }
 
+    /// <summary>
+    /// A copy of the kept listing when it is complete and recent (every folder read): for telling which items Windows
+    /// lists nowhere. Null otherwise; never a partial listing.
+    /// </summary>
+    public (WpdDcim Dcim, IReadOnlyList<string> FolderNames, DateTimeOffset ReadAt, int Files)? Complete()
+    {
+        lock (_gate)
+        {
+            if (_listing is not { HasAll: true } kept || _time.GetUtcNow() - kept.ReadAt > Lifetime)
+            {
+                return null;
+            }
+
+            var dcim = kept.ToDcim();
+            var copy = dcim with { Folders = dcim.Folders.Select(f => f with { Files = f.Files.ToList() }).ToList() };
+            return (copy, kept.Folders.Select(f => f.FileName ?? "").ToList(), kept.ReadAt, kept.FileCount);
+        }
+    }
+
+    /// <summary>The kept listing as it is, recent or not (for deciding whether to read ahead).</summary>
+    public WpdListing? Peek()
+    {
+        lock (_gate)
+        {
+            return _listing;
+        }
+    }
+
     /// <summary>Keeps a listing, unless the cache was dropped since <see cref="Take"/> (the phone went away meanwhile).</summary>
     public bool Keep(WpdListing listing, long generation)
     {

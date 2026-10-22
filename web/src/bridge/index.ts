@@ -3,7 +3,7 @@ import type { MockBackend, MockScenario } from './mock/backend';
 import { createMockTransport, type MockTransportOptions } from './mock/transport';
 import { MOCK_LOCALSEND_SCENARIOS } from './mock/localSend';
 import { MOCK_NOTES_SCENARIOS, MOCK_UPDATE_SCENARIOS } from './mock/updates';
-import { MOCK_DELETE_SPEEDS, MOCK_PHOTODELETE_SCENARIOS } from './mock/photoDelete';
+import { MOCK_DELETE_SPEEDS, MOCK_PHOTODELETE_SCENARIOS, MOCK_REACH_SCENARIOS } from './mock/photoDelete';
 import { createWebViewTransport, getWebView } from './webview';
 
 export { BridgeClient, type FileSource } from './client';
@@ -44,6 +44,8 @@ export function mockOptionsFromUrl(search: string): MockTransportOptions {
     photoDelete: MOCK_PHOTODELETE_SCENARIOS.find((s) => s === query.get('photodelete')) ?? 'ok',
     // A delete's stages (v0.4.1): ?deletespeed=slow reads a slow camera roll, for watching them in the Transfers drawer.
     deleteSpeed: MOCK_DELETE_SPEEDS.find((s) => s === query.get('deletespeed')) ?? 'normal',
+    // Items Windows doesn't list (v0.4.2): ?reach=some marks every fourth iPhone item "delete on the iPhone".
+    reach: MOCK_REACH_SCENARIOS.find((s) => s === query.get('reach')) ?? 'all',
     settings: {
       ...(lang === 'fa' || lang === 'en' ? { language: lang } : {}),
       ...(theme === 'light' || theme === 'dark' || theme === 'system' ? { theme } : {}),

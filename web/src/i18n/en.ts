@@ -10,6 +10,7 @@ import { updatesEn } from '../shell/updateStrings';
 import { whatsAppEn } from '../screens/contacts/whatsAppStrings';
 import { photoDeleteEn } from '../screens/photos/deleteStrings';
 import { deleteJobEn } from '../shell/deleteJobStrings';
+import { reachEn } from '../screens/photos/reachStrings';
 import { hiddenBackupEn } from '../screens/photos/hiddenBackupStrings';
 
 export const en = {
@@ -642,6 +643,8 @@ export const en = {
   ...deleteJobEn,
   // Hidden photos in the photo backup (round 4, hiddenbackup)
   ...hiddenBackupEn,
+  // Items this PC can't delete (v0.4.2, deletejob2)
+  ...reachEn,
 } as const;
 
 export type MessageKey = keyof typeof en;

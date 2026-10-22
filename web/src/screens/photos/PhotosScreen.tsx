@@ -43,7 +43,8 @@ import styles from './Photos.module.css';
 import deleteStyles from './PhotoDelete.module.css';
 import { PhotoDeleteDialog } from './PhotoDeleteDialog';
 import { PhotoDeleteWhyDialog, reasonOf } from './PhotoDeleteNotice';
-import { SHORT_REASON, usePhotoDeleteSupport } from './photoDelete';
+import { SHORT_REASON, usePhotoDeleteSupport, usePrepareDelete } from './photoDelete';
+import { ReachChecking, usePhotoDeleteReach } from './DeleteReach';
 
 type Filter = 'all' | 'photos' | 'videos' | 'live' | 'favorites';
 
@@ -175,6 +176,14 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
   const [deleting, setDeleting] = useState<PhotoAsset[] | null>(null);
   const [whyOpen, setWhyOpen] = useState(false);
   const deleteSupport = usePhotoDeleteSupport(device);
+  // Selecting is the first sign of a delete: an iPhone reads its camera roll's view ahead (v0.4.2).
+  const prepareDelete = usePrepareDelete(device);
+  const selecting = selection.ids.size > 0;
+  useEffect(() => {
+    if (selecting) prepareDelete('Photos: selection');
+  }, [selecting, prepareDelete]);
+  // v0.4.2: which selected items only the iPhone can delete (Windows lists them nowhere), once that is known.
+  const reach = usePhotoDeleteReach(device, selecting || deleting !== null);
   const [visibleGroup, setVisibleGroup] = useState(0);
   const grid = useRef<PhotoGridHandle>(null);
   const importInput = useRef<HTMLInputElement>(null);
@@ -268,10 +277,14 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
   const canDelete = device.capabilities.includes('photosDelete');
   // An iPhone that can't delete says why, where Delete would be: a hidden button with no reason was the bug.
   const explainDelete = !canDelete && device.platform === 'ios';
+  // Items the PC can't delete stay out of the delete; when nothing else is selected there's nothing to delete here.
+  const onPhoneSelected = canDelete ? selectedAssets.filter((a) => reach.phoneOnly(a.id)).length : 0;
+  const nothingDeletable = onPhoneSelected > 0 && onPhoneSelected === selectedAssets.length;
   const startDelete = () => {
     if (selectedAssets.length === 0) return;
-    if (canDelete) setDeleting(selectedAssets);
-    else if (explainDelete) setWhyOpen(true);
+    if (canDelete) {
+      if (!nothingDeletable) setDeleting(selectedAssets);
+    } else if (explainDelete) setWhyOpen(true);
   };
 
   /** Locks the Hidden album again and forgets what was read from it. */
@@ -438,9 +451,21 @@ export function PhotosScreen({ device }: { device: DeviceSummary }) {
                   {t('photos.exportToPc')}
                 </Button>
                 {canDelete ? (
-                  <Button variant="danger" icon={<DeleteRegular />} onClick={startDelete} data-testid="delete-selected">
-                    {t('common.delete')}
-                  </Button>
+                  <>
+                    {reach.checking ? <ReachChecking checking={reach.checking} className={deleteStyles.reachInBar} /> : null}
+                    {nothingDeletable ? (
+                      <span className={deleteStyles.reason} data-testid="delete-reach-reason" title={t('reach.badgeWhy')}>
+                        {t('reach.onlyOnPhone')}
+                      </span>
+                    ) : onPhoneSelected > 0 ? (
+                      <span className={deleteStyles.reason} data-testid="delete-reach-some" title={t('reach.badgeWhy')}>
+                        {t('reach.someOnPhone', { count: onPhoneSelected })}
+                      </span>
+                    ) : null}
+                    <Button variant="danger" icon={<DeleteRegular />} onClick={startDelete} disabled={nothingDeletable} data-testid="delete-selected">
+                      {t('common.delete')}
+                    </Button>
+                  </>
                 ) : explainDelete ? (
                   <>
                     <span className={deleteStyles.reason} data-testid="delete-reason" title={t(SHORT_REASON[reasonOf(deleteSupport.data)])}>

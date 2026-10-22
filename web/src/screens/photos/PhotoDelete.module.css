@@ -168,3 +168,46 @@
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+/* v0.4.2: items this PC can't delete (Windows lists them nowhere). */
+.tooltipText {
+  display: block;
+  max-width: 320px;
+}
+
+.reachChecking {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  min-width: 0;
+  max-width: 340px;
+}
+
+.reachCheckingText {
+  overflow: hidden;
+  color: var(--color-text-secondary);
+  font-size: var(--type-caption-size);
+  line-height: var(--type-caption-line);
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reachBar {
+  width: 100%;
+}
+
+/* In the Photos selection bar: short, the rest in its title. */
+.reachInBar {
+  width: 200px;
+}
+
+.leftOut {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.leftOutTitle {
+  margin: 0;
+  font-weight: var(--type-strong-weight);
+}

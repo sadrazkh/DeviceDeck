@@ -75,6 +75,12 @@ public interface IWpdConnection : IDisposable
     /// <summary>The commands the device says it supports (category + id, as WPD's PROPERTYKEYs); empty when unknown.</summary>
     IReadOnlyList<(Guid Category, uint Id)> SupportedCommands() => [];
 
+    /// <summary>
+    /// Every property the device gives for an object, as (format id, pid, value): text, a number, a bool, a Guid, or a
+    /// date as the device states it (DateTime, unspecified zone). Empty when unknown (diagnostics: iosprobe wpd-dates).
+    /// </summary>
+    IReadOnlyList<(Guid FormatId, uint Pid, object? Value)> GetAll(string objectId) => [];
+
     /// <summary>The property keys an object supports; empty when unknown (diagnostics).</summary>
     IReadOnlyList<(Guid FormatId, uint Pid)> SupportedProperties(string objectId) => [];
 

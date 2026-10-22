@@ -100,7 +100,7 @@ test('Photos: deleting two iPhone photos confirms, hands off to Transfers at onc
   consoleWatch.assertClean();
 });
 
-test('Photos: more than 20 photos copy to this PC first; the job shows copying, reading, deleting and checking', async ({ page }) => {
+test('Photos: more than 20 photos copy to this PC first; the job shows copying, deleting and checking', async ({ page }) => {
   await page.goto(query('light', { screen: 'photos', queue: '0' }));
   await selectPhotos(page, 21);
   await page.getByTestId('delete-selected').click();
@@ -111,8 +111,7 @@ test('Photos: more than 20 photos copy to this PC first; the job shows copying, 
   await expect(row).toHaveAttribute('data-stage', 'copying');
   await expect(row.getByTestId('delete-job-line')).toContainText('Copying to this PC:');
   await expect(row.getByRole('progressbar')).toBeVisible();
-  await expect(row).toHaveAttribute('data-stage', 'reading');
-  await expect(row.getByTestId('delete-job-line')).toContainText('Reading the iPhone’s camera roll');
+  // Reading the camera roll: read ahead since the selection (v0.4.2), so it may take no time at all here.
   await expect(row).toHaveAttribute('data-stage', 'deleting');
   await expect(row).toHaveAttribute('data-stage', 'checking');
   await expect(row.getByTestId('delete-job-stop')).toHaveCount(0); // checking only reads: nothing to stop
@@ -158,6 +157,16 @@ test('Photos: Stop while it reads the camera roll deletes nothing', async ({ pag
   await expect(results.locator('[data-outcome=notTried]')).toHaveCount(12);
   await expect(dialogs(page)).toContainText('Delete stopped');
   await expect(page.getByText('12,481 photos · 732 videos')).toBeVisible(); // the library read again: all still there
+});
+
+test('Photos: selecting reads the camera roll ahead, so the delete’s reading starts well along', async ({ page }) => {
+  await page.goto(query('light', { screen: 'photos', queue: '0', deletespeed: 'slow' }));
+  await selectPhotos(page, 1); // selecting asks the iPhone to read ahead (about 220 objects a second here)
+  await page.waitForTimeout(5000); // the user looks at what they picked
+  await page.getByTestId('delete-selected').click();
+  const row = await confirmAndHandOff(page);
+  // Without the read ahead it would show a few hundred of 3,258 at this point.
+  await expect(row.getByTestId('delete-job-line')).toContainText(/: [1-3],\d{3} of 3,258 items/, { timeout: 1500 });
 });
 
 test('Photos: Stop while it deletes stops after the batch on its way, and the results say which went', async ({ page }) => {

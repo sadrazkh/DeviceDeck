@@ -43,6 +43,8 @@ export interface MockCleanupContext {
     items: readonly CleanupItem[],
     options: { copyFirstTo?: string | null; source: 'cleanup'; skipped: number; onFinished(gone: Set<string>, freedBytes: number): void },
   ): string;
+  /** v0.4.2: an analysis finished (an iPhone that can delete reads its camera roll's view ahead). */
+  analysed?(deviceId: string): void;
 }
 
 const TOP_APPS = 30;
@@ -147,6 +149,7 @@ export function cleanupHandlers(ctx: MockCleanupContext): { [M in CleanupMethodN
       ctx.after(DONE_AT, () => {
         if (!live()) return;
         publish({ deviceId, state: 'done', progress: null, report: full, error: null, finishedAt: new Date(ctx.now()).toISOString() });
+        ctx.analysed?.(deviceId);
       });
       return structuredClone(status(deviceId));
     },

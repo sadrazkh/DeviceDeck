@@ -65,7 +65,7 @@ import type {
 import type { LocalSendDiscovery, LocalSendJobStatus, LocalSendTarget, PhotosToAppStarted } from './localSend';
 import type { ReleaseNotes } from './releaseNotes';
 import type { WhatsAppAndroidInfo, WhatsAppChat, WhatsAppMessage, WhatsAppStatus } from './whatsApp';
-import type { PhotoDeleteItem, PhotoDeleteJobStatus, PhotoDeleteStarted, PhotoDeleteSupport } from './photoDeleteTypes';
+import type { PhotoDeleteItem, PhotoDeleteJobStatus, PhotoDeleteReach, PhotoDeleteStarted, PhotoDeleteSupport } from './photoDeleteTypes';
 
 type DeviceParams = { deviceId: string };
 
@@ -298,6 +298,10 @@ export interface BridgeMethods {
     result: PhotoDeleteStarted;
   };
   'photos.deleteJob': { params: { jobId: string }; result: PhotoDeleteJobStatus };
+  // v0.4.2: a delete is likely (selection mode, the delete dialog): an iPhone reads its camera roll's view ahead.
+  'photos.deletePrepare': { params: DeviceParams & { reason?: string }; result: Empty };
+  // v0.4.2: which items the PC can't delete (Windows lists them nowhere), from a complete read only.
+  'photos.deleteReach': { params: DeviceParams; result: PhotoDeleteReach };
 }
 
 export type MethodName = keyof BridgeMethods;
@@ -455,6 +459,8 @@ const methodTable = {
   'photos.deleteSupport': true,
   'photos.deleteItems': true,
   'photos.deleteJob': true,
+  'photos.deletePrepare': true,
+  'photos.deleteReach': true,
 } as const satisfies Record<MethodName, true>;
 
 export const METHOD_NAMES = Object.keys(methodTable) as MethodName[];

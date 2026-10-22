@@ -92,6 +92,8 @@ internal static class Commands
         ["photodelete"] = new([], PhotoDeleteProbe.PhotoDeleteAsync),
         ["wpd-scan"] = new([], WpdScan.RunAsync),
         ["wpd-timing"] = new([], WpdTiming.RunAsync),
+        ["wpd-dates"] = new([], WpdDates.RunAsync),
+        ["wpd-dryrun"] = new([], WpdDryRun.RunAsync),
         ["values"] = new(["domain"], async (d, c, ct) =>
         {
             var domain = c.Positional[0] == "-" ? null : c.Positional[0];

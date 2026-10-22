@@ -7,7 +7,7 @@ namespace DeviceDeck.Ios.Device;
 // Round 4 (photodelete): deleting photos through Windows' camera connection, the way File Explorer does.
 // The phone gets PhotosDelete only while that connection shows its camera roll as deletable.
 
-public sealed partial class IosDevice : IPhotoDeleter
+public sealed partial class IosDevice : IPhotoDeleter, IPhotoDeletePrefetch
 {
     private WpdPhotoDeleter? _photoDeleter;
     private volatile bool _photosDeletable;
@@ -40,6 +40,26 @@ public sealed partial class IosDevice : IPhotoDeleter
         }
 
         return UseAsync(_ => PhotoDeleter.DeleteAsync(items, observer, ct));
+    }
+
+    /// <summary>Reads Windows' view of the camera roll ahead (v0.4.2), when this iPhone can delete now.</summary>
+    public void PrefetchForDelete(string reason)
+    {
+        if (_photosDeletable && Summary.State == DeviceState.Ready)
+        {
+            PhotoDeleter.StartPrefetch(reason, _life.Token);
+        }
+    }
+
+    /// <summary>Which items Windows lists nowhere (v0.4.2), from a complete read of its view only.</summary>
+    public async Task<PhotoDeleteReach> GetDeleteReachAsync(CancellationToken ct)
+    {
+        if (!_photosDeletable || Summary.State != DeviceState.Ready)
+        {
+            return new PhotoDeleteReach(Summary.Id, PhotoDeleteReachState.Unsupported, 0, 0, [], null);
+        }
+
+        return await UseAsync(_ => PhotoDeleter.ReachAsync(Summary.Id, _life.Token, ct)).ConfigureAwait(false);
     }
 
     /// <summary>IPhotoLibrary.DeleteAsync: the ids at the sizes the library lists now; throws at the first one not deleted.</summary>

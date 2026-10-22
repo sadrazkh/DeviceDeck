@@ -311,6 +311,40 @@ public sealed class ComWpdBackend : IWpdBackend
             }, "read the iPhone's objects");
         }
 
+        public IReadOnlyList<(Guid FormatId, uint Pid, object? Value)> GetAll(string objectId) => Guard<IReadOnlyList<(Guid, uint, object?)>>(() =>
+        {
+            if (_properties.GetValues(objectId, null, out var values) < 0 || values is null)
+            {
+                return [];
+            }
+
+            try
+            {
+                values.GetCount(out var count);
+                var all = new List<(Guid, uint, object?)>((int)count);
+                for (uint i = 0; i < count; i++)
+                {
+                    var key = default(PropertyKey);
+                    var value = default(PropVariant);
+                    values.GetAt(i, ref key, ref value);
+                    try
+                    {
+                        all.Add((key.FormatId, key.Pid, Plain(value)));
+                    }
+                    finally
+                    {
+                        WpdNative.PropVariantClear(ref value);
+                    }
+                }
+
+                return all;
+            }
+            finally
+            {
+                Marshal.ReleaseComObject(values);
+            }
+        }, "read an object's properties");
+
         public IReadOnlyList<(Guid Category, uint Id)> SupportedCommands() => Guard<IReadOnlyList<(Guid, uint)>>(() =>
         {
             _device.Capabilities(out var capabilities);
@@ -735,6 +769,19 @@ public sealed class ComWpdBackend : IWpdBackend
             WpdNative.PropVariantClear(ref value);
         }
     }
+
+    /// <summary>A value as stated, dates without a zone (diagnostics).</summary>
+    private static object? Plain(PropVariant value) => value.Vt switch
+    {
+        PropVariant.VtLpwstr => Marshal.PtrToStringUni(value.Pointer),
+        PropVariant.VtUi8 or PropVariant.VtI8 => value.Int64,
+        PropVariant.VtUi4 or PropVariant.VtI4 => (long)(uint)value.Int32,
+        PropVariant.VtBool => value.Bool != 0,
+        PropVariant.VtClsid when value.Pointer != IntPtr.Zero => Marshal.PtrToStructure<Guid>(value.Pointer),
+        PropVariant.VtDate => DateTime.SpecifyKind(DateTime.FromOADate(value.Double), DateTimeKind.Unspecified),
+        PropVariant.VtFiletime => DateTime.FromFileTimeUtc(value.Int64),
+        _ => $"(vt {value.Vt})",
+    };
 
     private static IPortableDeviceKeyCollection Keys(params PropertyKey[] keys)
     {

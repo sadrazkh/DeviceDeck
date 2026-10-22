@@ -85,13 +85,13 @@
 }
 
 .dangerSolid {
-  background: var(--color-danger);
+  background: var(--color-danger-solid);
   border-color: transparent;
   color: var(--color-on-danger);
   font-weight: var(--type-strong-weight);
 }
 .dangerSolid:hover:not(:disabled) {
-  background: var(--color-danger);
+  background: var(--color-danger-solid);
   filter: brightness(1.08);
 }
 

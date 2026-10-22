@@ -3,11 +3,12 @@ import { BridgeClient } from '../../src/bridge/client';
 import { BridgeError } from '../../src/bridge/errors';
 import { METHOD_NAMES } from '../../src/bridge/methods';
 import type { MockBackend } from '../../src/bridge/mock/backend';
-import type { MockDeleteSpeed, MockPhotoDeleteScenario } from '../../src/bridge/mock/photoDelete';
+import type { MockDeleteSpeed, MockPhotoDeleteScenario, MockReachScenario } from '../../src/bridge/mock/photoDelete';
 import { ANDROID_ID, IPHONE_ID, IPHONE_LIMITED_CAPABILITIES } from '../../src/bridge/mock/mock-data';
 import { createMockTransport, type MockHandle } from '../../src/bridge/mock/transport';
 import type { TransferJob } from '../../src/bridge/types';
 import { photoDeleteEn, photoDeleteFa } from '../../src/screens/photos/deleteStrings';
+import { reachEn, reachFa } from '../../src/screens/photos/reachStrings';
 import { deleteJobEn, deleteJobFa } from '../../src/shell/deleteJobStrings';
 import { jobFraction, overallProgress } from '../../src/state/transfers';
 
@@ -15,8 +16,8 @@ import { jobFraction, overallProgress } from '../../src/state/transfers';
 
 let handle: MockHandle | null = null;
 
-function setup(photoDelete: MockPhotoDeleteScenario = 'ok', deleteSpeed: MockDeleteSpeed = 'normal') {
-  handle = createMockTransport({ latencyMs: 0, autoTick: false, indexing: false, seedQueue: false, photoDelete, deleteSpeed });
+function setup(photoDelete: MockPhotoDeleteScenario = 'ok', deleteSpeed: MockDeleteSpeed = 'normal', reach: MockReachScenario = 'all') {
+  handle = createMockTransport({ latencyMs: 0, autoTick: false, indexing: false, seedQueue: false, photoDelete, deleteSpeed, reach });
   const client = new BridgeClient(handle.transport, { timeoutMs: 0 });
   const updates: TransferJob[] = [];
   client.on('transfer.updated', (job) => updates.push(job));
@@ -64,6 +65,7 @@ describe('mock photo delete', () => {
     expect(METHOD_NAMES).toContain('photos.deleteSupport');
     expect(METHOD_NAMES).toContain('photos.deleteItems');
     expect(METHOD_NAMES).toContain('photos.deleteJob');
+    expect(METHOD_NAMES).toContain('photos.deletePrepare');
     expect(IPHONE_LIMITED_CAPABILITIES).not.toContain('photosDelete');
   });
 
@@ -200,6 +202,76 @@ describe('mock photo delete', () => {
     expect((await rejection(client.call('transfers.resume', { jobId }))).code).toBe('internal');
   });
 
+  it('reads an iPhone’s camera roll ahead when asked (Photos, or a Clean-up analysis), and a delete carries on from it', async () => {
+    const { client, backend, updates } = setup('ok', 'slow');
+    const [a, b] = await firstPhotos(client, IPHONE_ID, 2);
+    expect(await client.call('photos.deletePrepare', { deviceId: IPHONE_ID, reason: 'Photos: selection' })).toEqual({});
+    for (let t = 0; t < 6_000; t += 250) backend.tick(250); // part of it
+    const first = await deleteItems(client, IPHONE_ID, [{ id: a!.id, size: a!.size }]);
+    const reading = updates.find((u) => u.id === first && u.stage?.name === 'reading')!;
+    expect(reading.stage!.done).toBeGreaterThanOrEqual(1300); // carried on from about 6 s of reading ahead
+    await finish(client, backend, first);
+
+    // A Clean-up analysis starts it too; read to the end, the next delete reads nothing.
+    await client.call('cleanup.analyze', { deviceId: IPHONE_ID });
+    for (let t = 0; t < 20_000; t += 250) backend.tick(250);
+    const second = await deleteItems(client, IPHONE_ID, [{ id: b!.id, size: b!.size }]);
+    expect(updates.find((u) => u.id === second && u.stage?.name === 'reading')!.stage).toEqual({ name: 'reading', done: 3258, total: 3258 });
+  });
+
+  it('says which items only the iPhone can delete, and only once its camera roll’s view is read completely (v0.4.2)', async () => {
+    const { client, backend } = setup('ok', 'slow', 'some');
+    expect(METHOD_NAMES).toContain('photos.deleteReach');
+
+    // Asking starts the read ahead; until it is complete nothing is marked.
+    const first = await client.call('photos.deleteReach', { deviceId: IPHONE_ID });
+    expect(first).toMatchObject({ deviceId: IPHONE_ID, state: 'checking', done: 0, total: 3258, notListed: [], checkedAt: null });
+    for (let t = 0; t < 4_000; t += 250) backend.tick(250);
+    const midway = await client.call('photos.deleteReach', { deviceId: IPHONE_ID });
+    expect(midway.state).toBe('checking');
+    expect(midway.done).toBeGreaterThan(0);
+    expect(midway.done).toBeLessThan(3258);
+    expect(midway.notListed).toEqual([]);
+
+    for (let t = 0; t < 20_000; t += 250) backend.tick(250);
+    const ready = await client.call('photos.deleteReach', { deviceId: IPHONE_ID });
+    expect(ready).toMatchObject({ state: 'ready', done: 3258, total: 3258 });
+    expect(ready.checkedAt).not.toBeNull();
+    expect(ready.notListed.length).toBeGreaterThan(0);
+
+    // A delete of one of them is refused, saying where to delete it; the others go.
+    const page = await client.call('photos.list', { deviceId: IPHONE_ID, offset: 0, limit: 200 });
+    const onPhone = page.items.find((a) => ready.notListed.includes(a.id))!;
+    const listed = page.items.find((a) => !a.inCloudOnly && !ready.notListed.includes(a.id))!;
+    expect(onPhone.inCloudOnly).toBeFalsy();
+    const refused = await finish(client, backend, await deleteItems(client, IPHONE_ID, [{ id: onPhone.id, size: onPhone.size }]));
+    expect(refused.items[0]).toMatchObject({ outcome: 'mismatch' });
+    expect(refused.items[0]!.message).toContain('Delete it in the Photos app on the iPhone');
+    const went = await finish(client, backend, await deleteItems(client, IPHONE_ID, [{ id: listed.id, size: listed.size }]));
+    expect(went.items[0]).toMatchObject({ outcome: 'deleted' });
+
+    // What was known stands after a delete (it read the whole view too).
+    expect((await client.call('photos.deleteReach', { deviceId: IPHONE_ID })).notListed).toEqual(ready.notListed);
+  });
+
+  it('marks nothing on an iPhone that lists everything, and answers Android and an iPhone that can’t delete', async () => {
+    const all = setup('ok', 'normal', 'all');
+    await all.client.call('photos.deleteReach', { deviceId: IPHONE_ID });
+    for (let t = 0; t < 5_000; t += 250) all.backend.tick(250);
+    expect(await all.client.call('photos.deleteReach', { deviceId: IPHONE_ID })).toMatchObject({ state: 'ready', notListed: [] });
+    expect(await all.client.call('photos.deleteReach', { deviceId: ANDROID_ID })).toMatchObject({ state: 'ready', notListed: [] });
+    handle!.dispose();
+
+    const cant = setup('iCloudPhotos', 'normal', 'some');
+    expect(await cant.client.call('photos.deleteReach', { deviceId: IPHONE_ID })).toMatchObject({ state: 'unsupported', notListed: [] });
+  });
+
+  it('a phone without photosDelete, or an Android phone, reads nothing ahead', async () => {
+    const { client } = setup('iCloudPhotos');
+    expect(await client.call('photos.deletePrepare', { deviceId: IPHONE_ID })).toEqual({});
+    expect(await client.call('photos.deletePrepare', { deviceId: ANDROID_ID })).toEqual({});
+  });
+
   it('shows a stage’s progress, and keeps a delete out of the title bar’s bytes', () => {
     const base: TransferJob = {
       id: 'd', deviceId: 'p', kind: 'photosDelete', title: 'Deleting', state: 'running', totalItems: 39, doneItems: 0, failedItems: 0,
@@ -217,6 +289,7 @@ describe('mock photo delete', () => {
     for (const [en, fa] of [
       [photoDeleteEn, photoDeleteFa],
       [deleteJobEn, deleteJobFa],
+      [reachEn, reachFa],
     ] as const) {
       expect(Object.keys(fa).sort()).toEqual(Object.keys(en).sort());
       for (const [key, text] of Object.entries(fa)) {
