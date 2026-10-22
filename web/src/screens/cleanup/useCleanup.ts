@@ -8,6 +8,7 @@ import { useActions } from '../../app/actions';
 import { useClient } from '../../app/bridgeContext';
 import { keys } from '../../app/queries';
 import { useI18n, type MessageKey } from '../../i18n';
+import { announceDeleteStarted } from '../../shell/DeleteJobRow';
 import { toast } from '../../state/toasts';
 import { useUi } from '../../state/ui';
 
@@ -48,7 +49,8 @@ export function useCleanupActions(device: DeviceSummary) {
   const client = useClient();
   const queryClient = useQueryClient();
   const actions = useActions();
-  const { t, bytes } = useI18n();
+  const i18n = useI18n();
+  const { t, bytes } = i18n;
 
   return useMemo(() => {
     const deviceId = device.id;
@@ -96,23 +98,30 @@ export function useCleanupActions(device: DeviceSummary) {
         }
       },
 
-      /** Runs a confirmed clean-up. Resolves with the result when it finished (even with nothing deleted), null on an error. */
-      async run(request: CleanupRequest): Promise<CleanupResult | null> {
+      /**
+       * Runs a confirmed clean-up. Resolves with the result when it finished (even with nothing deleted), "started" when
+       * photos and videos went to the Transfers drawer as a delete job (v0.4.1), null on an error.
+       */
+      async run(request: CleanupRequest): Promise<CleanupResult | 'started' | null> {
         try {
           let result: CleanupResult;
           let copyFirstTo: string | null = null;
           if (request.kind === 'caches') {
             result = await client.call('cleanup.trimCaches', { deviceId });
+          } else if (request.kind === 'media') {
+            // A delete job: the report and the photo lists follow when it ends (cleanup.updated, transfer.updated).
+            const expectedBytes = request.items.reduce((n, i) => n + i.size, 0);
+            const started = await client.call('cleanup.deleteMedia', { deviceId, expectedBytes, copyFirstTo: request.copyFirstTo, items: request.items });
+            announceDeleteStarted(i18n, started);
+            return 'started';
           } else {
             copyFirstTo = request.copyFirstTo;
             const expectedBytes = request.items.reduce((n, i) => n + i.size, 0);
             const common = { deviceId, expectedBytes, copyFirstTo };
             result =
-              request.kind === 'media'
-                ? await client.call('cleanup.deleteMedia', { ...common, items: request.items })
-                : request.kind === 'files'
-                  ? await client.call('cleanup.deleteFiles', { ...common, items: request.items })
-                  : await client.call('cleanup.uninstallApps', { ...common, items: request.items });
+              request.kind === 'files'
+                ? await client.call('cleanup.deleteFiles', { ...common, items: request.items })
+                : await client.call('cleanup.uninstallApps', { ...common, items: request.items });
           }
           refresh(request.kind);
           report(request.kind, result, copyFirstTo);
@@ -129,7 +138,7 @@ export function useCleanupActions(device: DeviceSummary) {
         if (jobId) toast({ tone: 'info', title: t('cleanup.copyStarted'), duration: 3000 });
       },
     };
-  }, [client, queryClient, actions, device, t, bytes]);
+  }, [client, queryClient, actions, device, t, bytes, i18n]);
 }
 
 /** The bytes and count of a selection. */

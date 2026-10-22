@@ -207,7 +207,9 @@ export type TransferKind =
   /** Round 3: PC photos to the LocalSend app on the phone, which saves them into Photos. */
   | 'localSend'
   /** Round 4: WhatsApp's media and encrypted backups copied off an Android phone. */
-  | 'whatsAppMedia';
+  | 'whatsAppMedia'
+  /** v0.4.1: deleting the photos the user confirmed (Photos or Clean-up), in stages. */
+  | 'photosDelete';
 
 export type TransferState =
   | 'queued'
@@ -244,6 +246,15 @@ export interface TransferJob {
   error: { code: string; message: string } | null;
   createdAt: string;
   finishedAt: string | null;
+  /** v0.4.1: a job that runs in stages (photosDelete) says where it is while it runs; null otherwise. */
+  stage?: TransferStage | null;
+}
+
+/** v0.4.1: "copying" | "reading" | "deleting" | "checking" for a delete; done of total in that stage (0 of 0: not known yet). */
+export interface TransferStage {
+  name: string;
+  done: number;
+  total: number;
 }
 
 export type ConflictChoice = 'replace' | 'keepBoth' | 'skip';

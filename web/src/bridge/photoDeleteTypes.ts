@@ -1,5 +1,7 @@
 // Shapes of docs/bridge-contract.md, "Deleting photos (round 4, photodelete)",
-// hand-written from src/DeviceDeck.Core/Abstractions/IPhotoDeleter.cs and Core/PhotoDelete/PhotoDeleteService.cs.
+// hand-written from src/DeviceDeck.Core/Abstractions/IPhotoDeleter.cs and Core/PhotoDelete/PhotoDeleteHandler.cs.
+
+import type { TransferStage, TransferState } from './types';
 
 /** Why photos can't be deleted from the PC right now. */
 export type PhotoDeleteBlock = 'none' | 'checking' | 'iCloudPhotos' | 'readOnly' | 'locked' | 'notCamera' | 'converted' | 'unsupported';
@@ -41,11 +43,30 @@ export interface PhotoDeleteResult {
   wentTo: PhotoDeleteDestination;
 }
 
-export interface PhotoDeleteReport {
+// v0.4.1 (deletejob): a confirmed delete runs as a transfer job (kind "photosDelete") in the Transfers drawer.
+
+/** What photos.deleteItems and cleanup.deleteMedia answer: the job, at once. */
+export interface PhotoDeleteStarted {
+  /** Null when nothing was left to delete (Clean-up: every item changed since the analysis). */
+  jobId: string | null;
+  /** Clean-up: items left out because they changed since the analysis. */
+  skipped: number;
+}
+
+/** A delete job's results so far (all of them once it finished): photos.deleteJob. */
+export interface PhotoDeleteJobStatus {
+  jobId: string;
+  deviceId: string;
+  source: 'photos' | 'cleanup';
+  state: TransferState;
+  stage: TransferStage | null;
+  /** One per confirmed item, in order; items not reached yet say notTried. */
   items: PhotoDeleteResult[];
   deleted: number;
   freedBytes: number;
+  goesTo: PhotoDeleteDestination;
   copyJobIds: string[];
   copyIncomplete: boolean;
-  goesTo: PhotoDeleteDestination;
+  skipped: number;
+  error: { code: string; message: string } | null;
 }

@@ -40,12 +40,12 @@ import { MockPc, PcError } from './pc';
 import { assetsInAlbum, generateLibrary, toContractAsset, type MockAsset, type MockLibrary } from './photos';
 import { MockPhotoBackup } from './photosBackup';
 import { hashString } from './random';
-import { TransferEngine, type JobItem } from './transfers';
+import { StagedRefusal, TransferEngine, type JobItem } from './transfers';
 import { MockToolbox } from './toolbox';
 import { MockLocalSend, type MockLocalSendScenario } from './localSend';
 import { MockUpdates, type MockNotesScenario, type MockUpdateScenario } from './updates';
 import { MockWhatsApp } from './whatsApp';
-import { MockPhotoDelete, type MockPhotoDeleteScenario } from './photoDelete';
+import { MockPhotoDelete, type MockDeleteSpeed, type MockPhotoDeleteScenario } from './photoDelete';
 
 export type MockScenario = 'ready' | 'empty' | 'trust' | 'limited' | 'driverMissing' | 'iphoneOnly';
 
@@ -67,6 +67,8 @@ export interface MockOptions {
   notes?: MockNotesScenario;
   /** Deleting iPhone photos (round 4): ?photodelete=iCloudPhotos and so on. Default "ok". */
   photoDelete?: MockPhotoDeleteScenario;
+  /** A delete job's pace (v0.4.1): ?deletespeed=slow. Default "normal". */
+  deleteSpeed?: MockDeleteSpeed;
 }
 
 /** A JSON-RPC error raised by a mock handler. */
@@ -140,6 +142,7 @@ export class MockBackend {
     this.localSend.scenario = options.localSend ?? 'ready';
     this.updates.configure(options.update ?? 'idle', options.notes ?? 'owner');
     this.photoDelete.scenario = options.photoDelete ?? 'ok';
+    this.photoDelete.speed = options.deleteSpeed ?? 'normal';
     const scenario = options.scenario ?? 'ready';
     this.driverList = scenario === 'limited' || scenario === 'driverMissing' ? driversIosMissing : drivers;
 
@@ -382,6 +385,8 @@ export class MockBackend {
     setDevice: (device) => this.setDevice(device),
     library: (deviceId) => this.library(deviceId),
     addJob: (spec) => this.engine.add(spec),
+    job: (jobId) => this.engine.get(jobId),
+    cancelJob: (jobId) => void this.engine.cancel(jobId),
     fault: (code, message) => fault(code, message),
     badParams: (message) => badParams(message),
   });
@@ -582,8 +587,8 @@ export class MockBackend {
       return {};
     },
     'transfers.list': () => this.engine.list(),
-    'transfers.pause': ({ jobId }) => this.jobCall(this.engine.pause(jobId)),
-    'transfers.resume': ({ jobId }) => this.jobCall(this.engine.resume(jobId)),
+    'transfers.pause': ({ jobId }) => this.jobCall(this.staged(() => this.engine.pause(jobId))),
+    'transfers.resume': ({ jobId }) => this.jobCall(this.staged(() => this.engine.resume(jobId))),
     'transfers.cancel': ({ jobId }) => this.jobCall(this.engine.cancel(jobId)),
     'transfers.resolveConflict': ({ jobId, choice, applyToAll }) => {
       if (!['replace', 'keepBoth', 'skip'].includes(choice)) throw badParams('choice must be replace, keepBoth or skip.');
@@ -660,7 +665,7 @@ export class MockBackend {
       now: () => this.now(),
       fault: (code, message) => fault(code, message),
       badParams,
-      photoDeletes: (deviceId, items) => this.photoDelete.deleteItems(deviceId, items),
+      startPhotoDelete: (deviceId, items, options) => this.photoDelete.start(deviceId, items, options),
     }),
     ...batteryHandlers({
       requireReady: (deviceId, capability) => this.requireReady(deviceId, capability),
@@ -762,6 +767,16 @@ export class MockBackend {
     } catch (error) {
       const code = (error as { code?: string }).code;
       if (code) throw fault(code);
+      throw error;
+    }
+  }
+
+  /** A delete job (v0.4.1) can't be paused or resumed: the host answers with an error. */
+  private staged(run: () => boolean): boolean {
+    try {
+      return run();
+    } catch (error) {
+      if (error instanceof StagedRefusal) throw fault('internal', error.message);
       throw error;
     }
   }

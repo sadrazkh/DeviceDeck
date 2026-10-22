@@ -174,3 +174,12 @@
 .empty {
   padding: var(--space-10) var(--space-4);
 }
+
+/* v0.4.1: a delete's title names the phone at its end ("… from Sadal"): two lines rather than cut. */
+.rowTitleWrap {
+  white-space: normal;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+}

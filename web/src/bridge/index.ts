@@ -3,7 +3,7 @@ import type { MockBackend, MockScenario } from './mock/backend';
 import { createMockTransport, type MockTransportOptions } from './mock/transport';
 import { MOCK_LOCALSEND_SCENARIOS } from './mock/localSend';
 import { MOCK_NOTES_SCENARIOS, MOCK_UPDATE_SCENARIOS } from './mock/updates';
-import { MOCK_PHOTODELETE_SCENARIOS } from './mock/photoDelete';
+import { MOCK_DELETE_SPEEDS, MOCK_PHOTODELETE_SCENARIOS } from './mock/photoDelete';
 import { createWebViewTransport, getWebView } from './webview';
 
 export { BridgeClient, type FileSource } from './client';
@@ -42,6 +42,8 @@ export function mockOptionsFromUrl(search: string): MockTransportOptions {
     notes: MOCK_NOTES_SCENARIOS.find((s) => s === query.get('notes')) ?? 'owner',
     // Deleting iPhone photos (round 4): ?photodelete=iCloudPhotos|readOnly|locked|notCamera|converted|recentlyDeleted|fails
     photoDelete: MOCK_PHOTODELETE_SCENARIOS.find((s) => s === query.get('photodelete')) ?? 'ok',
+    // A delete's stages (v0.4.1): ?deletespeed=slow reads a slow camera roll, for watching them in the Transfers drawer.
+    deleteSpeed: MOCK_DELETE_SPEEDS.find((s) => s === query.get('deletespeed')) ?? 'normal',
     settings: {
       ...(lang === 'fa' || lang === 'en' ? { language: lang } : {}),
       ...(theme === 'light' || theme === 'dark' || theme === 'system' ? { theme } : {}),

@@ -89,20 +89,25 @@ describe('mock clean-up', () => {
     expect(page.total).toBe(report.media!.videoCount + report.media!.photoCount + report.media!.cloudOnlyCount);
   });
 
-  it('an iPhone whose camera connection allows it deletes item by item (round 4)', async () => {
+  it('an iPhone whose camera connection allows it deletes item by item, as a job in Transfers (v0.4.1)', async () => {
     const { client, backend } = setup();
     const report = await analyzed(client, backend, IPHONE_ID);
     expect(report.media!.canDelete).toBe(true);
     expect(report.duplicates!.canDelete).toBe(true);
     const [a, b] = report.media!.largestVideos;
-    const result = await client.call('cleanup.deleteMedia', {
+    const started = await client.call('cleanup.deleteMedia', {
       deviceId: IPHONE_ID,
       items: [{ id: a!.id, size: a!.size }, { id: b!.id, size: b!.size }],
       expectedBytes: a!.size + b!.size,
     });
-    expect(result.deleted).toBe(2);
-    expect(result.items!.map((i) => i.outcome)).toEqual(['deleted', 'deleted']);
-    expect(result.goesTo).toBe('permanent');
+    expect(started.skipped).toBe(0);
+    expect((await client.call('transfers.list')).find((j) => j.id === started.jobId)!.kind).toBe('photosDelete');
+    // Still listed until the job deletes them.
+    expect((await client.call('cleanup.status', { deviceId: IPHONE_ID })).report!.media!.largestVideos.map((v) => v.id)).toContain(a!.id);
+    run(backend, 10_000);
+    const result = await client.call('photos.deleteJob', { jobId: started.jobId! });
+    expect(result).toMatchObject({ state: 'done', deleted: 2, source: 'cleanup', goesTo: 'permanent' });
+    expect(result.items.map((i) => i.outcome)).toEqual(['deleted', 'deleted']);
     const left = await client.call('cleanup.status', { deviceId: IPHONE_ID });
     expect(left.report!.media!.largestVideos.map((v) => v.id)).not.toContain(a!.id);
   });
@@ -119,12 +124,14 @@ describe('mock clean-up', () => {
     expect(notListed.code).toBe('invalid_params');
 
     const before = (await client.call('photos.list', { deviceId: ANDROID_ID, offset: 0, limit: 1 })).total;
-    const result = await client.call('cleanup.deleteMedia', {
+    const started = await client.call('cleanup.deleteMedia', {
       deviceId: ANDROID_ID,
       items: [a!, b!].map((v) => ({ id: v.id, size: v.size })),
       expectedBytes: a!.size + b!.size,
       copyFirstTo: 'D:\\Backup',
     });
+    run(backend, 200_000); // 5 GB copied first at the mock's 38 MB/s
+    const result = await client.call('photos.deleteJob', { jobId: started.jobId! });
     expect(result).toMatchObject({ deleted: 2, skipped: 0, freedBytes: a!.size + b!.size, copyIncomplete: false });
     expect(result.copyJobIds).toHaveLength(1);
     expect((await client.call('photos.list', { deviceId: ANDROID_ID, offset: 0, limit: 1 })).total).toBe(before - 2);

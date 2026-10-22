@@ -44,8 +44,6 @@ const NO_TIMEOUT: ReadonlySet<string> = new Set([
   // WhatsApp (round 4): the first call opens WhatsApp's database, which may be gigabytes, from an encrypted backup.
   'whatsapp.status',
   'whatsapp.chats',
-  // Deleting photos (round 4): may copy them to the PC first.
-  'photos.deleteItems',
 ]);
 
 export class BridgeClient {

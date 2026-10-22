@@ -23,6 +23,23 @@ export interface NewJob {
   onDone?: () => void;
   /** Seconds the job waits, queued, before it may start (LocalSend: until the Accept tap). */
   holdSeconds?: number;
+  /**
+   * v0.4.1: a job that runs in stages (a photo delete) instead of by bytes: it moves itself on, can't be paused,
+   * resumed or retried, never waits for its phone, and runs one at a time per phone beside the copies.
+   */
+  staged?: StagedRun;
+}
+
+/** What drives a staged job (./photoDelete.ts). Every method answers the job's next fields. */
+export interface StagedRun {
+  /** Its turn came: the first stage. */
+  started(): Partial<TransferJob>;
+  /** `seconds` of simulated time passed while it runs. */
+  advance(seconds: number): Partial<TransferJob>;
+  /** Cancel pressed (queued or running): stopped at once, or after the batch on its way. */
+  cancel(): Partial<TransferJob>;
+  /** Its phone went away. */
+  fail(error: { code: string; message: string }): Partial<TransferJob>;
 }
 
 interface Internal {
@@ -39,6 +56,7 @@ interface Internal {
   onDone?: () => void;
   resumeState: 'running' | 'queued' | null;
   speedSamples: number[];
+  staged?: StagedRun;
 }
 
 /** USB services are a single pipe: a few jobs at once per phone; the rest wait in line. */
@@ -56,6 +74,7 @@ const SPEED: Record<TransferKind, number> = {
   photosToApp: 32 * MB,
   localSend: 28 * MB,
   whatsAppMedia: 36 * MB, // round 4
+  photosDelete: 0, // v0.4.1: staged, not by bytes
 };
 
 export class TransferEngine {
@@ -134,7 +153,13 @@ export class TransferEngine {
       onDone: spec.onDone,
       resumeState: job.state === 'waitingForDevice' ? 'queued' : null,
       speedSamples: [],
+      staged: spec.staged,
     };
+    if (spec.staged && job.state === 'waitingForDevice') {
+      // A delete never waits for its phone.
+      Object.assign(job, spec.staged.fail({ code: 'device_disconnected', message: 'The phone wasn’t connected, so nothing was done.' }));
+      internal.resumeState = null;
+    }
     this.jobs.set(id, internal);
     this.emit({ ...job });
     this.schedule();
@@ -144,6 +169,7 @@ export class TransferEngine {
   pause(jobId: string): boolean {
     const j = this.jobs.get(jobId);
     if (!j) return false;
+    if (j.staged) throw new StagedRefusal('This transfer can’t be paused. Cancel it instead.');
     if (j.job.state === 'running' || j.job.state === 'queued') {
       this.update(j, { state: 'paused', bytesPerSecond: null, etaSeconds: null });
       this.schedule();
@@ -155,6 +181,7 @@ export class TransferEngine {
   resume(jobId: string): boolean {
     const j = this.jobs.get(jobId);
     if (!j) return false;
+    if (j.staged) throw new StagedRefusal('This can’t run again by itself. Select what is left and start it again.');
     if (j.job.state === 'paused') {
       this.update(j, { state: this.offline.has(j.job.deviceId) ? 'waitingForDevice' : 'queued' });
     } else if (j.job.state === 'failed') {
@@ -175,6 +202,11 @@ export class TransferEngine {
   cancel(jobId: string): boolean {
     const j = this.jobs.get(jobId);
     if (!j) return false;
+    if (j.staged) {
+      if (!isFinished(j.job.state)) this.update(j, j.staged.cancel());
+      this.schedule();
+      return true;
+    }
     if (!isFinished(j.job.state)) {
       this.update(j, { state: 'cancelled', bytesPerSecond: null, etaSeconds: null, conflict: null, finishedAt: this.iso() });
       this.schedule();
@@ -196,6 +228,11 @@ export class TransferEngine {
     this.offline.add(deviceId);
     for (const j of this.jobs.values()) {
       if (j.job.deviceId !== deviceId) continue;
+      if (j.staged) {
+        // Never waits to carry on by itself: it fails, with what went so far.
+        if (!isFinished(j.job.state)) this.update(j, j.staged.fail({ code: 'device_disconnected', message: 'The phone went away before it finished.' }));
+        continue;
+      }
       if (j.job.state === 'running' || j.job.state === 'queued' || j.job.state === 'needsDecision') {
         j.resumeState = j.job.state === 'queued' ? 'queued' : 'running';
         this.update(j, { state: 'waitingForDevice', bytesPerSecond: null, etaSeconds: null });
@@ -220,6 +257,10 @@ export class TransferEngine {
     for (const j of this.jobs.values()) {
       if (j.job.state === 'queued' && j.holdSeconds > 0) j.holdSeconds = Math.max(0, j.holdSeconds - seconds);
       if (j.job.state !== 'running') continue;
+      if (j.staged) {
+        this.update(j, j.staged.advance(seconds));
+        continue;
+      }
       this.advance(j, seconds);
     }
     this.schedule();
@@ -314,7 +355,12 @@ export class TransferEngine {
   /** Starts queued jobs while a phone has free slots. */
   private schedule(): void {
     const running = new Map<string, number>();
+    const stagedRunning = new Set<string>();
     for (const j of this.jobs.values()) {
+      if (j.staged) {
+        if (j.job.state === 'running') stagedRunning.add(j.job.deviceId);
+        continue;
+      }
       if (j.job.state === 'running' || j.job.state === 'needsDecision') {
         running.set(j.job.deviceId, (running.get(j.job.deviceId) ?? 0) + 1);
       }
@@ -324,6 +370,13 @@ export class TransferEngine {
       .sort((a, b) => a.job.createdAt.localeCompare(b.job.createdAt));
     for (const j of queued) {
       if (j.holdSeconds > 0 || this.offline.has(j.job.deviceId)) continue;
+      if (j.staged) {
+        // Deletes take turns on one phone, in a lane of their own (they wait for copies that need the others).
+        if (stagedRunning.has(j.job.deviceId)) continue;
+        stagedRunning.add(j.job.deviceId);
+        this.update(j, { state: 'running', ...j.staged.started() });
+        continue;
+      }
       const count = running.get(j.job.deviceId) ?? 0;
       if (count >= MAX_RUNNING_PER_DEVICE) continue;
       running.set(j.job.deviceId, count + 1);
@@ -337,6 +390,7 @@ export class TransferEngine {
   retry(jobId: string, holdSeconds = 0): 'ok' | 'missing' | 'nothing' {
     const j = this.jobs.get(jobId);
     if (!j) return 'missing';
+    if (j.staged) return 'nothing';
     const s = j.job.state;
     if (!(s === 'failed' || s === 'cancelled' || (s === 'done' && j.job.failedItems > 0))) return 'nothing';
     j.index = j.job.doneItems;
@@ -416,3 +470,6 @@ export function keepBothName(name: string): string {
   if (match) return `${match[1]} (${Number(match[2]) + 1})${ext}`;
   return `${stem} (2)${ext}`;
 }
+
+/** Pause, resume or retry asked of a staged job (a delete): the host answers with an error too. */
+export class StagedRefusal extends Error {}

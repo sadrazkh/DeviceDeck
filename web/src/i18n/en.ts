@@ -9,6 +9,7 @@ import { photoBackupEn } from '../screens/photos/backupStrings';
 import { updatesEn } from '../shell/updateStrings';
 import { whatsAppEn } from '../screens/contacts/whatsAppStrings';
 import { photoDeleteEn } from '../screens/photos/deleteStrings';
+import { deleteJobEn } from '../shell/deleteJobStrings';
 
 export const en = {
   'app.name': 'DeviceDeck',
@@ -638,6 +639,8 @@ export const en = {
   ...whatsAppEn,
   // Deleting photos, iPhone included (round 4, photodelete)
   ...photoDeleteEn,
+  // Deleting photos as a transfer (v0.4.1, deletejob)
+  ...deleteJobEn,
 } as const;
 
 export type MessageKey = keyof typeof en;
