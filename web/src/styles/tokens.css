@@ -148,6 +148,8 @@
   --color-warning-text: #92400e;
   --color-warning-subtle: rgba(217, 119, 6, 0.12);
   --color-danger: var(--red-600);
+  /* A solid danger button's fill: white on it reads at 4.5:1 or more in both themes. */
+  --color-danger-solid: var(--red-600);
   --color-danger-text: #b91c1c;
   --color-danger-subtle: rgba(220, 38, 38, 0.1);
   --color-danger-stroke: rgba(220, 38, 38, 0.35);
@@ -258,6 +260,8 @@
   --color-warning-text: #fbbf24;
   --color-warning-subtle: rgba(245, 158, 11, 0.14);
   --color-danger: #ef4444;
+  /* #ef4444 under white text was 3.8:1 (the confirm button of every delete in dark); red-600 is 4.8:1. */
+  --color-danger-solid: var(--red-600);
   --color-danger-text: #fa8e8e;
   --color-danger-subtle: rgba(239, 68, 68, 0.14);
   --color-danger-stroke: rgba(248, 113, 113, 0.4);
