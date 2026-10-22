@@ -262,8 +262,8 @@ internal static class PhotoDeleteProbe
         var items = exact.Select(h => new PhotoDeleteItem(h[0].AssetId, assets[h[0].AssetId].Size > 0 ? assets[h[0].AssetId].Size : h[0].Size)).ToList();
         Console.WriteLine($"\nDeleting exactly {items.Count} file(s) through Windows: {string.Join(", ", items.Select(i => i.Id))}");
         clock.Restart();
-        var results = await device.DeleteConfirmedAsync(items, null, ct);
-        Console.WriteLine($"({clock.Elapsed.TotalSeconds:0.0} s)");
+        var results = await device.DeleteConfirmedAsync(items, new StagePrinter(clock), ct);
+        Console.WriteLine($"({clock.Elapsed.TotalSeconds:0.0} s; Windows' view: {device.PhotoDeleter.LastRead})");
         Out.Table(["file", "outcome", "went to", "also", "note"], results.Select(r => new[]
         {
             r.Id, r.Outcome.ToString(), r.WentTo.ToString(), string.Join(", ", r.Also), r.Message ?? "",
@@ -278,6 +278,29 @@ internal static class PhotoDeleteProbe
         Console.WriteLine("\nLog lines (" + (PhotoDeleteLog.DefaultFolder) + "):");
         foreach (var line in device.PhotoDeleter.LogLines)
             Console.WriteLine("  " + line);
+    }
+
+    /// <summary>Prints each stage of the delete as it starts, with the time (the job's stages in the app, v0.4.1).</summary>
+    private sealed class StagePrinter(Stopwatch clock) : IPhotoDeleteObserver
+    {
+        private PhotoDeleteStage? _stage;
+
+        public void Stage(PhotoDeleteStage stage, int done, int total)
+        {
+            if (stage == _stage && done < total)
+                return;
+            if (stage != _stage || (total > 0 && done == total))
+                Console.WriteLine($"  {clock.Elapsed.TotalSeconds,6:0.0} s  {stage}: {done:N0} of {total:N0}");
+            _stage = stage;
+        }
+
+        public void Deleting(IReadOnlyList<int> items)
+        {
+        }
+
+        public void Result(int item, PhotoDeleteResult result)
+        {
+        }
     }
 
     private static IReadOnlyList<PhotoRow> ReadRows(IosPhotoLibrary photos)

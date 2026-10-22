@@ -388,6 +388,31 @@ public static class WpdMonths
         return m is >= 1 and <= 12 && year >= 1990 ? (year, m) : null;
     }
 
+    /// <summary>
+    /// The folders that can hold these files: when Windows shows the phone's own folders (100APPLE), theirs; when it
+    /// shows month folders ("202610_a"), the month each was taken in (two at a month's edge, for any time zone), plus
+    /// every folder not named after a month. Every folder when a date isn't known.
+    /// </summary>
+    /// <param name="items">Each file's DCIM path ("DCIM/100APPLE/IMG_0001.HEIC"), its Live Photo video's, and when it was taken.</param>
+    public static IReadOnlyList<WpdObject> FoldersFor(IReadOnlyList<WpdObject> folders, bool byFolder,
+        IReadOnlyCollection<(string Path, string? PairPath, DateTimeOffset? Taken)> items)
+    {
+        if (byFolder)
+        {
+            var names = items.SelectMany(i => new[] { i.Path, i.PairPath }).Where(x => x is not null)
+                .Select(x => x!.Split('/')).Where(x => x.Length == 3).Select(x => x[1]).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            return folders.Where(f => names.Contains(f.FileName ?? "")).ToList();
+        }
+
+        if (items.Any(i => i.Taken is null))
+        {
+            return folders;
+        }
+
+        var months = items.SelectMany(i => MonthsFor(i.Taken!.Value)).ToHashSet();
+        return folders.Where(f => MonthOf(f.FileName) is not { } month || months.Contains(month)).ToList();
+    }
+
     /// <summary>The months a picture taken at this instant may be filed under, whatever zone the phone was in: one, or two at a month's edge.</summary>
     public static IEnumerable<(int Year, int Month)> MonthsFor(DateTimeOffset taken)
     {

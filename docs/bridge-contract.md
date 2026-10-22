@@ -277,7 +277,7 @@ Deletes wait while an analysis runs. A report is dropped when its phone disconne
 | `cleanup.status` | `{ deviceId }` | `CleanupStatus` |
 | `cleanup.analyze` | `{ deviceId }` | `CleanupStatus` (starts one, or returns the one running) |
 | `cleanup.cancel` | `{ deviceId }` | `{}` |
-| `cleanup.deleteMedia` | `{ deviceId, items: { id, size }[], expectedBytes, copyFirstTo? }` | `CleanupResult` — Android only (MediaStore); an iPhone answers `not_supported`: copy to the PC, then delete in the Photos app |
+| `cleanup.deleteMedia` | `{ deviceId, items: { id, size }[], expectedBytes, copyFirstTo? }` | `PhotoDeleteStarted` since v0.4.1 (a `photosDelete` job; see "Deleting photos as a transfer" at the end); `not_supported` on a phone without `photosDelete` |
 | `cleanup.deleteFiles` | `{ deviceId, items: { root, path, size }[], expectedBytes, copyFirstTo? }` | `CleanupResult` |
 | `cleanup.uninstallApps` | `{ deviceId, items: { id, size }[], expectedBytes, copyFirstTo? }` | `CleanupResult` — `size` is appBytes + dataBytes; copy first saves the APK (Android), not the app's data |
 | `cleanup.trimCaches` | `{ deviceId }` | `CleanupResult` — Android `pm trim-caches`: every app's cache; `freedBytes` is free space after minus before |
@@ -1037,7 +1037,7 @@ its files can be deleted (`WPD_OBJECT_CAN_DELETE`); `photos.deleteSupport` says 
 | Method | Params | Result |
 | --- | --- | --- |
 | `photos.deleteSupport` | `{ deviceId, recheck?: boolean }` | `PhotoDeleteSupport` — `recheck` asks the phone again (a few seconds over USB) |
-| `photos.deleteItems` | `{ deviceId, items: { id, size }[], expectedBytes, copyFirstTo? }` | `PhotoDeleteReport` — no timeout on the page (it may copy to the PC first) |
+| `photos.deleteItems` | `{ deviceId, items: { id, size }[], expectedBytes, copyFirstTo? }` | `PhotoDeleteStarted` since v0.4.1, at once (see "Deleting photos as a transfer" at the end) |
 
 - Exactly the items sent, each at the size the page showed, `expectedBytes` their total (`-32602` otherwise). Every item
   is matched first; if one doesn't match exactly (gone, changed, iCloud only, ambiguous), nothing is deleted and the
@@ -1049,8 +1049,8 @@ its files can be deleted (`WPD_OBJECT_CAN_DELETE`); `photos.deleteSupport` says 
 - `copyFirstTo`: the photos are copied through the queue first (`photos.export`, plus, on an iPhone, a `files.copyToPc`
   of each Live Photo's video into the same folder as its still); nothing is deleted unless every copy finished.
 - One line per deleted object (DCIM path and size, never content) in `logs\photo-deletes-yyyyMMdd.log`.
-- `cleanup.deleteMedia` now works on an iPhone with `photosDelete` too, through the same per-item delete; its
-  `CleanupResult` gains `items` (`PhotoDeleteResult[]`, null for files/apps/caches) and `goesTo`.
+- `cleanup.deleteMedia` now works on an iPhone with `photosDelete` too, through the same per-item delete (since v0.4.1
+  as a job, like `photos.deleteItems`; `CleanupResult` keeps no per-item fields).
 
 ```ts
 type PhotoDeleteBlock = "none" | "checking" | "iCloudPhotos" | "readOnly" | "locked" | "notCamera" | "converted" | "unsupported";
@@ -1077,3 +1077,63 @@ Reasons: `iCloudPhotos` / `readOnly` (the phone marks its photos read-only for t
 iCloud Photos), `locked` (Windows shows no storage, or an empty one, until the phone is unlocked and trusted),
 `notCamera` (Windows doesn't list it), `converted` (Settings › Photos › Transfer to Mac or PC is Automatic, so Windows sees
 JPGs, not the phone's files), `unsupported` (no camera connection on this PC or this phone), `checking`.
+
+## Deleting photos as a transfer (v0.4.1, deletejob)
+
+A confirmed delete, from Photos or from Clean-up, is a transfer job (`kind: "photosDelete"`): the confirmation dialog
+closes as soon as it is queued, a toast says "Deleting in the background", and the Transfers drawer shows the job with
+its stage and a bar. Every rule of the delete itself is unchanged (exact match or nothing goes, batches of five, stop at
+the first failure, never folders, one log line per object; the confirmation still says "deleted for good").
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `photos.deleteItems` | `{ deviceId, items: { id, size }[], expectedBytes, copyFirstTo? }` | `PhotoDeleteStarted` at once. Bad params `-32602`; a phone that can't delete `not_supported` (no job then) |
+| `cleanup.deleteMedia` | as before | `PhotoDeleteStarted`: items that changed since the analysis are left out and counted in `skipped`; `jobId` is null when none is left |
+| `photos.deleteJob` | `{ jobId }` | `PhotoDeleteJobStatus`: the results so far, all of them once the job ended; `-32602` for another kind of job |
+
+```ts
+type TransferJob = { …; stage?: TransferStage | null };   // every job: null unless it runs in stages
+type TransferStage = { name: "copying" | "reading" | "deleting" | "checking"; done: number; total: number };  // 0 of 0: not known yet
+type PhotoDeleteStarted = { jobId: string | null; skipped: number };
+type PhotoDeleteJobStatus = { jobId: string; deviceId: string; source: "photos" | "cleanup";
+  state: TransferState; stage: TransferStage | null;
+  items: PhotoDeleteResult[];          // one per confirmed item, in order; not reached yet: notTried
+  deleted: number; freedBytes: number; goesTo: PhotoDeleteDestination;
+  copyJobIds: string[]; copyIncomplete: boolean; skipped: number; error: { code: string; message: string } | null };
+// TransferKind gains "photosDelete".
+```
+
+- **Stages.** `copying` (copy to this PC first: the copy jobs' items done of all; the copies are jobs of their own
+  beside it), `reading` (the phone's library, then on an iPhone Windows' view of its camera roll: objects read of the
+  objects to read), `deleting` (items done of all, a batch at a time), `checking` (iPhone: what the phone shows
+  afterwards). Then `done`, or `failed` when nothing was deleted (the error says why), or `cancelled`.
+- **The job's numbers.** `totalItems` is the items confirmed, `doneItems` the deleted ones, `failedItems` the ones not
+  deleted (refused, or left alone because they didn't match); the rest weren't tried. `doneBytes` is what the deleted
+  ones freed (a Live Photo's video included). The title bar's ring leaves deletes out of its bytes.
+- **Cancel** (`transfers.cancel`): while copying or reading, nothing has been deleted and nothing will be (unfinished
+  copy jobs are cancelled with it); while deleting, the batch on its way finishes and no other starts; the results say
+  which went. Checking only reads and always finishes (the drawer offers no Stop then).
+- **Never by itself.** A delete job can't be paused, resumed or retried (`transfers.pause` / `resume` / `retry` answer an
+  error): deleting what is left needs a new selection and a new confirmation. It never waits for its phone: a phone that
+  goes away (or isn't there when its turn comes) fails it, and it doesn't start when the phone is back.
+- **A restart in the middle.** A delete job DeviceDeck closed in the middle of (or crashed in) is ended on the next
+  start, before anything runs: state `cancelled`, `error.code` `interrupted`, the message "N deleted, M not tried"
+  (and "K may be gone" for a batch that was on its way: those items say `failed` / `interrupted`; look on the phone).
+  One that hadn't started yet ends the same way ("before anything was deleted"). Nothing is ever deleted on a restart.
+  Results after a restart come from the saved items (`photos.deleteJob`), without the notes only the run knew.
+- **One at a time per phone.** Delete jobs take turns on a phone, in a lane of their own beside the two copy workers
+  (a delete may wait for its own copies). A queued one shows "Waiting for the delete before it".
+- **When it ends** the page reads the photo lists, albums, storage and the backup status again; Clean-up's report drops
+  what went (whichever screen started the delete). A toast says what went, with **Results**.
+
+Reading Windows' view fast (iPhone): objects are read in bulk (`IPortableDevicePropertiesBulk::QueueGetValuesByObjectList`,
+200 at a time) where the driver does it, one by one where it doesn't, and one by one for any object a bulk answer left
+out. Only the folders that can hold the items are read: the phone's own folder when Windows shows it (100APPLE), else
+the month folder of each item's date taken (`YYYYMM_x` or `YYYY__MM`; two months at a month's edge, for any time zone,
+UTC−12…+14), plus any folder not named after a month. A still that isn't found there (Windows filed it under another
+month, or the listing was out of date) makes the delete read every folder, fresh, and match again. The listing is kept
+per phone for 5 minutes: dropped when the phone locks or goes away and after a delete that didn't go cleanly; after a
+clean delete only the deleted objects leave it. Objects a delete takes from a kept listing are read again before
+anything is deleted (anything changed: read fresh); every object is still read again just before its batch.
+Matching is unchanged, with one difference by design: Windows' side of "the name is unique" is checked across the
+folders read (the phone's side, every DCIM file over AFC, is checked as before).

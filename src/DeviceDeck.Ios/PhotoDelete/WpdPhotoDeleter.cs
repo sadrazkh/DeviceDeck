@@ -576,23 +576,8 @@ public sealed class WpdPhotoDeleter
     /// ("202610_a"), the month each was taken in (two at a month's edge, for any time zone), plus every folder not named
     /// after a month. Every folder when an item's date isn't known.
     /// </summary>
-    private static IReadOnlyList<WpdObject> Narrow(WpdListing listing, bool byFolder, Plan[] plans)
-    {
-        if (byFolder)
-        {
-            var names = plans.SelectMany(p => new[] { p.Item.Id, p.PairPath }).Where(x => x is not null)
-                .Select(x => x!.Split('/')).Where(x => x.Length == 3).Select(x => x[1]).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            return listing.Folders.Where(f => names.Contains(f.FileName ?? "")).ToList();
-        }
-
-        if (plans.Any(p => p.Asset.TakenAt is null))
-        {
-            return listing.Folders;
-        }
-
-        var months = plans.SelectMany(p => WpdMonths.MonthsFor(p.Asset.TakenAt!.Value)).ToHashSet();
-        return listing.Folders.Where(f => WpdMonths.MonthOf(f.FileName) is not { } month || months.Contains(month)).ToList();
-    }
+    private static IReadOnlyList<WpdObject> Narrow(WpdListing listing, bool byFolder, Plan[] plans) =>
+        WpdMonths.FoldersFor(listing.Folders, byFolder, plans.Select(p => (p.Item.Id, p.PairPath, p.Asset.TakenAt)).ToList());
 
     /// <summary>Maps each plan to its still (and Live Photo video, and edits) in this map, or says why not.</summary>
     private static void MapAll(WpdDcimMap map, Plan[] plans, HashSet<string> edited)
