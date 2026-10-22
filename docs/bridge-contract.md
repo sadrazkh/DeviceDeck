@@ -1077,3 +1077,69 @@ Reasons: `iCloudPhotos` / `readOnly` (the phone marks its photos read-only for t
 iCloud Photos), `locked` (Windows shows no storage, or an empty one, until the phone is unlocked and trusted),
 `notCamera` (Windows doesn't list it), `converted` (Settings › Photos › Transfer to Mac or PC is Automatic, so Windows sees
 JPGs, not the phone's files), `unsupported` (no camera connection on this PC or this phone), `checking`.
+
+## Hidden photos in the photo backup (round 4, hiddenbackup)
+
+Added by the hiddenbackup session. Replaces round 2's `includeHidden` switch. C#: `src/DeviceDeck.Core/Photos/PhotoBackupHidden.cs`
+(the rules), the photo backup files, `AppSettings` (a block at the end); TypeScript: `web/src/bridge/hiddenBackup.ts`,
+`web/src/screens/photos/HiddenBackupOptions.tsx`.
+
+An iPhone's Hidden album can be left out (the default), backed up as well as the other photos, or backed up alone; when
+it is backed up, its photos go into a folder of their own under the destination, dated inside the same way, or into the
+same date folders as the others. Every combination:
+
+| `hidden` | `hiddenLayout` | Normal photos | Hidden photos |
+| --- | --- | --- | --- |
+| `exclude` (default) | (any) | `<destination>\2026\10\IMG_1234.HEIC` | left out (`hiddenLeftOut`) |
+| `include` | `separate` (default) | `<destination>\2026\10\…` | `<destination>\Hidden\2026\10\…`, `<destination>\Hidden\Undated\…` |
+| `include` | `together` | `<destination>\2026\10\…` | `<destination>\2026\10\…` (as `includeHidden: true` did) |
+| `only` | `separate` | left out (`normalLeftOut`) | `<destination>\Hidden\2026\10\…` |
+| `only` | `together` | left out (`normalLeftOut`) | `<destination>\2026\10\…` |
+
+With `folderPattern: ""` the hidden ones go straight into `<destination>\Hidden\`. A Live Photo's video and a photo's
+edited version always go next to the photo, so into the hidden tree with it.
+
+```ts
+type PhotoBackupHidden = "exclude" | "include" | "only";
+type PhotoBackupHiddenLayout = "separate" | "together";
+// PhotoBackupOptions: includeHidden is gone; it gains
+//   hidden: PhotoBackupHidden; hiddenLayout: PhotoBackupHiddenLayout; hiddenFolder: string;   // "Hidden"
+// PhotoBackupCount gains
+//   newHidden: number;       // how many of newCount are hidden (0 unless included)
+//   normalLeftOut: number;   // new photos that aren't hidden, left out by hidden: "only"
+// photos.backupConfigure takes hidden?, hiddenLayout?, hiddenFolder?; includeHidden? is still taken
+//   (true = include + together, false = exclude; hidden wins when both are sent).
+// Settings gains (the defaults of an iPhone without its own; useDefaults brings them back):
+//   photoBackupHidden: PhotoBackupHidden;              // "exclude"
+//   photoBackupHiddenLayout: PhotoBackupHiddenLayout;  // "separate"
+//   photoBackupHiddenFolder: string;                   // "Hidden"; the page suggests "پنهان" in Persian
+```
+
+- **Per phone, in the ledger**, like the other options: `devices.hidden`, `hidden_layout`, `hidden_folder` in
+  `photo-backup.db` (schema 3). A phone that isn't an iPhone always backs up as `exclude` (Android has no Hidden album).
+- **Migration.** Opening a schema 2 file turns `include_hidden = 1` into `include` + `together` (existing users keep
+  their behaviour: hidden photos mixed in) and `include_hidden = 0` into `exclude`. `include_hidden` is still written
+  (on for `include` and `only`) for an older copy of the app. A job queued before this has no `hidden` in its request:
+  its `includeHidden` decides, hidden ones mixed in.
+- **The folder name** is one folder name: trimmed; 1–64 characters; no `\ / : * ? " < > |`, control characters or
+  direction marks (ZWNJ is fine); not `.`/`..` and no trailing dot; not a device name (`CON`, `NUL`, `COM1`, …, also
+  with an extension); not `Undated` and not only digits and the pattern's separators (it would sit among the year
+  folders). Anything else is `-32602`, from `photos.backupConfigure` and from `settings.set`.
+- **Incremental across changes.** A photo is placed once, when it is first copied. Hidden or unhidden on the phone
+  after its backup, it is not copied again and nothing on the PC moves: its copy stays in the tree it went to (a later
+  edit of it goes next to that copy). Switching `together` ↔ `separate` (or renaming the folder) leaves what was copied
+  where it is; only new photos follow the new choice. The panel says so in one line.
+- **Duplicates across both trees.** The destination index covers the whole destination, the hidden folder included:
+  a photo already in the other tree (same size and SHA-256, or the name + sample check) is remembered there, not copied
+  again; no empty folder is made for it.
+- **Counts follow the options**: `newCount` (and the Photos screen's badge) counts hidden photos only when they are
+  backed up; the free-space check and the `newBytes` estimate take only what will be copied; the automatic start on
+  connect and the "Back up now" notification use the same options. The notifications never say how many are hidden.
+- **The page.** The Back up panel (iPhone) shows "Normal and hidden photos" (Normal only · Both · Hidden only), then
+  "Hidden photos go" (In a folder of their own · With the other photos), the folder's name with a suggestion ("Hidden",
+  or "پنهان" in Persian), an example path (`E:\Backup\Sadal\Hidden\2026\10\IMG_1234.HEIC`, each folder bidi-isolated),
+  the one-line note above when the phone has backups, and a privacy note: hidden photos are copied as ordinary files,
+  so anyone who can open the folder on the PC can see them. How many of the new photos are hidden is shown only once the
+  Hidden album is revealed on the Photos screen. Settings › Photo backup has the same choices as the defaults.
+- **PhotoBench**: `--hidden exclude|separate|together|only`, `--hidden-layout separate|together` (for `only`),
+  `--hidden-folder <name>`; it prints where the files went.

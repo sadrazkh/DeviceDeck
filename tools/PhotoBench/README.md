@@ -21,6 +21,11 @@ opened (each lockdown session and each service connection is one), then looks ag
 - `--edits` also says, read-only, how many photos Photos.sqlite marks as edited and whether their rendered versions
   are where the backup looks (`PhotoData/Mutations/<DCIM path>/Adjustments/FullSizeRender.*`); `--save-edited` backs
   them up too, as the panel's "Also save edited versions".
+- `--hidden exclude|separate|together|only` backs up the Hidden album as the panel's choice does: left out (the
+  default), into a folder of their own under `--dest` (dated inside: `Hidden\2026\10\…`), with the others, or alone
+  (into their own folder; `--hidden-layout together` puts them with the date folders). `--hidden-folder <name>` names
+  that folder. After the run it says how many files are in the hidden folder and how many elsewhere. Hidden photos are
+  copied as ordinary files: point `--dest` only at a folder you'll delete afterwards, and only with the owner's yes.
 - Quit DeviceDeck first only if the phone misbehaves with two clients; usbmux itself allows both.
 
 ## Fake mode
@@ -37,4 +42,5 @@ long videos; about 1 GB) and runs it over a simulated USB link:
 | `--session-ms` | 40 | a lockdown session's TLS handshake |
 
 The copies go to `E:\DeviceDeck-test\photobench-fake` and are removed after each run (`--keep` keeps them).
+With `--hidden`, every 12th fake photo is in the Hidden album (ZHIDDEN = 1), so the hidden folder can be checked.
 `--repeat N` runs N times, each into a fresh folder, and prints the median.
