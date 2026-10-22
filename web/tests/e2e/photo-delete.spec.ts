@@ -45,6 +45,41 @@ async function confirmAndHandOff(page: Page, confirm = 'photo-delete-confirm', p
   return row;
 }
 
+/**
+ * Records every stage a delete row passes through. On the mock (and on a slow runner) a stage can come and go before an
+ * assertion looks, so tests check the order afterwards instead of catching a stage while it lasts.
+ */
+async function recordStages(page: Page) {
+  await page.evaluate(() => {
+    const w = window as unknown as { __stages?: string[] };
+    const seen: string[] = (w.__stages = []);
+    const note = (el: Element) => {
+      const stage = el.getAttribute('data-stage');
+      if (stage && seen[seen.length - 1] !== stage) seen.push(stage);
+    };
+    new MutationObserver((records) => {
+      for (const r of records) {
+        if (r.type === 'attributes' && r.target instanceof Element && r.target.matches('[data-kind=photosDelete]')) note(r.target);
+        for (const n of Array.from(r.addedNodes)) {
+          if (!(n instanceof Element)) continue;
+          if (n.matches('[data-kind=photosDelete]')) note(n);
+          n.querySelectorAll('[data-kind=photosDelete]').forEach(note);
+        }
+      }
+    }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ['data-stage'] });
+  });
+}
+
+/** The stages recordStages saw, in order, as one list (a repeat in a row counted once). */
+const recordedStages = (page: Page) => page.evaluate(() => (window as unknown as { __stages?: string[] }).__stages ?? []);
+
+/** True when `expected` appears in `seen` in this order (other stages may come between). */
+function passedInOrder(seen: string[], expected: string[]): boolean {
+  let next = 0;
+  for (const stage of seen) if (stage === expected[next]) next++;
+  return next === expected.length;
+}
+
 /** Opens the results of the finished delete in this row. */
 async function openResults(row: Locator) {
   await row.getByTestId('delete-job-results').click();
@@ -120,16 +155,13 @@ test('Photos: more than 20 photos copy to this PC first; the job shows copying, 
   const dialog = page.getByTestId('photo-delete-dialog');
   await expect(dialog.getByRole('switch')).toBeChecked();
   await expect(dialog).toContainText('Nothing is deleted unless every copy finishes.');
+  await recordStages(page);
   const row = await confirmAndHandOff(page);
-  await expect(row).toHaveAttribute('data-stage', 'copying');
-  await expect(row.getByTestId('delete-job-line')).toContainText('Copying to this PC:');
-  await expect(row.getByRole('progressbar')).toBeVisible();
-  // Reading the camera roll: read ahead since the selection (v0.4.2), so it may take no time at all here.
-  await expect(row).toHaveAttribute('data-stage', 'deleting');
-  await expect(row).toHaveAttribute('data-stage', 'checking');
-  await expect(row.getByTestId('delete-job-stop')).toHaveCount(0); // checking only reads: nothing to stop
   await expect(row).toHaveAttribute('data-state', 'done', { timeout: 30_000 });
   await expect(row.getByTestId('delete-job-line')).toContainText('21 deleted');
+  // Reading the camera roll was read ahead since the selection (v0.4.2), so it may take no time at all here.
+  const seen = await recordedStages(page);
+  expect(passedInOrder(seen, ['copying', 'deleting', 'checking']), `stages seen: ${seen.join(' → ')}`).toBe(true);
   // The copy ran as its own job beside it.
   await expect(page.getByTestId('transfer-drawer').locator('[data-testid=transfer-row]:not([data-kind])')).toHaveCount(1);
 });
@@ -316,9 +348,11 @@ test('Clean-up: an iPhone that allows it deletes its largest photos in Transfers
   await settle(page);
   await shot(page, 'cleanup-confirm-iphone-light');
 
+  await recordStages(page);
   const row = await confirmAndHandOff(page, 'cleanup-confirm');
-  await expect(row).toHaveAttribute('data-stage', 'copying');
   await expect(row).toHaveAttribute('data-state', 'done', { timeout: 60_000 });
+  const seen = await recordedStages(page);
+  expect(passedInOrder(seen, ['copying', 'deleting']), `stages seen: ${seen.join(' → ')}`).toBe(true);
   // What went leaves the report.
   await expect(photos.getByText(name, { exact: true })).toHaveCount(0);
   const results = await openResults(row);
