@@ -1,4 +1,6 @@
+using System.Text.Json;
 using DeviceDeck.Core.Abstractions;
+using DeviceDeck.Core.Serialization;
 
 namespace DeviceDeck.Core.Hub;
 
@@ -18,7 +20,14 @@ public sealed class DeviceHub : IAsyncDisposable
     private readonly Dictionary<string, DeviceSummary> _announced = new(StringComparer.Ordinal);
 
     private readonly List<(IDeviceProvider Provider, Exception Error)> _startFailures = [];
-    private IReadOnlyList<DriverStatus>? _lastDrivers;
+
+    // Drivers card (v0.6): the driver statuses last given to anyone, as JSON: a page's drivers.status answer or a
+    // drivers.changed. A later check that differs is always published. (v0.5.3 compared polls only with each other, so a
+    // page that asked while adb was still starting kept "Stopped" for good.)
+    private string? _lastDriversJson;
+    private bool _driverCheckPending;
+    private bool _driverCheckRunning;
+    private readonly CancellationTokenSource _driverChecks = new();
     private CancellationTokenSource? _driverPoll;
     private Task? _disposing;
     private bool _started;
@@ -43,6 +52,15 @@ public sealed class DeviceHub : IAsyncDisposable
     /// <summary>How often driver status is re-checked for <see cref="DriversChanged"/>. Zero turns polling off.</summary>
     public TimeSpan DriverPollInterval { get; init; } = TimeSpan.FromSeconds(15);
 
+    /// <summary>
+    /// Check drivers again (and raise <see cref="DriversChanged"/> when the answer changed) after a provider started, a
+    /// phone came, changed or went, or a provider said its driver changed (<see cref="IDriverControl.DriverStatusChanged"/>).
+    /// </summary>
+    public bool CheckDriversOnEvents { get; init; } = true;
+
+    /// <summary>How long such a check waits, so a burst of events costs one check.</summary>
+    public TimeSpan DriverCheckDelay { get; init; } = TimeSpan.FromMilliseconds(300);
+
     /// <summary>Starts all providers in parallel. A provider that fails to start is reported through its driver status and does not stop the others.</summary>
     public async Task StartAsync(CancellationToken ct)
     {
@@ -59,6 +77,10 @@ public sealed class DeviceHub : IAsyncDisposable
         foreach (var provider in _providers)
         {
             provider.DeviceChanged += OnProviderDeviceChanged;
+            if (provider is IDriverControl control)
+            {
+                control.DriverStatusChanged += OnDriverStatusChanged;
+            }
         }
 
         await Task.WhenAll(_providers.Select(p => StartOneAsync(p, ct))).ConfigureAwait(false);
@@ -90,6 +112,11 @@ public sealed class DeviceHub : IAsyncDisposable
             {
                 _startFailures.Add((provider, ex));
             }
+        }
+        finally
+        {
+            // A provider that has started (or failed to) has a new answer for the Drivers card.
+            RequestDriverCheck();
         }
     }
 
@@ -151,7 +178,132 @@ public sealed class DeviceHub : IAsyncDisposable
         }
     }
 
+    /// <summary>
+    /// Every driver's status now, for drivers.status. The answer is remembered as what the page shows, so any later check
+    /// that differs raises <see cref="DriversChanged"/>.
+    /// </summary>
     public async Task<IReadOnlyList<DriverStatus>> GetDriverStatusAsync(CancellationToken ct)
+    {
+        var now = await CheckDriversAsync(ct).ConfigureAwait(false);
+        RememberDrivers(now);
+        return now;
+    }
+
+    /// <summary>Checks every driver now and raises <see cref="DriversChanged"/> when the answer differs from the last one given out.</summary>
+    public async Task<IReadOnlyList<DriverStatus>> RefreshDriversAsync(CancellationToken ct)
+    {
+        var now = await CheckDriversAsync(ct).ConfigureAwait(false);
+        if (RememberDrivers(now))
+        {
+            DriversChanged?.Invoke(this, now);
+        }
+
+        return now;
+    }
+
+    /// <summary>
+    /// drivers.start: starts (or restarts) one provider's driver (<see cref="IDriverControl"/>), then checks every driver
+    /// again. Throws <see cref="DeviceException"/> from the provider when it can't.
+    /// </summary>
+    public async Task<IReadOnlyList<DriverStatus>> StartDriverAsync(string providerId, CancellationToken ct)
+    {
+        var provider = _providers.FirstOrDefault(p => p.Id == providerId)
+            ?? throw new ArgumentException($"There is no driver called \"{providerId}\".");
+        if (provider is not IDriverControl control)
+        {
+            throw new DeviceException(DeviceErrorCodes.NotSupported, "DeviceDeck can't start this driver.");
+        }
+
+        await control.StartDriverAsync(ct).ConfigureAwait(false);
+        lock (_gate)
+        {
+            // Started by hand now: the failure from when the app started no longer says anything.
+            _startFailures.RemoveAll(f => f.Provider == provider);
+        }
+
+        return await RefreshDriversAsync(ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Asks for a driver check soon; a burst of requests costs one check (<see cref="DriverCheckDelay"/>).</summary>
+    public void RequestDriverCheck()
+    {
+        if (!CheckDriversOnEvents)
+        {
+            return;
+        }
+
+        lock (_gate)
+        {
+            if (_disposing is not null)
+            {
+                return;
+            }
+
+            _driverCheckPending = true;
+            if (_driverCheckRunning)
+            {
+                return;
+            }
+
+            _driverCheckRunning = true;
+        }
+
+        _ = Task.Run(RunDriverChecksAsync);
+    }
+
+    private async Task RunDriverChecksAsync()
+    {
+        var ct = _driverChecks.Token;
+        while (true)
+        {
+            try
+            {
+                if (DriverCheckDelay > TimeSpan.Zero)
+                {
+                    await Task.Delay(DriverCheckDelay, ct).ConfigureAwait(false);
+                }
+
+                lock (_gate)
+                {
+                    if (!_driverCheckPending || _disposing is not null)
+                    {
+                        _driverCheckRunning = false;
+                        return;
+                    }
+
+                    _driverCheckPending = false;
+                }
+
+                await RefreshDriversAsync(ct).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                lock (_gate)
+                {
+                    _driverCheckRunning = false;
+                }
+
+                return;
+            }
+            catch (Exception)
+            {
+                // CheckDriversAsync turns a provider's failure into its row; a subscriber's bug must not stop the checks.
+            }
+        }
+    }
+
+    private bool RememberDrivers(IReadOnlyList<DriverStatus> now)
+    {
+        var json = JsonSerializer.Serialize(now, DeviceDeckJson.Options);
+        lock (_gate)
+        {
+            var changed = _lastDriversJson is not null && !string.Equals(_lastDriversJson, json, StringComparison.Ordinal);
+            _lastDriversJson = json;
+            return changed;
+        }
+    }
+
+    private async Task<IReadOnlyList<DriverStatus>> CheckDriversAsync(CancellationToken ct)
     {
         var results = await Task.WhenAll(_providers.Select(async p =>
         {
@@ -165,7 +317,7 @@ public sealed class DeviceHub : IAsyncDisposable
             {
                 var status = await p.GetDriverStatusAsync(ct).ConfigureAwait(false);
                 return startError is not null && status.State == DriverState.Ready
-                    ? status with { State = DriverState.Error, Detail = startError.Message }
+                    ? status with { State = DriverState.Error, Detail = startError.Message, Reason = DriverReasons.StartFailed }
                     : status;
             }
             catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -174,7 +326,7 @@ public sealed class DeviceHub : IAsyncDisposable
             }
             catch (Exception ex)
             {
-                return new DriverStatus(p.Id, DriverState.Error, null, ex.Message);
+                return new DriverStatus(p.Id, DriverState.Error, null, ex.Message) { Reason = DriverReasons.CheckFailed };
             }
         })).ConfigureAwait(false);
 
@@ -188,13 +340,7 @@ public sealed class DeviceHub : IAsyncDisposable
         {
             do
             {
-                var now = await GetDriverStatusAsync(ct).ConfigureAwait(false);
-                var changed = _lastDrivers is not null && !_lastDrivers.SequenceEqual(now);
-                _lastDrivers = now;
-                if (changed)
-                {
-                    DriversChanged?.Invoke(this, now);
-                }
+                await RefreshDriversAsync(ct).ConfigureAwait(false);
             }
             while (await timer.WaitForNextTickAsync(ct).ConfigureAwait(false));
         }
@@ -203,11 +349,15 @@ public sealed class DeviceHub : IAsyncDisposable
         }
     }
 
+    private void OnDriverStatusChanged(object? sender, EventArgs e) => RequestDriverCheck();
+
     private void OnProviderDeviceChanged(object? sender, DeviceChangedEventArgs e)
     {
         if (sender is IDeviceProvider provider)
         {
             Apply(provider, e.Change, e.Summary);
+            // A phone came, went or changed (unauthorized to ready): the Drivers card's phone hints may have changed.
+            RequestDriverCheck();
         }
     }
 
@@ -318,9 +468,14 @@ public sealed class DeviceHub : IAsyncDisposable
             _driverPoll.Dispose();
         }
 
+        await _driverChecks.CancelAsync().ConfigureAwait(false);
         foreach (var provider in _providers)
         {
             provider.DeviceChanged -= OnProviderDeviceChanged;
+            if (provider is IDriverControl control)
+            {
+                control.DriverStatusChanged -= OnDriverStatusChanged;
+            }
         }
 
         await Task.WhenAll(_providers.Select(StopOneAsync)).ConfigureAwait(false);

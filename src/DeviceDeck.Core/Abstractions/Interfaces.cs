@@ -30,10 +30,16 @@ public sealed class DeviceChangedEventArgs(DeviceChange change, DeviceSummary su
     public DeviceSummary Summary { get; } = summary;
 }
 
-public enum DriverState { Ready, Missing, Stopped, Error }
+/// <summary>
+/// Ready: works. Missing: not on this PC (install or download it). Stopped: installed but not running and not starting by
+/// itself (the user starts it). Error: it failed; Detail says why. Starting: DeviceDeck is starting it now. Idle: not running
+/// yet and nothing is wrong: DeviceDeck starts it by itself (Drivers card v0.6: Starting and Idle are grey, never red).
+/// </summary>
+public enum DriverState { Ready, Missing, Stopped, Error, Starting, Idle }
 
 /// <param name="Detail">One plain sentence for the Drivers card when the state is not Ready.</param>
-public sealed record DriverStatus(string ProviderId, DriverState State, string? Version, string? Detail);
+/// <remarks>Reason, Source and Phones (DriverStatusExtras.cs) say more for the Drivers card.</remarks>
+public sealed partial record DriverStatus(string ProviderId, DriverState State, string? Version, string? Detail);
 
 public interface IDevice
 {
