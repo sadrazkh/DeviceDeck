@@ -47,6 +47,7 @@ import type {
   StorageInfo,
   TransferJob,
 } from './types';
+import type { DriverDownloadStatus, DriverLink } from './drivers';
 import type { AppFilesOverview, FolderUsage } from './appFiles';
 import type { BatteryDevice, BatterySnapshot, CleanupFileItem, CleanupItem, CleanupResult, CleanupStatus } from './cleanupTypes';
 import type {
@@ -302,6 +303,12 @@ export interface BridgeMethods {
   'photos.deletePrepare': { params: DeviceParams & { reason?: string }; result: Empty };
   // v0.4.2: which items the PC can't delete (Windows lists them nowhere), from a complete read only.
   'photos.deleteReach': { params: DeviceParams; result: PhotoDeleteReach };
+  // Drivers card (v0.6, drivers): start a driver (UAC for Apple's service), download Android tools, open named links.
+  'drivers.start': { params: { providerId: string }; result: DriverStatus[] };
+  'drivers.download': { params: { providerId: string }; result: DriverDownloadStatus };
+  'drivers.downloadStatus': { params: { providerId: string }; result: DriverDownloadStatus };
+  'drivers.cancelDownload': { params: { providerId: string }; result: Empty };
+  'drivers.openLink': { params: { link: DriverLink }; result: Empty };
 }
 
 export type MethodName = keyof BridgeMethods;
@@ -461,6 +468,12 @@ const methodTable = {
   'photos.deleteJob': true,
   'photos.deletePrepare': true,
   'photos.deleteReach': true,
+  // Drivers card (v0.6, drivers)
+  'drivers.start': true,
+  'drivers.download': true,
+  'drivers.downloadStatus': true,
+  'drivers.cancelDownload': true,
+  'drivers.openLink': true,
 } as const satisfies Record<MethodName, true>;
 
 export const METHOD_NAMES = Object.keys(methodTable) as MethodName[];
@@ -490,6 +503,8 @@ export interface BridgeEvents {
   'app.updateChanged': UpdateStatus;
   // Photos into Photos with LocalSend (round 3)
   'localsend.updated': LocalSendJobStatus;
+  // Drivers card (v0.6, drivers): Android tools' download, as it goes.
+  'drivers.download': DriverDownloadStatus;
 }
 
 export type EventName = keyof BridgeEvents;
@@ -518,6 +533,8 @@ const eventTable = {
   'app.updateChanged': true,
   // Photos into Photos with LocalSend (round 3)
   'localsend.updated': true,
+  // Drivers card (v0.6, drivers)
+  'drivers.download': true,
 } as const satisfies Record<EventName, true>;
 
 export const EVENT_NAMES = Object.keys(eventTable) as EventName[];

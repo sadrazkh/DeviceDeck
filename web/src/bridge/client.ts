@@ -44,6 +44,8 @@ const NO_TIMEOUT: ReadonlySet<string> = new Set([
   // WhatsApp (round 4): the first call opens WhatsApp's database, which may be gigabytes, from an encrypted backup.
   'whatsapp.status',
   'whatsapp.chats',
+  // Drivers card (v0.6): starting Apple Mobile Device Service waits while Windows' administrator prompt is open.
+  'drivers.start',
 ]);
 
 export class BridgeClient {

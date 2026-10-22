@@ -36,4 +36,15 @@ public sealed class IosProviderOptions
 
     /// <summary>How long to wait before asking Windows again whether it sees the phone as a camera, after it just connected.</summary>
     public TimeSpan PhotoDeleteRetryInterval { get; init; } = TimeSpan.FromSeconds(3);
+
+    // Drivers card (v0.6)
+
+    /// <summary>Runs `sc start` for "Start Apple Mobile Device Service", through Windows' administrator prompt.</summary>
+    public IElevatedRunner ElevatedRunner { get; init; } = new ShellElevatedRunner();
+
+    /// <summary>Tests: whether Apple Mobile Device Service is registered (default: Windows' service list).</summary>
+    internal Func<(bool Installed, string? Exe)>? FindAmds { get; init; }
+
+    /// <summary>How long "Start Apple Mobile Device Service" waits for usbmux to answer after Windows started it.</summary>
+    public TimeSpan AmdsStartWait { get; init; } = TimeSpan.FromSeconds(20);
 }

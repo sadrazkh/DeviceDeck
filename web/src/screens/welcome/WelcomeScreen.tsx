@@ -1,18 +1,14 @@
-import {
-  CheckmarkCircleFilled,
-  DismissCircleFilled,
-  PhoneRegular,
-  PlugDisconnectedRegular,
-} from '@fluentui/react-icons';
+import { PhoneRegular, PlugDisconnectedRegular } from '@fluentui/react-icons';
 import { useState, type CSSProperties } from 'react';
-import type { DeviceSummary, DriverStatus } from '../../bridge/types';
+import type { DeviceSummary } from '../../bridge/types';
 import { ANDROID_ID, IPHONE_ID } from '../../bridge/mock/mock-data';
 import { useMock } from '../../app/bridgeContext';
-import { useDevices, useDrivers, useTransfers } from '../../app/queries';
+import { useDevices, useTransfers } from '../../app/queries';
 import { Button } from '../../components/Button';
 import { DeviceArt } from '../../components/DeviceArt';
 import { Dialog } from '../../components/Dialog';
 import { Banner, Card, Spinner } from '../../components/ui';
+import { DriversCard } from '../drivers/DriversCard';
 import { useI18n, type MessageKey } from '../../i18n';
 import styles from './Welcome.module.css';
 
@@ -79,47 +75,6 @@ function Guide({ platform, onClose }: { platform: 'ios' | 'android'; onClose(): 
         </div>
       </div>
     </Dialog>
-  );
-}
-
-function DriverRow({ drivers }: { drivers: DriverStatus[] }) {
-  const { t } = useI18n();
-  const [howTo, setHowTo] = useState(false);
-  const label = (id: string): MessageKey =>
-    id === 'ios' ? 'welcome.driver.ios' : id === 'android' ? 'welcome.driver.android' : 'welcome.driver.mtp';
-  const iosMissing = drivers.find((d) => d.providerId === 'ios' && d.state !== 'ready');
-  return (
-    <>
-      <div className={styles.drivers} data-testid="drivers">
-        <span className={styles.driversTitle}>{t('welcome.drivers')}</span>
-        {drivers.map((d) => (
-          <span key={d.providerId} className={styles.driver} title={d.detail ?? d.version ?? undefined}>
-            {d.state === 'ready' ? (
-              <span className={styles.driverOk} aria-hidden>
-                <CheckmarkCircleFilled />
-              </span>
-            ) : (
-              <span className={styles.driverBad} aria-hidden>
-                <DismissCircleFilled />
-              </span>
-            )}
-            {t(label(d.providerId))}
-            <span className="t-secondary">· {t(`welcome.driver.${d.state}`)}</span>
-          </span>
-        ))}
-        {iosMissing ? (
-          <Button size="small" onClick={() => setHowTo(true)}>
-            {t('welcome.driver.howTo')}
-          </Button>
-        ) : null}
-      </div>
-      {iosMissing ? (
-        <Banner tone="warning" title={iosMissing.detail ?? t('welcome.limited.title')}>
-          {t('welcome.limited.unlocks')}
-        </Banner>
-      ) : null}
-      <Dialog open={howTo} onOpenChange={setHowTo} title={t('welcome.driver.ios')} description={t('welcome.driver.iosGuide')} footer={<Button variant="accent" onClick={() => setHowTo(false)}>{t('common.ok')}</Button>} />
-    </>
   );
 }
 
@@ -216,7 +171,6 @@ function DeviceStateCard({ device }: { device: DeviceSummary }) {
 export function WelcomeScreen({ device }: { device: DeviceSummary | null }) {
   const { t } = useI18n();
   const mock = useMock();
-  const drivers = useDrivers().data ?? [];
   const devices = useDevices().data ?? [];
   const [guide, setGuide] = useState<'ios' | 'android' | null>(null);
 
@@ -263,7 +217,8 @@ export function WelcomeScreen({ device }: { device: DeviceSummary | null }) {
         </Card>
       </div>
 
-      {drivers.length > 0 ? <DriverRow drivers={drivers} /> : null}
+      {/* Drivers card (v0.6): live status, and the one thing to do when a driver is missing or stopped. */}
+      <DriversCard className={styles.driversCard} />
 
       {mock && (!devices.some((d) => d.id === IPHONE_ID) || !devices.some((d) => d.id === ANDROID_ID)) ? (
         <div className={styles.sim}>

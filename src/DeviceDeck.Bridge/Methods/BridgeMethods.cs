@@ -49,6 +49,9 @@ public sealed class BridgeServices
 
     /// <summary>Photos into Photos with LocalSend (round 3); null answers localsend.* with not_supported.</summary>
     public Core.LocalSend.LocalSendService? LocalSend { get; init; }
+
+    /// <summary>Drivers card (v0.6): opens the Store and driver pages; null answers drivers.openLink with not_supported.</summary>
+    public ILinkOpener? Links { get; init; }
 }
 
 /// <summary>Registers every method of docs/bridge-contract.md on a dispatcher.</summary>
@@ -262,6 +265,8 @@ public static class BridgeMethods
         WhatsAppMethods.Register(rpc, s);
         // Deleting photos, iPhone included, with a reason when it can't (round 4, photodelete).
         PhotoDeleteMethods.Register(rpc, s);
+        // Drivers card: start a driver, download Android tools, open the Store and driver pages (v0.6, drivers).
+        DriversMethods.Register(rpc, s);
 
         return rpc;
     }

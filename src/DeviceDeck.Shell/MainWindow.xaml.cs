@@ -531,13 +531,8 @@ public sealed partial class MainWindow : Window
         OpenExternally(e.Uri);
     }
 
-    private static void OpenExternally(string uri)
-    {
-        if (Uri.TryCreate(uri, UriKind.Absolute, out var parsed) && parsed.Scheme is "https" or "http" or "mailto")
-        {
-            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(parsed.AbsoluteUri) { UseShellExecute = true })?.Dispose();
-        }
-    }
+    // Web pages, mail and Store product pages only (ShellLinks); anything else is dropped.
+    private static void OpenExternally(string uri) => ShellLinks.Open(uri);
 
     private async Task ServeImageAsync(CoreWebView2Environment environment, CoreWebView2WebResourceRequestedEventArgs e)
     {

@@ -179,7 +179,8 @@ export interface Page<T> {
 
 export type RebootTarget = 'system' | 'recovery' | 'bootloader';
 
-export type DriverState = 'ready' | 'missing' | 'stopped' | 'error';
+/** starting and idle (v0.6): DeviceDeck is starting it / it isn't running yet and nothing is wrong. Grey, never red. */
+export type DriverState = 'ready' | 'missing' | 'stopped' | 'error' | 'starting' | 'idle';
 
 export interface DriverStatus {
   /** "ios", "android" or "mtp". */
@@ -188,6 +189,10 @@ export interface DriverStatus {
   version: string | null;
   /** One plain sentence for the Drivers card when the state is not ready. */
   detail: string | null;
+  /** Drivers card (v0.6): why, where adb came from, and phones that can't be used yet. Absent when not set. */
+  reason?: import('./drivers').DriverReason;
+  source?: import('./drivers').DriverSource;
+  phones?: import('./drivers').DriverPhoneHint[];
 }
 
 // ---------- Bridge-only shapes ----------

@@ -4,6 +4,7 @@ import { useI18n } from '../i18n';
 import { DesktopSettings } from '../shell/DesktopSettings';
 import { usePrefs } from '../state/prefs';
 import { BackupSettingsCard } from './backup/BackupSettingsCard';
+import { DriversCard } from './drivers/DriversCard';
 import { PhotosBackupSettings } from './photos/PhotosBackupSettings';
 import { ScreenLayout } from './ScreenLayout';
 import styles from './Screen.module.css';
@@ -68,6 +69,8 @@ export function SettingsScreen() {
             />
           </div>
         </Card>
+        {/* Drivers card (v0.6) */}
+        <DriversCard />
         <DesktopSettings />
         <PhotosBackupSettings />
         <BackupSettingsCard />

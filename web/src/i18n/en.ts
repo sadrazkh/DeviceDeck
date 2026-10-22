@@ -12,6 +12,7 @@ import { photoDeleteEn } from '../screens/photos/deleteStrings';
 import { deleteJobEn } from '../shell/deleteJobStrings';
 import { reachEn } from '../screens/photos/reachStrings';
 import { hiddenBackupEn } from '../screens/photos/hiddenBackupStrings';
+import { driversEn } from './drivers';
 
 export const en = {
   'app.name': 'DeviceDeck',
@@ -187,16 +188,6 @@ export const en = {
   'welcome.guide.step': 'Step {n}',
   'welcome.guide.next': 'Next',
   'welcome.guide.done': 'Got it',
-  'welcome.drivers': 'Drivers',
-  'welcome.driver.ios': 'Apple driver',
-  'welcome.driver.android': 'Android tools',
-  'welcome.driver.mtp': 'Windows Portable Devices',
-  'welcome.driver.ready': 'Ready',
-  'welcome.driver.missing': 'Missing',
-  'welcome.driver.stopped': 'Stopped',
-  'welcome.driver.error': 'Error',
-  'welcome.driver.howTo': 'How to install',
-  'welcome.driver.iosGuide': 'Install Apple Devices from the Microsoft Store (or iTunes from apple.com), then plug the iPhone in again. DeviceDeck never ships Apple’s files itself.',
   'welcome.trust.title': 'Tap Trust on {device}',
   'welcome.trust.body': 'Unlock the iPhone. When it asks “Trust This Computer?”, tap Trust and enter the passcode.',
   'welcome.trust.waiting': 'Waiting for the iPhone…',
@@ -209,9 +200,7 @@ export const en = {
   'welcome.connecting.body': 'This takes a few seconds the first time.',
   'welcome.disconnected.title': '{device} is disconnected',
   'welcome.disconnected.body': 'Plug it back in. Paused transfers carry on when it’s back.',
-  'welcome.limited.title': 'Limited mode: photos only',
   'welcome.limited.body': 'Without Apple’s driver Windows can only read the camera roll, over PTP.',
-  'welcome.limited.unlocks': 'Full mode adds files, app documents, apps, backups and battery health.',
   'welcome.simTrust': 'Tap Trust on the phone',
   'welcome.simAllow': 'Tap Allow on the phone',
   'welcome.simIphone': 'Plug in an iPhone',
@@ -645,6 +634,8 @@ export const en = {
   ...hiddenBackupEn,
   // Items this PC can't delete (v0.4.2, deletejob2)
   ...reachEn,
+  // The Drivers card (v0.6, drivers)
+  ...driversEn,
 } as const;
 
 export type MessageKey = keyof typeof en;

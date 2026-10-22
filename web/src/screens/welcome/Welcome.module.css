@@ -148,34 +148,8 @@
 }
 
 /* ---------- Drivers ---------- */
-.drivers {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  justify-content: center;
-  gap: var(--space-2) var(--space-6);
+.driversCard {
   width: min(760px, 100%);
-  padding: var(--space-3) var(--space-4);
-  border-radius: var(--radius-card);
-  border: 1px solid var(--color-stroke-card);
-  background: var(--color-surface-content);
-}
-.driversTitle {
-  font-weight: var(--type-strong-weight);
-  margin-inline-end: auto;
-}
-.driver {
-  display: inline-flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-.driverOk {
-  color: var(--color-success);
-  display: inline-flex;
-}
-.driverBad {
-  color: var(--color-danger);
-  display: inline-flex;
 }
 
 /* ---------- Simulation (mock only) ---------- */

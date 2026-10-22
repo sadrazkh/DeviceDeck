@@ -28,8 +28,6 @@ import {
   battery,
   defaultSettings,
   details,
-  drivers,
-  driversIosMissing,
   iphone,
   pickableFolders,
   seedTransfers,
@@ -46,6 +44,7 @@ import { MockLocalSend, type MockLocalSendScenario } from './localSend';
 import { MockUpdates, type MockNotesScenario, type MockUpdateScenario } from './updates';
 import { MockWhatsApp } from './whatsApp';
 import { MockPhotoDelete, type MockDeleteSpeed, type MockPhotoDeleteScenario, type MockReachScenario } from './photoDelete';
+import { MockDrivers, type MockDriversScenario } from './drivers';
 
 export type MockScenario = 'ready' | 'empty' | 'trust' | 'limited' | 'driverMissing' | 'iphoneOnly';
 
@@ -71,6 +70,10 @@ export interface MockOptions {
   deleteSpeed?: MockDeleteSpeed;
   /** Items Windows doesn't list (v0.4.2): ?reach=some. Default "all" listed. */
   reach?: MockReachScenario;
+  /** The Drivers card (v0.6): ?drivers=iosMissing and so on (./drivers.ts). Default "ready" ("iosMissing" with ?mock=limited or driverMissing). */
+  drivers?: MockDriversScenario;
+  /** ?uac=decline: Windows' prompt to start Apple Mobile Device Service is declined. */
+  uacDeclined?: boolean;
 }
 
 /** A JSON-RPC error raised by a mock handler. */
@@ -114,7 +117,6 @@ type Handler<M extends MethodName> = (params: MethodParams<M>) => MethodResult<M
 
 export class MockBackend {
   readonly devices = new Map<string, DeviceSummary>();
-  private driverList: DriverStatus[];
   private settings: Settings;
   private readonly libraries = new Map<string, MockLibrary>();
   private readonly fileSystems = new Map<string, MockFileSystem>();
@@ -147,7 +149,7 @@ export class MockBackend {
     this.photoDelete.speed = options.deleteSpeed ?? 'normal';
     this.photoDelete.reach = options.reach ?? 'all';
     const scenario = options.scenario ?? 'ready';
-    this.driverList = scenario === 'limited' || scenario === 'driverMissing' ? driversIosMissing : drivers;
+    this.drivers.configure(options.drivers ?? (scenario === 'limited' || scenario === 'driverMissing' ? 'iosMissing' : 'ready'), options.uacDeclined ?? false);
 
     for (const [id, list] of Object.entries(sampleApps)) this.appLists.set(id, list.map((a) => ({ ...a })));
     this.longNames = options.longNames ?? false;
@@ -252,8 +254,7 @@ export class MockBackend {
   }
 
   setDrivers(list: DriverStatus[]): void {
-    this.driverList = list;
-    this.emit('drivers.changed', list.map((d) => ({ ...d })));
+    this.drivers.set(list);
   }
 
   /** Advances simulated time: scheduled steps run, transfers progress. */
@@ -383,6 +384,14 @@ export class MockBackend {
     badParams: (message) => badParams(message),
   });
 
+  /** The Drivers card (v0.6): ./drivers.ts; its handlers end the table below. */
+  readonly drivers = new MockDrivers({
+    emit: (event, params) => this.emit(event, params),
+    after: (ms, run) => this.after(ms, run),
+    fault: (code, message) => fault(code, message),
+    badParams: (message) => badParams(message),
+  });
+
   /** Deleting photos, iPhone included (round 4): ./photoDelete.ts; its handlers end the table below. */
   readonly photoDelete = new MockPhotoDelete({
     requireReady: (deviceId, capability) => this.requireReady(deviceId, capability),
@@ -399,7 +408,7 @@ export class MockBackend {
   readonly handlers: { [M in MethodName]: Handler<M> } = {
     ...this.backups.handlers,
     'app.hello': () => ({ version: this.updates.version, isWebView: false }),
-    'drivers.status': () => this.driverList.map((d) => ({ ...d })),
+    'drivers.status': () => this.drivers.list(),
     'device.list': () => [...this.devices.values()].map((d) => ({ ...d, capabilities: [...d.capabilities] })),
     'device.storage': ({ deviceId }) => {
       this.requireReady(deviceId, 'storage');
@@ -687,6 +696,7 @@ export class MockBackend {
     ...this.updates.handlers,
     ...this.whatsApp.handlers,
     ...this.photoDelete.handlers,
+    ...this.drivers.handlers,
   };
 
   private pcCall<T>(run: () => T): T {

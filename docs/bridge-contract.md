@@ -1265,3 +1265,71 @@ only such items selected there is no Delete, the reason and Copy instead. Photos
 the confirmation lists them apart and deletes the rest; with nothing else selected, Delete is off with the reason.
 While checking, a quiet "Checking which items this PC can delete…" with a bar. Mock: `?reach=some` (every fourth
 iPhone item), with `?deletespeed=slow` for a read ahead of about 15 s.
+
+## Drivers card (v0.6, drivers)
+
+v0.5.3 showed "Android tools · Stopped" while DeviceDeck's adb server ran: the page asked `drivers.status` once, while
+the hub was still starting the providers (`adb start-server` takes a second or more), and the hub's 15 s poll compared
+its answers only with each other, so its first answer ("ready") became the baseline and was never published. Now:
+
+- The hub remembers the statuses it last gave anyone (a `drivers.status` answer or a `drivers.changed`) and publishes
+  `drivers.changed` whenever a later check differs. It checks every 15 s, after each provider has started, when a phone
+  comes, changes or goes, and when a provider says its driver changed (`IDriverControl.DriverStatusChanged`: adb's
+  tracker started or lost the server, tools were installed, Apple Mobile Device Service came or went).
+- The page also asks again every 30 s while the card is on screen, on `device.added` / `device.removed`, and on
+  **Check again**; a `drivers.changed` cancels a `drivers.status` still on its way, so an older answer can't overwrite it.
+
+`DriverStatus` gains two states and three fields, each left out of the JSON when null:
+
+```ts
+type DriverState = 'ready' | 'missing' | 'stopped' | 'error' | 'starting' | 'idle';
+interface DriverStatus {
+  providerId: string; state: DriverState; version: string | null; detail: string | null;
+  reason?: 'amdsMissing' | 'amdsStopped' | 'amdsError' | 'adbMissing' | 'adbStarting' | 'adbNotStarted' | 'adbFailed'
+    | 'startFailed' | 'checkFailed';
+  source?: 'bundled' | 'downloaded' | 'environment' | 'configured';   // where adb.exe came from
+  phones?: { name: string; problem: 'usbDebuggingOff' | 'driverMissing' | 'unauthorized' | 'offline' | 'notSeenByAdb';
+             maker: string | null }[];
+}
+```
+
+- `starting`: DeviceDeck is starting the driver now (adb's server, also again after it went away). `idle`: not running
+  yet and nothing is wrong (the provider hasn't started). Both are grey on the card, never red. Android no longer
+  answers `stopped`; the iPhone's `stopped` means Apple Mobile Device Service is installed but not running.
+- `phones`: Android phones Windows' USB list (cfgmgr32, read only) or adb's list shows that can't be used yet. Apple's
+  devices and non-phone USB devices are never listed; `notSeenByAdb` only after 10 s and only while adb lists no USB
+  phone at all.
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `drivers.start` | `{ providerId }` | `DriverStatus[]` after starting: Android starts (or restarts) its private adb server; iPhone runs `sc start "Apple Mobile Device Service"` through Windows' administrator prompt (UAC). Errors: `driver_missing` (nothing to start, won't start: the message says why), `permission_denied` (the prompt was declined), `not_supported`. Waits for the user at the prompt: no timeout on the page. |
+| `drivers.download` | `{ providerId: "android" }` | `DriverDownloadStatus`: starts downloading Google's platform-tools (or returns the download already running) |
+| `drivers.downloadStatus` | `{ providerId }` | `DriverDownloadStatus` |
+| `drivers.cancelDownload` | `{ providerId }` | `{}`; nothing is left behind |
+| `drivers.openLink` | `{ link }` | `{}`. Only these names: `appleDevicesStore` (`ms-windows-store://pdp/?ProductId=9NP83LWLPZ9K`, falling back to `appleDevicesWeb` when the Store app isn't there), `appleDevicesWeb`, `itunes`, `samsungUsbDriver`, `googleUsbDriver`, `oemUsbDrivers`, `platformToolsLicense`. Anything else is invalid params. |
+
+| Event | Params |
+| --- | --- |
+| `drivers.download` | `DriverDownloadStatus`, at most every 100 ms while downloading, and at each step |
+
+```ts
+interface DriverDownloadStatus {
+  providerId: string;
+  state: 'idle' | 'downloading' | 'verifying' | 'installing' | 'done' | 'failed' | 'cancelled';
+  receivedBytes: number; totalBytes: number | null;
+  error: string | null;                                               // one English sentence while failed
+  errorCode: 'network' | 'corrupt' | 'invalid' | 'unverified' | 'disk' | null;
+  version: string | null;                                             // once done: "37.0.1"
+}
+```
+
+The download (`AndroidProviderOptions.PlatformToolsSource`, Google's
+`platform-tools-latest-windows.zip`, about 8 MB) goes to `tools\platform-tools.zip.part` in DeviceDeck's data folder and
+is renamed when complete; the zip must hold `platform-tools/adb.exe`, `AdbWinApi.dll` and `AdbWinUsbApi.dll` with every
+entry inside `platform-tools/`; the three files must be signed by Google LLC (Authenticode) and `adb.exe version` must
+answer before `tools\platform-tools` is replaced. adb.exe is then found in this order: bundled, downloaded,
+`DEVICEDECK_ADB_PATH`.
+
+The page shows one Drivers card (Welcome screen and Settings): a row per driver with an icon, a chip (green Ready, grey
+Not started, amber Needs action, red Problem), one line and at most one primary button; Android's row lists the phone
+hints with the steps to take. Mock: `?drivers=ready|iosMissing|iosStopped|adbMissing|adbDownloading|adbIdle|adbStarting|adbFailed|androidNoDriver`.

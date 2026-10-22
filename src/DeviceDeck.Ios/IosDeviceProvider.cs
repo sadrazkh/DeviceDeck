@@ -11,7 +11,7 @@ namespace DeviceDeck.Ios;
 /// keeps one <see cref="IosDevice"/> per UDID (USB and Wi-Fi links merged) and reconnects when the
 /// service restarts.
 /// </summary>
-public sealed class IosDeviceProvider : IDeviceProvider
+public sealed class IosDeviceProvider : IDeviceProvider, IDriverControl
 {
     private readonly IUsbmuxConnector _usbmux;
     private readonly IosProviderOptions _options;
@@ -20,6 +20,8 @@ public sealed class IosDeviceProvider : IDeviceProvider
     private readonly Dictionary<string, IosDevice> _devices = new(StringComparer.OrdinalIgnoreCase);
     private readonly CancellationTokenSource _stop = new();
     private Task _watch = Task.CompletedTask;
+    private TaskCompletionSource _wake = new(TaskCreationOptions.RunContinuationsAsynchronously);
+    private bool? _listening;
 
     public IosDeviceProvider() : this(new TcpUsbmuxConnector(), new IosProviderOptions { Wpd = WpdBackends.ForThisPc() })
     {
@@ -62,6 +64,45 @@ public sealed class IosDeviceProvider : IDeviceProvider
 
     public Task<DriverStatus> GetDriverStatusAsync(CancellationToken ct) => AppleMobileDeviceService.GetStatusAsync(_usbmux, ct);
 
+    /// <summary>Raised when listening to Apple Mobile Device Service starts or stops working (Drivers card, v0.6).</summary>
+    public event EventHandler? DriverStatusChanged;
+
+    /// <summary>
+    /// "Start Apple Mobile Device Service": `sc start` through Windows' administrator prompt, then listening again at once
+    /// instead of after <see cref="IosProviderOptions.ReconnectInterval"/>.
+    /// </summary>
+    public async Task StartDriverAsync(CancellationToken ct)
+    {
+        var starter = new AmdsStarter(_usbmux, _options.ElevatedRunner, _options.FindAmds ?? AppleMobileDeviceService.FindService, _options.AmdsStartWait);
+        await starter.StartAsync(ct).ConfigureAwait(false);
+        Interlocked.Exchange(ref _wake, new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously)).TrySetResult();
+        RaiseDriverStatusChanged();
+    }
+
+    private void SetListening(bool listening)
+    {
+        bool changed;
+        lock (_gate)
+        {
+            changed = _listening != listening;
+            _listening = listening;
+        }
+        if (changed)
+            RaiseDriverStatusChanged();
+    }
+
+    private void RaiseDriverStatusChanged()
+    {
+        try
+        {
+            DriverStatusChanged?.Invoke(this, EventArgs.Empty);
+        }
+        catch (Exception)
+        {
+            // A subscriber's bug must not stop listening.
+        }
+    }
+
     /// <summary>The device with this UDID, if attached.</summary>
     public IosDevice? Find(string udid)
     {
@@ -73,6 +114,7 @@ public sealed class IosDeviceProvider : IDeviceProvider
     {
         while (!ct.IsCancellationRequested)
         {
+            var wake = Volatile.Read(ref _wake);
             try
             {
                 await using var client = await _usbmux.ConnectAsync(ct).ConfigureAwait(false);
@@ -87,6 +129,7 @@ public sealed class IosDeviceProvider : IDeviceProvider
                         await HandleAsync(new UsbmuxEvent(UsbmuxEventKind.Attached, d.DeviceId, d)).ConfigureAwait(false);
                 }
                 firstAttempt.TrySetResult();
+                SetListening(true);
                 while (true)
                 {
                     var evt = await client.ReadEventAsync(ct).ConfigureAwait(false);
@@ -102,10 +145,13 @@ public sealed class IosDeviceProvider : IDeviceProvider
                 LastListenError = ex;
                 firstAttempt.TrySetResult();
                 await RemoveAllAsync().ConfigureAwait(false);
+                SetListening(false);
             }
             try
             {
-                await Task.Delay(_options.ReconnectInterval, ct).ConfigureAwait(false);
+                // Woken early by "Start Apple Mobile Device Service" on the Drivers card.
+                await Task.WhenAny(Task.Delay(_options.ReconnectInterval, ct), wake.Task).ConfigureAwait(false);
+                ct.ThrowIfCancellationRequested();
             }
             catch (OperationCanceledException)
             {
