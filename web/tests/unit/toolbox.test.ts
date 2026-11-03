@@ -211,6 +211,17 @@ describe('mock toolbox', () => {
     const android = await client.call('toolbox.features', { deviceId: ANDROID_ID });
     expect([iphone.mirror, iphone.ringtone, iphone.wifiSync, iphone.log, iphone.crashReports]).toEqual([false, false, true, true, true]);
     expect([android.mirror, android.ringtone, android.wifiSync]).toEqual([true, true, false]);
+    expect([iphone.profiles, android.profiles]).toEqual([true, false]);
+  });
+
+  it('keeps one profile from this tool on the iPhone, none on Android', async () => {
+    const { client } = setup();
+    const options = { apn: 'mcinet', mode: 'both', attachApn: true, xlat464: false } as const;
+    expect((await client.call('profile.list', { deviceId: IPHONE_ID })).profiles).toEqual([]);
+    await client.call('profile.send', { deviceId: IPHONE_ID, ...options });
+    await client.call('profile.send', { deviceId: IPHONE_ID, ...options, apn: 'rightel' });
+    expect((await client.call('profile.list', { deviceId: IPHONE_ID })).profiles.map((p) => p.name)).toEqual(['IPv6 (rightel)']);
+    await expect(client.call('profile.send', { deviceId: ANDROID_ID, ...options })).rejects.toMatchObject({ code: 'not_supported' });
   });
 
   it('streams log lines in order until stopped', async () => {

@@ -24,6 +24,7 @@ const TOOLS: ToolCase[] = [
   { name: 'tool-wifi-android', params: { screen: 'toolbox', tool: 'wifi', device: 'android' }, ready: '[data-testid=android-pairing]' },
   { name: 'tool-ringtone', params: { screen: 'toolbox', tool: 'ringtone', device: 'android' }, ready: '[data-testid=ringtone-drop]' },
   { name: 'tool-ringtone-iphone', params: { screen: 'toolbox', tool: 'ringtone' }, ready: '[data-testid=ringtone-tool]' },
+  { name: 'tool-profile', params: { screen: 'toolbox', tool: 'profile' }, ready: '[data-testid=profile-send]' },
 ];
 
 const VARIANTS: Variant[] = ['light', 'dark', 'rtl'];
@@ -62,6 +63,49 @@ test('an iPhone shows mirroring as Android only', async ({ page }) => {
   await page.goto(query('light', { screen: 'toolbox', queue: '0' }));
   await expect(page.getByTestId('tool-tile-mirror')).toBeDisabled();
   await expect(page.getByTestId('tool-tile-ringtone')).toBeEnabled();
+});
+
+test('the IPv6 profile is for an iPhone only', async ({ page }) => {
+  await page.goto(query('light', { screen: 'toolbox', device: 'android', queue: '0' }));
+  await expect(page.getByTestId('tool-tile-profile')).toBeDisabled();
+  await page.goto(query('light', { screen: 'toolbox', queue: '0' }));
+  await expect(page.getByTestId('tool-tile-profile')).toBeEnabled();
+});
+
+test('the IPv6 profile goes to the iPhone, and a bad APN goes nowhere', async ({ page }) => {
+  const consoleWatch = watchConsole(page);
+  await page.goto(query('light', { screen: 'toolbox', tool: 'profile', queue: '0' }));
+  await expect(page.getByTestId('profile-send')).toBeEnabled();
+  await settle(page);
+  await expect(page.getByTestId('profile-installed')).toContainText(/None/);
+
+  await page.getByRole('radio', { name: /Another APN/ }).click();
+  await expect(page.getByTestId('profile-send')).toBeDisabled();
+  await page.getByLabel('APN name').fill('a b');
+  await expect(page.getByText(/An APN is English letters/).first()).toBeVisible();
+  await expect(page.getByTestId('profile-send')).toBeDisabled();
+  await page.getByLabel('APN name').fill('my-apn.net');
+  await expect(page.getByTestId('profile-send')).toBeEnabled();
+
+  // The option's words are on the page, and tapping them works the box.
+  const attach = page.getByRole('checkbox', { name: /attach APN/ });
+  await expect(attach).toBeChecked();
+  await page.getByText(/Set the attach APN too/).click();
+  await expect(attach).not.toBeChecked();
+  await expect(page.getByRole('checkbox', { name: /XLAT464/ })).toHaveCount(0);
+  await page.getByRole('radio', { name: /IPv6 only/ }).click();
+  await expect(page.getByText(/Turn on XLAT464/)).toBeVisible();
+
+  await page.getByTestId('profile-send').click();
+  await expect(page.getByText('The profile is on the iPhone, waiting for you')).toBeVisible();
+  await page.getByTestId('profile-refresh').click();
+  await expect(page.getByTestId('profile-row')).toContainText('IPv6 (my-apn.net)');
+  await expect(page.getByTestId('profile-row')).toContainText('Made here');
+  await page.getByText('See exactly what is in this profile').click();
+  await expect(page.getByTestId('profile-preview')).toContainText('my-apn.net');
+  await page.getByTestId('profile-preview').scrollIntoViewIfNeeded();
+  await shot(page, 'tool-profile-sent');
+  consoleWatch.assertClean();
 });
 
 test('the live log filters, pauses and saves', async ({ page }) => {

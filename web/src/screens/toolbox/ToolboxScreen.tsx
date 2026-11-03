@@ -6,6 +6,7 @@ import {
   MusicNote2Regular,
   PhoneDesktopRegular,
   PulseRegular,
+  SimRegular,
   Wifi1Regular,
   type FluentIcon,
 } from '@fluentui/react-icons';
@@ -23,12 +24,13 @@ import { HeicTool } from './HeicTool';
 import { useToolboxI18n, type ToolboxKey } from './i18n';
 import { LogTool } from './LogTool';
 import { MirrorTool } from './MirrorTool';
+import { ProfileTool } from './ProfileTool';
 import { ReportTool } from './ReportTool';
 import { RingtoneTool } from './RingtoneTool';
 import styles from './Toolbox.module.css';
 import { WifiTool } from './WifiTool';
 
-export type ToolId = 'log' | 'crash' | 'report' | 'heic' | 'mirror' | 'wifi' | 'ringtone';
+export type ToolId = 'log' | 'crash' | 'report' | 'heic' | 'mirror' | 'wifi' | 'ringtone' | 'profile';
 
 interface ToolEntry {
   id: ToolId;
@@ -62,6 +64,13 @@ export const TOOLS: ToolEntry[] = [
     // On an iPhone the tile opens the explanation of why it can't be done.
     unavailable: (d, f) => (d.platform === 'android' && !f.ringtone ? 'notOnThisPhone' : null),
     note: (d) => (d.platform === 'ios' ? 'onlyAndroid' : null),
+  },
+  {
+    id: 'profile',
+    icon: SimRegular,
+    title: 'profile.title',
+    blurb: 'profile.blurb',
+    unavailable: (d, f) => (d.platform !== 'ios' ? 'onlyIphone' : f.profiles ? null : 'notOnThisPhone'),
   },
 ];
 
@@ -167,6 +176,8 @@ function Tool({ id, device, features }: { id: ToolId; device: DeviceSummary; fea
       return <WifiTool device={device} wirelessDebugging={features?.wirelessDebugging ?? false} />;
     case 'ringtone':
       return <RingtoneTool device={device} />;
+    case 'profile':
+      return <ProfileTool device={device} />;
   }
 }
 
