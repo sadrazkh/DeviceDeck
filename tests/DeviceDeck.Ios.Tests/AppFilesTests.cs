@@ -175,11 +175,15 @@ public sealed class AppFilesTests : IAsyncLifetime
         Assert.DoesNotContain(await AllPathsAsync(device), p => p.EndsWith(".ddpart", StringComparison.Ordinal));
 
         // The same folder again: every file clashes, the question comes once and "apply to all" answers the rest.
+        // Counts questions, not updates: a late progress report can repeat the state while the question is open.
         var decisions = 0;
+        var asking = false;
         queue.JobUpdated += (_, job) =>
         {
-            if (job.State == TransferState.NeedsDecision)
+            var askingNow = job.State == TransferState.NeedsDecision;
+            if (askingNow && !asking)
                 Interlocked.Increment(ref decisions);
+            asking = askingNow;
         };
         var again = await queue.EnqueueAsync(Udid, TransferKind.CopyToDevice, new CopyToDeviceRequest("app:" + Vlc, [pc], "/Subtitles"), ConflictRule.Ask, Ct);
         await WaitForAsync(queue, again.Id, TransferState.NeedsDecision);
