@@ -350,7 +350,7 @@ Shapes are in `src/DeviceDeck.Bridge/Toolbox/ToolboxParams.cs` and `web/src/brid
 
 | Method | Params | Result |
 | --- | --- | --- |
-| `toolbox.features` | `{ deviceId }` | `{ log, crashReports, mirror, ringtone, wifiSync, report, wirelessDebugging }` (booleans) |
+| `toolbox.features` | `{ deviceId }` | `{ log, crashReports, mirror, ringtone, wifiSync, report, wirelessDebugging, profiles }` (booleans) |
 | `log.start` | `{ deviceId }` | `{ sessionId }`; lines arrive as `log.lines`; a page reload stops the session |
 | `log.stop` / `log.clear` | `{ sessionId }` | `{}` |
 | `log.export` | `{ sessionId, minLevel?, search?, destination? }` | `{ path, count }` (UTF-8 text of the kept lines that pass the filter) |
@@ -1375,3 +1375,19 @@ answer before `tools\platform-tools` is replaced. adb.exe is then found in this 
 The page shows one Drivers card (Welcome screen and Settings): a row per driver with an icon, a chip (green Ready, grey
 Not started, amber Needs action, red Problem), one line and at most one primary button; Android's row lists the phone
 hints with the steps to take. Mock: `?drivers=ready|iosMissing|iosStopped|adbMissing|adbDownloading|adbIdle|adbStarting|adbFailed|androidNoDriver`.
+
+## IPv6 profile (v0.7)
+
+An iPhone has no switch for IPv6 on its SIM; a configuration profile (`com.apple.cellular`) allows it. `toolbox.features` now
+also says `profiles` (an iPhone). Shapes are in `ToolboxParams.cs` and `web/src/bridge/toolbox.ts`. The profile is built by
+`CellularProfile` in `DeviceDeck.Core`; the Ipv6Profile site builds the same one from the same choices.
+
+`ProfileOptions` = `{ apn, mode: "both" | "ipv6", attachApn, xlat464 }`; `mode` defaults to `both`, `attachApn` to true and `xlat464`
+to false, which only counts with `ipv6`. A bad `apn` is an invalid-params error everywhere.
+
+| Method | Params | Result |
+| --- | --- | --- |
+| `profile.list` | `{ deviceId }` | `{ profiles: { identifier, name, organization: string \| null }[] }`, as the phone's Settings orders them; not an iPhone = `not_supported` |
+| `profile.preview` | `ProfileOptions` | `{ text, fileName }` (no phone needed) |
+| `profile.send` | `{ deviceId, ...ProfileOptions }` | `{}`; a phone that isn't supervised only receives it, and the user finishes in Settings, so `profile.list` shows it after that. A refusal is `install_failed` with the phone's reason |
+| `profile.save` | `{ ...ProfileOptions, destination? }` | `{ path, count }`; default folder `Documents\DeviceDeck\Profiles`, never overwrites |

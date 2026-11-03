@@ -35,7 +35,8 @@ public static class ToolboxMethods
                 Ringtone: !ios && device is IRingtoneTarget { RingtoneExtensions.Count: > 0 },
                 WifiSync: ios && device is IWifiSyncSettings,
                 Report: caps.HasFlag(DeviceCapability.Info),
-                WirelessDebugging: hub.Providers.OfType<IWirelessDebugging>().Any()));
+                WirelessDebugging: hub.Providers.OfType<IWirelessDebugging>().Any(),
+                Profiles: ios && device is IConfigurationProfiles));
         });
 
         // ---- live log ----
@@ -220,6 +221,8 @@ public static class ToolboxMethods
 
         // ---- ringtones ----
         rpc.Register<RingtoneParams, RingtoneResultDto>("ringtone.create", (p, ct) => CreateRingtoneAsync(hub, t, p, ct));
+
+        ProfileMethods.Register(rpc, hub, t);
 
         return rpc;
     }

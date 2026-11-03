@@ -2,6 +2,7 @@ using System.Buffers.Binary;
 using System.Text.Json.Nodes;
 using DeviceDeck.Bridge.Tests.Support;
 using DeviceDeck.Core.Fake;
+using DeviceDeck.Core.Toolbox;
 
 namespace DeviceDeck.Bridge.Tests;
 
@@ -24,6 +25,60 @@ public sealed class ToolboxBridgeTests
             new[] { "log", "crashReports", "mirror", "ringtone", "wifiSync", "report", "wirelessDebugging" }.Select(k => (bool)iphone[k]!));
         var android = (await host.ResultAsync("toolbox.features", new { deviceId = Android }))!.AsObject();
         Assert.Equal([true, true, true, true, false], new[] { "log", "crashReports", "mirror", "ringtone", "wifiSync" }.Select(k => (bool)android[k]!));
+    }
+
+    [Fact]
+    public async Task Profiles_are_for_an_iphone_and_a_sent_one_replaces_the_last()
+    {
+        await using var host = await StartAsync();
+        Assert.True((bool)(await host.ResultAsync("toolbox.features", new { deviceId = Iphone }))!["profiles"]!);
+        Assert.False((bool)(await host.ResultAsync("toolbox.features", new { deviceId = Android }))!["profiles"]!);
+        Assert.Equal("not_supported", Code(await host.CallAsync("profile.list", new { deviceId = Android })));
+        Assert.Equal("not_supported", Code(await host.CallAsync("profile.send", new { deviceId = Android, apn = "mcinet" })));
+
+        Assert.Empty((await host.ResultAsync("profile.list", new { deviceId = Iphone }))!["profiles"]!.AsArray());
+        await host.ResultAsync("profile.send", new { deviceId = Iphone, apn = "mcinet", mode = "both", attachApn = true, xlat464 = false });
+        await host.ResultAsync("profile.send", new { deviceId = Iphone, apn = "rightel", mode = "ipv6" });
+        var listed = (await host.ResultAsync("profile.list", new { deviceId = Iphone }))!["profiles"]!.AsArray();
+        Assert.Equal(CellularProfile.Identifier, (string)Assert.Single(listed)!["identifier"]!);
+    }
+
+    [Fact]
+    public async Task A_profile_is_previewed_and_saved_without_a_phone_and_never_over_another_file()
+    {
+        await using var host = await StartAsync();
+        var preview = (await host.ResultAsync("profile.preview", new { apn = "mtnirancell", mode = "ipv6" }))!;
+        Assert.Equal("ipv6-mtnirancell.mobileconfig", (string)preview["fileName"]!);
+        Assert.Contains("<integer>2</integer>", (string)preview["text"]!);
+        Assert.DoesNotContain("<integer>3</integer>", (string)preview["text"]!);
+
+        var folder = Path.Combine(Path.GetTempPath(), "devicedeck-profile-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var first = (string)(await host.ResultAsync("profile.save", new { apn = "rightel", destination = folder }))!["path"]!;
+            var second = (string)(await host.ResultAsync("profile.save", new { apn = "rightel", destination = folder }))!["path"]!;
+            Assert.Equal("ipv6-rightel.mobileconfig", Path.GetFileName(first));
+            Assert.Equal("ipv6-rightel (2).mobileconfig", Path.GetFileName(second));
+            Assert.Equal(CellularProfile.Build(new CellularProfileOptions("rightel")), await File.ReadAllBytesAsync(first));
+        }
+        finally
+        {
+            Directory.Delete(folder, recursive: true);
+        }
+    }
+
+    [Theory]
+    [InlineData("")]
+    [InlineData("a b")]
+    [InlineData("<x>")]
+    [InlineData("-a")]
+    public async Task A_bad_apn_is_refused_everywhere(string apn)
+    {
+        await using var host = await StartAsync();
+        Assert.NotNull((await host.CallAsync("profile.preview", new { apn }))["error"]);
+        Assert.NotNull((await host.CallAsync("profile.save", new { apn }))["error"]);
+        Assert.NotNull((await host.CallAsync("profile.send", new { deviceId = Iphone, apn }))["error"]);
+        Assert.Empty((await host.ResultAsync("profile.list", new { deviceId = Iphone }))!["profiles"]!.AsArray());
     }
 
     [Fact]

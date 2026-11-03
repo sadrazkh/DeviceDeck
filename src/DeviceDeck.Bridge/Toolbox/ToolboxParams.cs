@@ -1,10 +1,11 @@
 using DeviceDeck.Core.Abstractions;
+using DeviceDeck.Core.Toolbox;
 
 namespace DeviceDeck.Bridge.Toolbox;
 
 // Params, results and events of the toolbox methods (docs/bridge-contract.md, "Toolbox").
 
-public sealed record ToolboxFeatures(bool Log, bool CrashReports, bool Mirror, bool Ringtone, bool WifiSync, bool Report, bool WirelessDebugging);
+public sealed record ToolboxFeatures(bool Log, bool CrashReports, bool Mirror, bool Ringtone, bool WifiSync, bool Report, bool WirelessDebugging, bool Profiles);
 
 public sealed record SessionParams(string SessionId);
 
@@ -112,3 +113,18 @@ public sealed record MirrorVideoEvent(string SessionId, MirrorPacketKind Kind, l
 public sealed record MirrorEndedEvent(string SessionId, ToolboxError? Error);
 
 public sealed record MirrorShotResult(string Path);
+
+// ---- IPv6 profile ----
+
+public sealed record ProfileOptionsParams(string Apn, CellularProfileMode Mode = CellularProfileMode.Both, bool AttachApn = true, bool Xlat464 = false)
+{
+    public CellularProfileOptions ToOptions() => new(Apn, Mode, AttachApn, Xlat464);
+}
+
+public sealed record ProfileSendParams(string DeviceId, string Apn, CellularProfileMode Mode = CellularProfileMode.Both, bool AttachApn = true, bool Xlat464 = false);
+
+public sealed record ProfileSaveParams(string Apn, CellularProfileMode Mode = CellularProfileMode.Both, bool AttachApn = true, bool Xlat464 = false, string? Destination = null);
+
+public sealed record ProfileListResult(IReadOnlyList<InstalledProfile> Profiles);
+
+public sealed record ProfilePreviewResult(string Text, string FileName);
