@@ -56,6 +56,8 @@ import type {
   LogLine,
   MirrorInput,
   MirrorVideoEvent,
+  InstalledProfile,
+  ProfileOptions,
   ReportFormat,
   ToolboxError,
   ToolboxFeatures,
@@ -234,6 +236,10 @@ export interface BridgeMethods {
     params: DeviceParams & { files: string[]; startSeconds: number; endSeconds: number; name?: string | null; setAsDefault: boolean };
     result: { devicePath: string; isDefault: boolean; bytes: number };
   };
+  'profile.list': { params: DeviceParams; result: { profiles: InstalledProfile[] } };
+  'profile.preview': { params: ProfileOptions; result: { text: string; fileName: string } };
+  'profile.send': { params: DeviceParams & ProfileOptions; result: Empty };
+  'profile.save': { params: ProfileOptions & { destination?: string | null }; result: { path: string; count: number } };
   // Served by the mirror window's own bridge (web/mirror.html), not the main window's.
   'mirror.start': {
     params: DeviceParams & { maxSize?: number; bitRate?: number; maxFps?: number };
@@ -425,6 +431,10 @@ const methodTable = {
   'wifi.iphoneSync': true,
   'wifi.setIphoneSync': true,
   'ringtone.create': true,
+  'profile.list': true,
+  'profile.preview': true,
+  'profile.send': true,
+  'profile.save': true,
   'mirror.start': true,
   'mirror.input': true,
   'mirror.stop': true,

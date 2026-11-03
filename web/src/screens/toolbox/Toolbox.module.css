@@ -579,6 +579,37 @@
   flex-wrap: wrap;
 }
 
+/* ---------- IPv6 profile ---------- */
+.checkRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-2);
+  cursor: pointer;
+}
+
+.steps {
+  margin: 0;
+  padding-inline-start: var(--space-5);
+}
+
+.fold summary {
+  padding: var(--space-3) var(--space-4);
+  font-weight: var(--type-strong-weight);
+  cursor: pointer;
+}
+
+.profileText {
+  max-height: 360px;
+  margin: 0;
+  padding: var(--space-3) var(--space-4);
+  overflow: auto;
+  border-top: 1px solid var(--color-stroke-card);
+  font-family: var(--font-mono, ui-monospace, Consolas, monospace);
+  font-size: var(--type-caption-size);
+  text-align: left;
+  tab-size: 2;
+}
+
 /* ---------- Ringtone ---------- */
 .wave {
   position: relative;

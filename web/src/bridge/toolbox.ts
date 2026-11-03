@@ -12,6 +12,22 @@ export interface ToolboxFeatures {
   wifiSync: boolean;
   report: boolean;
   wirelessDebugging: boolean;
+  profiles: boolean;
+}
+
+export type ProfileMode = 'both' | 'ipv6';
+
+export interface ProfileOptions {
+  apn: string;
+  mode: ProfileMode;
+  attachApn: boolean;
+  xlat464: boolean;
+}
+
+export interface InstalledProfile {
+  identifier: string;
+  name: string;
+  organization: string | null;
 }
 
 /** One live log line; `seq` counts from 1 per session. */

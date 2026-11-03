@@ -5,7 +5,7 @@
 import type { BridgeEvents, EventName, MethodName, MethodParams, MethodResult } from '../methods';
 import type { DeviceCapability, DeviceDetails, DeviceSummary } from '../types';
 import { createRandom, hashString } from './random';
-import type { CrashReport, LogLevel, LogLine, ToolboxJob } from '../toolbox';
+import type { CrashReport, InstalledProfile, LogLevel, LogLine, ToolboxJob } from '../toolbox';
 
 export type ToolboxMethod =
   | 'toolbox.features'
@@ -32,6 +32,10 @@ export type ToolboxMethod =
   | 'wifi.iphoneSync'
   | 'wifi.setIphoneSync'
   | 'ringtone.create'
+  | 'profile.list'
+  | 'profile.preview'
+  | 'profile.send'
+  | 'profile.save'
   | 'mirror.start'
   | 'mirror.input'
   | 'mirror.stop'
@@ -124,6 +128,7 @@ export class MockToolbox {
   private readonly jobs = new Map<string, ToolboxJob>();
   private readonly qr = new Set<string>();
   private wifiSync = false;
+  private profiles: InstalledProfile[] = [];
   private nextId = 1;
 
   constructor(private readonly host: MockToolboxHost) {}
@@ -189,6 +194,7 @@ export class MockToolbox {
         wifiSync: device.platform === 'ios',
         report: has('info'),
         wirelessDebugging: true,
+        profiles: device.platform === 'ios',
       };
     },
     'log.start': ({ deviceId }) => {
@@ -370,6 +376,22 @@ export class MockToolbox {
       const stem = (name?.trim() || source.replace(/\.[^.]+$/, '')).replace(/[\\/:*?"<>|]/g, '_');
       return { devicePath: `/sdcard/Ringtones/${stem}${extension}`, isDefault: setAsDefault, bytes: Math.round((endSeconds - startSeconds) * 24_000) };
     },
+    'profile.list': ({ deviceId }) => {
+      const device = this.host.ready(deviceId, 'info');
+      if (device.platform !== 'ios') throw this.host.fault('not_supported', 'Only an iPhone takes configuration profiles.');
+      return { profiles: this.profiles };
+    },
+    'profile.preview': ({ apn, mode }) => ({
+      text: `<?xml version="1.0" encoding="utf-8"?>\n<plist version="1.0">\n<!-- The mock's stand-in. APN ${apn}, ${mode}. -->\n</plist>\n`,
+      fileName: `ipv6-${apn}.mobileconfig`,
+    }),
+    'profile.send': ({ deviceId, apn }) => {
+      const device = this.host.ready(deviceId, 'info');
+      if (device.platform !== 'ios') throw this.host.fault('not_supported', 'Only an iPhone takes configuration profiles.');
+      this.profiles = [...this.profiles.filter((p) => p.identifier !== 'local.ipv6-profile.cellular'), { identifier: 'local.ipv6-profile.cellular', name: `IPv6 (${apn})`, organization: null }];
+      return {};
+    },
+    'profile.save': ({ apn }) => ({ path: `${DOCS}\\Profiles\\ipv6-${apn}.mobileconfig`, count: 1 }),
     'mirror.start': ({ deviceId }) => {
       const device = this.host.ready(deviceId, 'screenMirror');
       return { sessionId: this.id('mirror'), deviceName: device.marketingName ?? device.name, codec: 'h264' };
