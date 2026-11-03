@@ -16,6 +16,9 @@ export default defineConfig({
   // One page load before the tests, so the first ones don't all wait for the dev server to compile the app.
   globalSetup: './tests/warmup.ts',
   timeout: 60_000,
+  // GitHub's runner is slow enough that a different test out of 360 lost a race on each of three v0.7.0 runs (a page
+  // that took over a minute, a toast caught mid-fade). One more try there; on this PC a failure stays a failure.
+  retries: process.env.CI ? 1 : 0,
   // Auto-waiting assertions get 15 s instead of 5: with 4 workers on a busy PC (or GitHub's slower runner) a screen
   // can take longer than 5 s to load its mock data. A test that passes fast is not slowed down by this.
   expect: { timeout: 15_000 },
